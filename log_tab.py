@@ -338,6 +338,6 @@ class LogTab:
                 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
                 tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         except Exception as e:
-            print(f"显示日志详情失败: {e}")
+            # print(f"显示日志详情失败: {e}")
             ttk.Label(tree_frame, text=f"显示数据失败: {str(e)}", font=('Microsoft YaHei', 10)).pack(pady=20)
         ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10) 

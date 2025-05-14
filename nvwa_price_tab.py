@@ -181,7 +181,8 @@ class NvwaPriceTab:
             self.nvwa_fig.autofmt_xdate()
             self.nvwa_canvas.draw_idle()
         except Exception as e:
-            print(f"Error drawing nvwa price chart: {e}")
+            # print(f"Error drawing nvwa price chart: {e}")
+            pass
 
     def _on_nvwa_scroll(self, event):
         if event.inaxes != self.nvwa_ax1:

@@ -71,10 +71,11 @@ def restore_logs():
         cursor.execute('SELECT operation_type, tab_name, operation_time FROM operation_logs LIMIT 5')
         print('\n最近5条记录:')
         for row in cursor.fetchall():
-            print(f'类型: {row[0]}, 标签页: {row[1]}, 时间: {row[2]}')
-        
+            # print(f'类型: {row[0]}, 标签页: {row[1]}, 时间: {row[2]}')
+            pass
     except Exception as e:
-        print(f'恢复数据时出错: {e}')
+        # print(f'恢复数据时出错: {e}')
+        pass
         
     finally:
         if cursor:

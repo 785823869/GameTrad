@@ -1247,7 +1247,6 @@ class GameTradingSystemGUI:
         """刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
         if hasattr(self, 'nvwa_price_tab'):
             self.nvwa_price_tab.refresh_nvwa_price()
         if hasattr(self, 'silver_price_tab'):
@@ -2077,37 +2076,31 @@ class GameTradingSystemGUI:
         """操作后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
     def refresh_after_delete(self):
         """删除后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
     def refresh_after_edit(self):
         """编辑后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
     def refresh_after_import(self):
         """导入后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
     def refresh_after_export(self):
         """导出后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
     def refresh_after_ocr(self):
         """OCR后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
-        self.stock_in_tab.refresh_stock_in()
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 现代天蓝色主题

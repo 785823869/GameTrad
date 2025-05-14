@@ -6,16 +6,10 @@ except ImportError:
 from MySQLdb import OperationalError, IntegrityError
 from datetime import datetime
 from decimal import Decimal
-import sqlite3
 import json
 
 class DatabaseManager:
-    def __init__(self, db_path='game_trading.db'):
-        self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-        self._create_tables()  # sqlite建表
+    def __init__(self):
         # 检测MySQL连接有效性
         try:
             conn = self.get_connection()
@@ -386,48 +380,6 @@ class DatabaseManager:
         query += " ORDER BY timestamp DESC"
         return self.fetch_all(query, tuple(params))
 
-    def _create_tables(self):
-        # 创建入库表
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS stock_in (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_name TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price REAL NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-
-        # 创建出库表
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS stock_out (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_name TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price REAL NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-
-        # 创建交易监控表
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS trade_monitor (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_name TEXT NOT NULL,
-            monitor_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-            quantity INTEGER NOT NULL,
-            market_price REAL NOT NULL,
-            target_price REAL NOT NULL,
-            planned_price REAL NOT NULL,
-            break_even_price REAL NOT NULL,
-            profit REAL NOT NULL,
-            profit_rate REAL NOT NULL,
-            strategy TEXT NOT NULL
-        )
-        ''')
-
-        self.conn.commit()
-
     def _create_tables_mysql(self):
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -617,7 +569,7 @@ class DatabaseManager:
     def _load_operation_logs(self):
         """加载操作日志"""
         try:
-            cursor = self.db_manager.get_connection().cursor()
+            cursor = self.get_connection().cursor()
             cursor.execute("SELECT * FROM operation_logs ORDER BY operation_time DESC")
             logs = cursor.fetchall()
             cursor.close()

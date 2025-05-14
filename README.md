@@ -43,7 +43,7 @@
 ## 技术特点
 
 - 使用 Python 和 tkinter/ttkbootstrap 构建现代化 GUI 界面
-- SQLite 数据库存储，确保数据安全性和可靠性
+- MySQL 数据库存储，确保数据安全性和可靠性
 - OCR 技术支持，实现图片自动识别导入
 - 多线程处理，保证界面响应性
 - 模块化设计，便于维护和扩展
@@ -52,6 +52,7 @@
 
 - Python 3.8 或更高版本
 - Windows 操作系统
+- MySQL 5.7 或更高版本
 - 至少 4GB RAM
 - 500MB 可用磁盘空间
 
@@ -67,10 +68,10 @@ git clone [repository_url]
 pip install -r requirements.txt
 ```
 
-3. 初始化数据库：
-```bash
-python init_db.py
-```
+3. 配置数据库：
+   - 创建 MySQL 数据库
+   - 修改 `db_manager.py` 中的数据库连接配置
+   - 运行 `init_db.py` 初始化数据库表结构
 
 4. 运行程序：
 ```bash

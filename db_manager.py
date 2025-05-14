@@ -46,14 +46,11 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = None
         try:
-            print("[SQL执行]", query)
-            print("[参数]", params)
             cursor = conn.cursor()
             cursor.execute(query, params or ())
             conn.commit()
             return True
         except (OperationalError, IntegrityError, Exception) as e:
-            print(f"执行查询错误: {e}")
             return False
         finally:
             if cursor:
@@ -69,7 +66,6 @@ class DatabaseManager:
             results = cursor.fetchall()
             return results
         except (OperationalError, IntegrityError, Exception) as e:
-            print(f"获取数据错误: {e}")
             return []
         finally:
             if cursor:
@@ -85,7 +81,6 @@ class DatabaseManager:
             result = cursor.fetchone()
             return result
         except (OperationalError, IntegrityError, Exception) as e:
-            print(f"获取数据错误: {e}")
             return None
         finally:
             if cursor:
@@ -133,15 +128,12 @@ class DatabaseManager:
         try:
             # 数据验证
             if not isinstance(stock_in_data.get('quantity'), (int, float)) or stock_in_data.get('quantity', 0) <= 0:
-                print("错误：数量必须大于0")
                 return False
                 
             if not isinstance(stock_in_data.get('cost'), (int, float)) or stock_in_data.get('cost', 0) <= 0:
-                print("错误：花费必须大于0")
                 return False
                 
             if not isinstance(stock_in_data.get('avg_cost'), (int, float)) or stock_in_data.get('avg_cost', 0) <= 0:
-                print("错误：均价必须大于0")
                 return False
 
             # 确保数值类型正确且为整数
@@ -163,19 +155,14 @@ class DatabaseManager:
                 avg_cost,
                 str(stock_in_data.get('note', ''))
             )
-            print("[入库SQL参数]", params)
             return self.execute_query(query, params)
             
-        except Exception as e:
-            print(f"保存入库记录失败: {e}")
+        except Exception:
             return False
 
     def get_stock_in(self):
         query = "SELECT * FROM stock_in ORDER BY transaction_time DESC"
-        print("[查询入库记录]", query)
-        results = self.fetch_all(query)
-        print("[查询结果]", results)
-        return results
+        return self.fetch_all(query)
 
     def delete_stock_in(self, item_name, transaction_time):
         query = "DELETE FROM stock_in WHERE item_name=%s AND transaction_time=%s"
@@ -185,19 +172,15 @@ class DatabaseManager:
     def save_stock_out(self, stock_out_data):
         # 数据验证
         if not isinstance(stock_out_data.get('quantity'), (int, float)) or stock_out_data.get('quantity', 0) <= 0:
-            print("错误：数量必须大于0")
             return False
             
         if not isinstance(stock_out_data.get('unit_price'), (int, float)) or stock_out_data.get('unit_price', 0) <= 0:
-            print("错误：单价必须大于0")
             return False
             
         if not isinstance(stock_out_data.get('fee'), (int, float)) or stock_out_data.get('fee', 0) < 0:
-            print("错误：手续费不能为负数")
             return False
             
         if not isinstance(stock_out_data.get('deposit', 0), (int, float)) or stock_out_data.get('deposit', 0) < 0:
-            print("错误：退还押金不能为负数")
             return False
 
         # 计算总金额
@@ -234,30 +217,18 @@ class DatabaseManager:
         return self.execute_query(query, (item_name, transaction_time))
 
     def add_stock_out(self, item_name, quantity, price, fee, deposit=0.00, note=''):
-        """添加出库记录
-        Args:
-            item_name: 物品名称
-            quantity: 数量
-            price: 售出单价
-            fee: 手续费
-            deposit: 退还押金
-            note: 备注
-        """
+        """添加出库记录"""
         # 数据验证
         if not isinstance(quantity, (int, float)) or quantity <= 0:
-            print("错误：数量必须大于0")
             return False
             
         if not isinstance(price, (int, float)) or price <= 0:
-            print("错误：单价必须大于0")
             return False
             
         if not isinstance(fee, (int, float)) or fee < 0:
-            print("错误：手续费不能为负数")
             return False
             
         if not isinstance(deposit, (int, float)) or deposit < 0:
-            print("错误：退还押金不能为负数")
             return False
 
         now = datetime.now()
@@ -266,12 +237,10 @@ class DatabaseManager:
         # 获取当前库存总量和总金额
         inventory = self.fetch_one("SELECT quantity, avg_price FROM inventory WHERE item_name=%s", (item_name,))
         if not inventory:
-            print(f"错误：物品 {item_name} 不存在于库存中")
             return False
         
         current_quantity, current_avg_price = inventory
         if current_quantity < quantity:
-            print(f"错误：库存数量不足，当前库存：{current_quantity}，需要：{quantity}")
             return False
         
         # 计算新的库存数量和平均价格
@@ -283,7 +252,6 @@ class DatabaseManager:
             "UPDATE inventory SET quantity=%s, avg_price=%s WHERE item_name=%s",
             (new_quantity, new_avg_price, item_name)
         ):
-            print("错误：更新库存失败")
             return False
         
         # 添加出库记录
@@ -393,8 +361,7 @@ class DatabaseManager:
                 cursor.execute(query, params)
             conn.commit()
             return True
-        except Exception as e:
-            print(f"保存银两监控数据错误: {e}")
+        except Exception:
             return False
         finally:
             if cursor:
@@ -609,8 +576,7 @@ class DatabaseManager:
                 params.append(reverted)
             cursor.execute(query, tuple(params))
             return cursor.fetchone()[0]
-        except Exception as e:
-            print(f"获取操作日志数量错误: {e}")
+        except Exception:
             return 0
         finally:
             cursor.close()
@@ -627,8 +593,7 @@ class DatabaseManager:
             conn.commit()
             log_id = cursor.lastrowid
             return log_id
-        except Exception as e:
-            print(f"保存操作日志失败: {e}")
+        except Exception:
             return None
         finally:
             cursor.close()
@@ -643,8 +608,8 @@ class DatabaseManager:
                 (int(bool(reverted)), log_id)
             )
             conn.commit()
-        except Exception as e:
-            print(f'更新操作日志回退状态失败: {e}')
+        except Exception:
+            pass
         finally:
             cursor.close()
             conn.close()
@@ -657,6 +622,5 @@ class DatabaseManager:
             logs = cursor.fetchall()
             cursor.close()
             return logs
-        except Exception as e:
-            print(f"加载操作日志失败: {e}")
+        except Exception:
             return [] 

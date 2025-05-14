@@ -222,7 +222,7 @@ class GameTradingSystemGUI:
             resp.raise_for_status()
         except Exception as e:
             print(f"发送Server酱通知失败: {e}")
-
+            
     def fetch_silver_price_multi_series(self, days):
         """获取银两价格数据，并只对DD373平台突破阈值时推送"""
         max_retries = 3
@@ -968,7 +968,6 @@ class GameTradingSystemGUI:
         """创建出库管理标签页"""
         stock_out_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(stock_out_frame, text="出库管理")
-        
         # 出库表格
         columns = ('物品', '当前时间', '数量', '单价', '手续费', '总金额', '备注')
         self.stock_out_tree = ttk.Treeview(stock_out_frame, columns=columns, show='headings', height=16)
@@ -979,12 +978,19 @@ class GameTradingSystemGUI:
         self.stock_out_tree.configure(yscrollcommand=scrollbar.set)
         self.stock_out_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        
         # 右侧操作面板
         right_panel = ttk.Frame(stock_out_frame, width=260)
         right_panel.pack(side='right', fill='y', padx=8, pady=5)
         right_panel.pack_propagate(False)
-        
+        # 物品筛选控件
+        self.stock_out_filter_var = tb.StringVar()
+        filter_row = ttk.Frame(right_panel)
+        filter_row.pack(fill='x', pady=2)
+        ttk.Label(filter_row, text="物品筛选:").pack(side='left')
+        filter_entry = ttk.Entry(filter_row, textvariable=self.stock_out_filter_var, width=12)
+        filter_entry.pack(side='left', padx=2)
+        ttk.Button(filter_row, text="筛选", command=self.refresh_stock_out).pack(side='left', padx=2)
+        # 添加出库记录
         add_frame = ttk.LabelFrame(right_panel, text="添加出库", padding=10)
         add_frame.pack(fill='x', pady=8)
         ttk.Label(add_frame, text="物品:").grid(row=0, column=0, padx=5, pady=5)
@@ -1007,19 +1013,15 @@ class GameTradingSystemGUI:
         self.stock_out_note.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
         add_frame.columnconfigure(1, weight=1)
         ttk.Button(add_frame, text="添加出库", command=self.add_stock_out).grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')
-        
         ttk.Button(right_panel, text="刷新出库记录", command=self.refresh_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         self.ocr_image_preview_frame_out = ttk.Frame(right_panel)
         self.ocr_image_preview_frame_out.pack(fill='x', pady=5)
-        
         self.stock_out_menu = tb.Menu(self.stock_out_tree, tearoff=0)
         self.stock_out_menu.add_command(label="删除", command=self.delete_stock_out_item)
         self.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
-        # 新增：Ctrl+A全选
         self.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tree.selection_set(self.stock_out_tree.get_children()), 'break'])
-        # 在create_stock_out_tab末尾添加事件绑定
         self.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
     
     def edit_stock_out_item(self, event):
@@ -1445,7 +1447,7 @@ class GameTradingSystemGUI:
                     tree_new.pack(fill=tk.X, padx=10)
                     return
                 # 如果是字典，转换为列表
-                if isinstance(data, dict):
+            if isinstance(data, dict):
                     data = [data]
                 
                 # 根据标签页类型设置列和字段映射
@@ -1512,14 +1514,14 @@ class GameTradingSystemGUI:
                                         val = f"{val:.2f}%"
                                     elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
                                         val = f"{val:,.2f}"
-                                    else:
+                    else:
                                         val = f"{int(val):,}"
                                 elif isinstance(val, str) and val.replace(".", "").isdigit():
                                     if "率" in col:
                                         val = f"{float(val):.2f}%"
                                     elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
                                         val = f"{float(val):,.2f}"
-                                    else:
+            else:
                                         val = f"{int(float(val)):,}"
                             except (ValueError, TypeError):
                                 pass
@@ -1623,7 +1625,7 @@ class GameTradingSystemGUI:
                 title='导出报表'
             )
             if not file_path:
-                return
+            return
 
             ext = os.path.splitext(file_path)[1].lower()
             if ext == '.xlsx':
@@ -2231,9 +2233,15 @@ class GameTradingSystemGUI:
         for item in self.stock_out_tree.get_children():
             self.stock_out_tree.delete(item)
         records = self.db_manager.get_stock_out()
+        filter_text = self.stock_out_filter_var.get().strip().lower() if hasattr(self, 'stock_out_filter_var') else ''
+        keywords = filter_text.split()
+        filtered = []
         for record in records:
             try:
                 _, item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note, *_ = record
+                name_lc = str(item_name).lower()
+                if keywords and not all(k in name_lc for k in keywords):
+                    continue
                 values = (
                     item_name,
                     transaction_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(transaction_time, 'strftime') else str(transaction_time),
@@ -2243,10 +2251,19 @@ class GameTradingSystemGUI:
                     int(float(total_amount)),
                     note if note is not None else ''
                 )
+                filtered.append(values)
                 self.stock_out_tree.insert('', 'end', values=values)
             except Exception as e:
                 messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrecord={record}")
                 continue
+        # 合计行
+        if filter_text and filtered:
+            total_qty = sum(int(row[2]) for row in filtered)
+            total_fee = sum(int(row[4]) for row in filtered)
+            total_amount = sum(int(row[5]) for row in filtered)
+            self.stock_out_tree.insert('', 'end', values=(
+                '合计', '', total_qty, '', total_fee, total_amount, ''
+            ))
 
     def refresh_monitor(self):
         threading.Thread(target=self._fetch_and_draw_monitor, daemon=True).start()
@@ -3098,8 +3115,8 @@ class GameTradingSystemGUI:
     def delete_ocr_image_monitor(self, idx):
         """删除指定索引的OCR图片"""
         if 0 <= idx < len(self._pending_ocr_images_monitor):
-            del self._pending_ocr_images_monitor[idx]
-            self.refresh_ocr_image_preview_monitor()
+        del self._pending_ocr_images_monitor[idx]
+        self.refresh_ocr_image_preview_monitor()
 
     def _on_silver_press(self, event):
         if event.button == 1:  # 左键

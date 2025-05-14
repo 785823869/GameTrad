@@ -34,6 +34,8 @@ import tkinter as tk
 import webbrowser
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 from nvwa_price_tab import NvwaPriceTab
+from silver_price_tab import SilverPriceTab
+from log_tab import LogTab
 
 def safe_float(val, default=0.0):
     try:
@@ -169,33 +171,24 @@ class GameTradingSystemGUI:
 
     def send_daily_price_notification(self):
         """发送每日价格通知"""
-        if not self.should_send_daily_notification():
-            return
-
         try:
-            # 获取银两价格数据
-            silver_data = self.fetch_silver_price_multi_series(1)  # 只获取1天的数据
+            # 获取当前银两和女娲石价格
             silver_price = None
-            if silver_data and 'series' in silver_data:
-                for platform, prices in silver_data['series'].items():
-                    if prices and len(prices) > 0:
-                        silver_price = prices[-1]
-                        break
-
-            # 获取女娲石价格数据
             nvwa_price = None
-            try:
-                url = f"https://www.zxsjinfo.com/api/nvwa-price?days=1&server=%E7%91%B6%E5%85%89%E6%B2%81%E9%9B%AA"
-                resp = requests.get(url, timeout=20, verify=False)
-                resp.raise_for_status()
-                nvwa_data = resp.json()
+            
+            if hasattr(self, 'silver_price_tab'):
+                silver_data = self.silver_price_tab._last_silver_data
+                if silver_data and 'series' in silver_data:
+                    dd373_data = silver_data['series'].get('DD373', [])
+                    if dd373_data:
+                        silver_price = dd373_data[-1]
+            
+            if hasattr(self, 'nvwa_price_tab'):
+                nvwa_data = self.nvwa_price_tab._last_nvwa_data
                 if nvwa_data and 'series' in nvwa_data:
-                    for platform, prices in nvwa_data['series'].items():
-                        if prices and len(prices) > 0:
-                            nvwa_price = prices[-1]
-                            break
-            except Exception as e:
-                print(f"获取女娲石价格失败: {e}")
+                    dd373_data = nvwa_data['series'].get('DD373', [])
+                    if dd373_data:
+                        nvwa_price = dd373_data[-1]
 
             if silver_price is not None or nvwa_price is not None:
                 title = "每日价格更新"
@@ -217,27 +210,19 @@ class GameTradingSystemGUI:
 
     def send_server_chan_notification(self, title, content):
         """发送Server酱通知"""
-        if self.server_chan_enabled.get() != "1":
-            return
-            
-        key = self.server_chan_key.get()
-        if not key:
-            return
-            
         try:
-            url = f"https://sctapi.ftqq.com/{key}.send"
+            if not self.server_chan_key:
+                return
+            url = f"https://sctapi.ftqq.com/{self.server_chan_key}.send"
             data = {
                 "title": title,
                 "desp": content
             }
-            response = requests.post(url, data=data)
-            if response.status_code == 200:
-                self.log_operation("推送", "Server酱", f"推送成功: {title}")
-            else:
-                self.log_operation("推送", "Server酱", f"推送失败: {response.text}")
+            resp = requests.post(url, data=data, timeout=10)
+            resp.raise_for_status()
         except Exception as e:
-            self.log_operation("推送", "Server酱", f"推送异常: {str(e)}")
-            
+            print(f"发送Server酱通知失败: {e}")
+
     def fetch_silver_price_multi_series(self, days):
         """获取银两价格数据，并只对DD373平台突破阈值时推送"""
         max_retries = 3
@@ -305,9 +290,9 @@ class GameTradingSystemGUI:
         self.create_stock_in_tab()
         self.create_stock_out_tab()
         self.create_trade_monitor_tab()
-        self.create_log_tab()
-        self.create_silver_price_tab()
+        self.silver_price_tab = SilverPriceTab(self.notebook)  # 使用新的 SilverPriceTab 类
         self.nvwa_price_tab = NvwaPriceTab(self.notebook)  # 新增女娲石价格标签页
+        self.log_tab = LogTab(self.notebook, self)  # 新增操作日志标签页
         
         # 加载保存的数据
         self.load_saved_data()
@@ -316,11 +301,10 @@ class GameTradingSystemGUI:
         
         # 日志持久化
         self.operation_logs = self._load_operation_logs()
-        self.undo_stack = [log for log in self.operation_logs if not log.get('已回退')]
-        self.redo_stack = [log for log in self.operation_logs if log.get('已回退')]
+        self.undo_stack = [log for log in self.operation_logs if not log[5]]  # 假设"已回退"是元组的第6个字段（索引5）
+        self.redo_stack = [log for log in self.operation_logs if log[5]]
         
         self.notebook.bind('<<NotebookTabChanged>>', self.on_tab_changed)
-        self.auto_refresh_silver_price()
         
         # 在 __init__ 里添加：
         self.current_ocr_tab = None
@@ -332,7 +316,7 @@ class GameTradingSystemGUI:
     def on_tab_changed(self, event):
         tab = self.notebook.tab(self.notebook.select(), 'text')
         if tab == '操作日志':
-            self.refresh_log_tab()
+            self.log_tab.refresh_log_tab()
 
     def create_inventory_tab(self):
         """创建库存管理标签页"""
@@ -1402,85 +1386,184 @@ class GameTradingSystemGUI:
             if not values:
                 return
             op_type, tab_name, timestamp, data = values
+            
             # 创建详情窗口
             detail_window = tk.Toplevel(self.root)
             detail_window.title("操作详情")
-            detail_window.geometry("600x400")
-            # 创建文本框
-            text = tk.Text(detail_window, wrap=tk.WORD)
-            text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-            # 添加滚动条
-            scrollbar = ttk.Scrollbar(text, command=text.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            text.config(yscrollcommand=scrollbar.set)
-            # 字段映射
-            field_map = {
-                "old": "修改前",
-                "new": "修改后",
-                "item_name": "物品名",
-                "transaction_time": "时间",
-                "quantity": "数量",
-                "cost": "花费",
-                "avg_cost": "均价",
-                "unit_price": "单价",
-                "fee": "手续费",
-                "deposit": "保证金",
-                "total_amount": "总金额",
-                "note": "备注",
-                "market_price": "市场价",
-                "target_price": "目标价",
-                "planned_price": "计划价",
-                "break_even_price": "保本价",
-                "profit": "利润",
-                "profit_rate": "利润率",
-                "strategy": "策略",
-            }
-            def beautify_row(row):
-                # row为dict或list
-                if isinstance(row, dict):
-                    return ', '.join(f"{field_map.get(k, k)}: {v}" for k, v in row.items())
-                elif isinstance(row, list):
-                    # 可能是字段顺序的list
-                    # 尝试用常见字段顺序映射
-                    keys = ["物品名", "时间", "数量", "单价", "手续费", "总金额", "备注"]
-                    return ', '.join(f"{keys[i] if i < len(keys) else i+1}: {v}" for i, v in enumerate(row))
-                else:
-                    return str(row)
-            def beautify(obj):
-                if isinstance(obj, dict):
-                    lines = []
-                    for k, v in obj.items():
-                        cname = field_map.get(k, k)
-                        if isinstance(v, (dict, list)):
-                            # 嵌套的old/new
-                            if isinstance(v, list) and v and not isinstance(v[0], (dict, list)):
-                                # 普通字段list
-                                lines.append(f"{cname}: {beautify_row(v)}")
-                            else:
-                                lines.append(f"{cname}: {beautify(v)}")
-                        else:
-                            lines.append(f"{cname}: {v}")
-                    return '\n'.join(lines)
-                elif isinstance(obj, list):
-                    # 只显示一行
-                    return beautify_row(obj)
-                else:
-                    return str(obj)
-            # 显示详情
-            detail = f"操作类型: {op_type}\n"
-            detail += f"标签页: {tab_name}\n"
-            detail += f"时间: {timestamp}\n"
-            detail += "数据:\n"
-            import json
-            if isinstance(data, str):
-                try:
+            detail_window.geometry("1200x600")
+            
+            # 创建框架
+            main_frame = ttk.Frame(detail_window, padding=10)
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # 创建基本信息框架
+            info_frame = ttk.Frame(main_frame)
+            info_frame.pack(fill=tk.X, pady=(0, 10))
+            
+            # 显示基本信息
+            ttk.Label(info_frame, text=f"操作类型：{op_type}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
+            ttk.Label(info_frame, text=f"标签页：{tab_name}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
+            ttk.Label(info_frame, text=f"操作时间：{timestamp}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
+            
+            # 创建表格框架
+            tree_frame = ttk.Frame(main_frame)
+            tree_frame.pack(fill=tk.BOTH, expand=True)
+            
+            try:
+                if isinstance(data, str):
                     data = json.loads(data)
-                except:
-                    pass
-            detail += beautify(data)
-            text.insert(tk.END, detail)
-            text.config(state=tk.DISABLED)
+                
+                if not isinstance(data, (list, dict)):
+                    ttk.Label(tree_frame, text="（无数据）", font=('Microsoft YaHei', 10)).pack(pady=20)
+                    return
+                
+                # 新增：处理修改日志结构 {'old':..., 'new':...}
+                if isinstance(data, dict) and 'old' in data and 'new' in data:
+                    old_data = data['old']
+                    new_data = data['new']
+                    # 先显示"修改前"
+                    ttk.Label(main_frame, text="修改前：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10)
+                    tree_old = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
+                    for col in columns:
+                        tree_old.heading(col, text=col)
+                        tree_old.column(col, width=120, anchor='center')
+                    if isinstance(old_data, (list, tuple)):
+                        tree_old.insert('', 'end', values=[str(x) for x in old_data])
+                    elif isinstance(old_data, dict):
+                        tree_old.insert('', 'end', values=[str(old_data.get(field_map.get(col, col), "")) for col in columns])
+                    tree_old.pack(fill=tk.X, padx=10)
+                    # 再显示"修改后"
+                    ttk.Label(main_frame, text="修改后：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
+                    tree_new = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
+                    for col in columns:
+                        tree_new.heading(col, text=col)
+                        tree_new.column(col, width=120, anchor='center')
+                    if isinstance(new_data, (list, tuple)):
+                        tree_new.insert('', 'end', values=[str(x) for x in new_data])
+                    elif isinstance(new_data, dict):
+                        tree_new.insert('', 'end', values=[str(new_data.get(field_map.get(col, col), "")) for col in columns])
+                    tree_new.pack(fill=tk.X, padx=10)
+                    return
+                # 如果是字典，转换为列表
+                if isinstance(data, dict):
+                    data = [data]
+                
+                # 根据标签页类型设置列和字段映射
+                if tab_name == "入库管理":
+                    columns = ["物品名", "入库时间", "入库数量", "入库花费", "入库均价", "备注"]
+                    field_map = {
+                        "物品名": "item_name",
+                        "入库时间": "transaction_time",
+                        "入库数量": "quantity",
+                        "入库花费": "cost",
+                        "入库均价": "avg_cost",
+                        "备注": "note"
+                    }
+                elif tab_name == "出库管理":
+                    columns = ["物品名", "出库时间", "出库数量", "单价", "手续费", "保证金", "总金额", "备注"]
+                    field_map = {
+                        "物品名": "item_name",
+                        "出库时间": "transaction_time",
+                        "出库数量": "quantity",
+                        "单价": "unit_price",
+                        "手续费": "fee",
+                        "保证金": "deposit",
+                        "总金额": "total_amount",
+                        "备注": "note"
+                    }
+                elif tab_name == "交易监控":
+                    columns = ["物品名", "数量", "一口价", "目标买入价", "计划卖出价", "保本卖出价", "利润", "利润率", "出库策略"]
+                    field_map = {
+                        "物品名": "item_name",
+                        "数量": "quantity",
+                        "一口价": "market_price",
+                        "目标买入价": "target_price",
+                        "计划卖出价": "planned_price",
+                        "保本卖出价": "break_even_price",
+                        "利润": "profit",
+                        "利润率": "profit_rate",
+                        "出库策略": "strategy"
+                    }
+                else:
+                    # 动态获取所有键作为列
+                    if isinstance(data[0], dict):
+                        columns = list(data[0].keys())
+                        field_map = {col: col for col in columns}
+                    else:
+                        columns = [f"列{i+1}" for i in range(len(data[0]))]
+                        field_map = {col: i for i, col in enumerate(columns)}
+                
+                # 创建表格
+                tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
+                for col in columns:
+                    tree.heading(col, text=col)
+                    tree.column(col, width=120, anchor='center')
+                
+                # 插入数据
+                for row in data:
+                    if isinstance(row, dict):
+                        values = []
+                        for col in columns:
+                            key = field_map.get(col, col)
+                            val = row.get(key, "")
+                            try:
+                                if isinstance(val, (int, float)):
+                                    if "率" in col:
+                                        val = f"{val:.2f}%"
+                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                        val = f"{val:,.2f}"
+                                    else:
+                                        val = f"{int(val):,}"
+                                elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                    if "率" in col:
+                                        val = f"{float(val):.2f}%"
+                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                        val = f"{float(val):,.2f}"
+                                    else:
+                                        val = f"{int(float(val)):,}"
+                            except (ValueError, TypeError):
+                                pass
+                            values.append(str(val))
+                    else:
+                        values = []
+                        for i, val in enumerate(row):
+                            try:
+                                if isinstance(val, (int, float)):
+                                    if "率" in columns[i]:
+                                        val = f"{val:.2f}%"
+                                    elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                        val = f"{val:,.2f}"
+                                    else:
+                                        val = f"{int(val):,}"
+                                elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                    if "率" in columns[i]:
+                                        val = f"{float(val):.2f}%"
+                                    elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                        val = f"{float(val):,.2f}"
+                                    else:
+                                        val = f"{int(float(val)):,}"
+                            except (ValueError, TypeError):
+                                pass
+                            values.append(str(val))
+                    tree.insert('', 'end', values=values)
+                
+                # 添加滚动条
+                scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+                tree.configure(yscrollcommand=scrollbar.set)
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            except Exception as e:
+                print(f"显示日志详情失败: {e}")
+                ttk.Label(tree_frame, text=f"显示数据失败: {str(e)}", font=('Microsoft YaHei', 10)).pack(pady=20)
+            
+            # 添加关闭按钮
+            ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
         self.log_tree.bind('<Double-1>', show_log_detail)
+        # 新增：Ctrl+A全选
+        self.log_tree.bind('<Control-a>', lambda e: [self.log_tree.selection_set(self.log_tree.get_children()), 'break'])
+
+        # 批量删除按钮
+        ttk.Button(btn_frame, text="批量删除", command=self.delete_log_items).pack(side='left', padx=2)
 
     def _log_search(self):
         self.log_page = 1
@@ -1508,12 +1591,12 @@ class GameTradingSystemGUI:
             page_size=100
         )
         for log in logs:
-            is_reverted = bool(log.get('已回退')) or str(log.get('已回退')) in ('1', 'True', 'true', "b'\\x01'")
+            is_reverted = bool(log[5])
             self.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if is_reverted else ""),
-                log['标签页'],
-                log['操作时间'],
-                json.dumps(log.get('数据'), ensure_ascii=False)
+                log[0] + ("（已回退）" if is_reverted else ""),
+                log[1],
+                log[2],
+                json.dumps(log[3], ensure_ascii=False)
             ))
 
     def export_log_csv(self):
@@ -1581,7 +1664,7 @@ class GameTradingSystemGUI:
             log['操作类型'] + ("（已回退）" if reverted else ""),
             log['标签页'],
             log['操作时间'],
-            json.dumps(log.get('数据'), ensure_ascii=False)
+            json.dumps(log['数据'], ensure_ascii=False)
         ))
 
     def refresh_log_tab(self):
@@ -1597,12 +1680,12 @@ class GameTradingSystemGUI:
             page_size=100
         )
         for log in logs:
-            is_reverted = bool(log.get('已回退')) or str(log.get('已回退')) in ('1', 'True', 'true', "b'\\x01'")
+            is_reverted = bool(log[5])
             self.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if is_reverted else ""),
-                log['标签页'],
-                log['操作时间'],
-                json.dumps(log.get('数据'), ensure_ascii=False)
+                log[0] + ("（已回退）" if is_reverted else ""),
+                log[1],
+                log[2],
+                json.dumps(log[3], ensure_ascii=False)
             ))
 
     def undo_last_operation(self):
@@ -1616,7 +1699,7 @@ class GameTradingSystemGUI:
         last_log = logs[0]
         op_type = last_log['操作类型']
         tab = last_log['标签页']
-        data = last_log.get('数据')
+        data = last_log['数据']
         # 按类型回退数据
         if op_type == '添加' and tab == '入库管理':
             if self.stock_in_tree.get_children():
@@ -1732,7 +1815,7 @@ class GameTradingSystemGUI:
         last_log = self.redo_stack.pop()
         op_type = last_log['操作类型']
         tab = last_log['标签页']
-        data = last_log.get('数据')
+        data = last_log['数据']
         # 恢复操作
         if op_type == '添加' and tab == '入库管理' and data:
             for values in data if isinstance(data, list) else [data]:
@@ -1913,11 +1996,14 @@ class GameTradingSystemGUI:
             messagebox.showerror("错误", f"加载数据失败: {str(e)}")
     
     def refresh_all(self):
-        """刷新所有显示"""
+        """刷新所有标签页数据"""
         self.refresh_inventory()
         self.refresh_stock_in()
         self.refresh_stock_out()
         self.refresh_monitor()
+        self.log_tab.refresh_log_tab()
+        if hasattr(self, 'nvwa_price_tab'):
+            self.nvwa_price_tab.refresh_nvwa_price()
     
     def refresh_inventory(self):
         for item in self.inventory_tree.get_children():
@@ -2656,336 +2742,7 @@ class GameTradingSystemGUI:
     def on_tab_changed(self, event):
         tab = self.notebook.tab(self.notebook.select(), 'text')
         if tab == '操作日志':
-            self.refresh_log_tab()
-
-    def create_silver_price_tab(self):
-        # 创建银两价格标签页
-        self.silver_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.silver_tab, text="银两价格")
-
-        # 创建控制面板
-        control_frame = ttk.Frame(self.silver_tab)
-        control_frame.pack(fill=tk.X, padx=5, pady=5)
-
-        # 平台选择（只保留全部、7881、DD373）
-        ttk.Label(control_frame, text="平台:").pack(side=tk.LEFT, padx=5)
-        self.silver_platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=10)
-        self.silver_platform.set("全部")
-        self.silver_platform.pack(side=tk.LEFT, padx=5)
-        # 绑定平台切换事件，切换时自动刷新
-        self.silver_platform.bind("<<ComboboxSelected>>", lambda e: self.refresh_silver_price())
-
-        # 天数选择
-        ttk.Label(control_frame, text="天数:").pack(side=tk.LEFT, padx=5)
-        self.silver_days = ttk.Combobox(control_frame, values=["7", "15", "30", "90", "180", "365"], state="readonly", width=5)
-        self.silver_days.set("30")
-        self.silver_days.pack(side=tk.LEFT, padx=5)
-
-        # 刷新按钮
-        ttk.Button(control_frame, text="刷新", command=self.refresh_silver_price).pack(side=tk.LEFT, padx=5)
-        
-        # 自动刷新开关
-        self.auto_refresh_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(control_frame, text="自动刷新", variable=self.auto_refresh_var, 
-                        command=self.auto_refresh_silver_price).pack(side=tk.LEFT, padx=5)
-
-        # 重置缩放按钮
-        ttk.Button(control_frame, text="重置缩放", command=self.reset_silver_zoom).pack(side=tk.LEFT, padx=5)
-
-        # 导出按钮
-        ttk.Button(control_frame, text="导出图表", command=self.export_silver_chart).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="导出数据", command=self.export_silver_data).pack(side=tk.LEFT, padx=5)
-
-        # 信息展示区（美化：卡片式高亮UI）
-        info_frame = tk.Frame(self.silver_tab, bg='#f8f8f8')
-        info_frame.pack(fill='x', pady=(0, 10))
-        def make_info_label(parent, label_text, value_text, fg='#222', bg='#ffe066', highlight=False):
-            frame = tk.Frame(parent, bg=bg, bd=0, relief='flat')
-            frame.pack(side='left', padx=30, ipadx=8, ipady=2)
-            label = tk.Label(frame, text=label_text, font=('微软雅黑', 12, 'bold'), bg=bg, fg=fg)
-            label.pack(side='top', anchor='center')
-            val_label = tk.Label(
-                frame, text=value_text, font=('微软雅黑', 16, 'bold'),
-                bg=bg, fg=('#ff4444' if highlight else fg)
-            )
-            val_label.pack(side='top', anchor='center')
-            return val_label
-        self.current_price_label = make_info_label(info_frame, "当前价格:", "--", fg='#222', bg='#ffe066')
-        self.avg_price_label = make_info_label(info_frame, "7日均价:", "--", fg='#222', bg='#ffe066')
-        self.amplitude_label = make_info_label(info_frame, "振幅:", "--", fg='#ff4444', bg='#ffe066', highlight=True)
-
-        # 创建图表
-        self.silver_fig = Figure(figsize=(10, 6), dpi=100)
-        self.silver_ax1 = self.silver_fig.add_subplot(111)
-        self.silver_canvas = FigureCanvasTkAgg(self.silver_fig, master=self.silver_tab)
-        self.silver_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # 初始化交互状态
-        self._dragging = False
-        self._drag_start = None
-        self._orig_xlim = None
-        self._orig_ylim = None
-        self._last_refresh_time = 0
-        self._refresh_interval = 60  # 最小刷新间隔（秒）
-        self._max_points = 1000  # 最大显示点数
-        self._mpl_cursor = None
-
-        # 绑定事件
-        self.silver_canvas.mpl_connect('scroll_event', self._on_silver_scroll)
-        self.silver_canvas.mpl_connect('button_press_event', self._on_silver_press)
-        self.silver_canvas.mpl_connect('button_release_event', self._on_silver_release)
-        self.silver_canvas.mpl_connect('motion_notify_event', self._on_silver_motion)
-
-        # 初始化图表
-        self.refresh_silver_price()
-
-    def _on_silver_scroll(self, event):
-        if event.inaxes != self.silver_ax1:
-            return
-
-        # 获取当前视图范围
-        cur_xlim = self.silver_ax1.get_xlim()
-        cur_ylim = self.silver_ax1.get_ylim()
-
-        # 计算缩放中心
-        xdata = event.xdata
-        ydata = event.ydata
-
-        # 计算缩放因子
-        base_scale = 1.1
-        scale = base_scale if event.button == 'up' else 1/base_scale
-
-        # 计算新的范围
-        new_width = (cur_xlim[1] - cur_xlim[0]) / scale
-        new_height = (cur_ylim[1] - cur_ylim[0]) / scale
-
-        # 设置新的范围
-        self.silver_ax1.set_xlim([xdata - new_width*(xdata-cur_xlim[0])/(cur_xlim[1]-cur_xlim[0]),
-                                 xdata + new_width*(cur_xlim[1]-xdata)/(cur_xlim[1]-cur_xlim[0])])
-        self.silver_ax1.set_ylim([ydata - new_height*(ydata-cur_ylim[0])/(cur_ylim[1]-cur_ylim[0]),
-                                 ydata + new_height*(cur_ylim[1]-ydata)/(cur_ylim[1]-cur_ylim[0])])
-
-        # 使用draw_idle而不是draw
-        self.silver_canvas.draw_idle()
-
-    def _on_silver_press(self, event):
-        if event.inaxes != self.silver_ax1:
-            return
-        self._dragging = True
-        self._drag_start = (event.xdata, event.ydata)
-        self._orig_xlim = self.silver_ax1.get_xlim()
-        self._orig_ylim = self.silver_ax1.get_ylim()
-        
-        # 禁用悬停
-        if self._mpl_cursor:
-            self._mpl_cursor.enabled = False
-
-    def _on_silver_motion(self, event):
-        if not self._dragging or event.inaxes != self.silver_ax1:
-            return
-            
-        if event.xdata is None or event.ydata is None:
-            return
-
-        # 计算移动距离
-        dx = event.xdata - self._drag_start[0]
-        dy = event.ydata - self._drag_start[1]
-
-        # 更新坐标轴范围
-        self.silver_ax1.set_xlim(self._orig_xlim[0] - dx, self._orig_xlim[1] - dx)
-        self.silver_ax1.set_ylim(self._orig_ylim[0] - dy, self._orig_ylim[1] - dy)
-
-        # 使用draw_idle而不是draw
-        self.silver_canvas.draw_idle()
-
-    def _on_silver_release(self, event):
-        self._dragging = False
-        # 恢复悬停
-        if self._mpl_cursor:
-            self._mpl_cursor.enabled = True
-
-    def refresh_silver_price(self):
-        # 强制每次都刷新，不做任何间隔判断
-        threading.Thread(target=self._fetch_and_draw_silver_price, daemon=True).start()
-
-    def _fetch_and_draw_silver_price(self):
-        try:
-            days = int(self.silver_days.get())
-            platform = self.silver_platform.get()  # 每次都取最新的
-            data = self.fetch_silver_price_multi_series(days)
-            self.root.after(0, lambda: self._draw_silver_price(data, platform, days))
-        except Exception as e:
-            print(f"Error fetching silver price data: {e}")
-
-    def _draw_silver_price(self, data, platform, days):
-        try:
-            # 尝试发送每日价格通知
-            self.send_daily_price_notification()
-            
-            # 原有的绘图逻辑
-            self.silver_ax1.clear()
-            self.silver_ax1.set_title(f"银两价格走势 ({days}天)")
-            self.silver_ax1.set_xlabel("时间")
-            self.silver_ax1.set_ylabel("价格 (元/万两)")
-            self.silver_ax1.grid(True, linestyle='--', alpha=0.7)
-
-            allowed_platforms = ["7881", "DD373"]
-            filtered_series = {}
-            filtered_dates = {}
-
-            # 先重置信息栏
-            self.current_price_label.config(text="--", fg='#222')
-            self.avg_price_label.config(text="--", fg='#222')
-            self.amplitude_label.config(text="--", fg='#ff4444')
-
-            for series, series_data in data['series'].items():
-                if series not in allowed_platforms:
-                    continue
-                # 平台严格匹配，只有'全部'时才不过滤
-                if platform != "全部" and str(series) != str(platform):
-                    continue
-                time_list = data['dates'].get(series, [])
-                # 转换时间
-                if time_list and isinstance(time_list[0], str):
-                    try:
-                        time_list = [datetime.strptime(t, "%Y-%m-%d") for t in time_list]
-                    except Exception:
-                        import pandas as pd
-                        time_list = [pd.to_datetime(t) for t in time_list]
-                # 降采样
-                if len(series_data) > self._max_points:
-                    step = max(1, len(series_data) // self._max_points)
-                    series_data = series_data[::step]
-                    time_list = time_list[::step]
-                filtered_series[series] = series_data
-                filtered_dates[series] = time_list
-
-            colors = ['#1f77b4', '#ff7f0e']
-            info_updated = False
-            first_valid_series_data = None
-            for idx, (series, series_data) in enumerate(filtered_series.items()):
-                time_list = filtered_dates.get(series)
-                if not time_list or len(series_data) != len(time_list):
-                    continue
-                # 修正：将时间字符串转为datetime对象
-                if isinstance(time_list[0], str):
-                    try:
-                        time_list = [datetime.strptime(t, "%Y-%m-%d") for t in time_list]
-                    except Exception:
-                        import pandas as pd
-                        time_list = [pd.to_datetime(t) for t in time_list]
-                self.silver_ax1.plot(time_list, series_data,
-                                     label=series,
-                                     color=colors[idx % len(colors)],
-                                     linewidth=1.5,
-                                     alpha=0.8)
-                # 记录第一个有数据的平台
-                if first_valid_series_data is None and series_data:
-                    first_valid_series_data = (series, series_data)
-                # 优先显示当前选中平台
-                if not info_updated and (str(platform) == str(series) or (platform == '全部' and idx == 0)):
-                    if series_data:
-                        current_price = series_data[-1]
-                        self.current_price_label.config(text=f"{current_price:.4f}", fg='#222')
-                        last_7_days = series_data[-7:] if len(series_data) >= 7 else series_data
-                        avg_7_days = sum(last_7_days) / len(last_7_days)
-                        self.avg_price_label.config(text=f"{avg_7_days:.4f}", fg='#222')
-                        max_price = max(series_data)
-                        min_price = min(series_data)
-                        amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
-                        self.amplitude_label.config(
-                            text=f"{amplitude:.2f}%",
-                            fg='#ff4444' if amplitude > 5 else '#0056b3'
-                        )
-                        if amplitude > 5:
-                            self.amplitude_label.config(foreground='#ff4444')
-                        else:
-                            self.amplitude_label.config(foreground='#0056b3')
-                        info_updated = True
-            # 如果没有任何平台被 info_updated，强制用第一个有数据的平台刷新信息栏
-            if not info_updated and first_valid_series_data:
-                _, series_data = first_valid_series_data
-                current_price = series_data[-1]
-                self.current_price_label.config(text=f"{current_price:.4f}", fg='#222')
-                last_7_days = series_data[-7:] if len(series_data) >= 7 else series_data
-                avg_7_days = sum(last_7_days) / len(last_7_days)
-                self.avg_price_label.config(text=f"{avg_7_days:.4f}", fg='#222')
-                max_price = max(series_data)
-                min_price = min(series_data)
-                amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
-                self.amplitude_label.config(
-                    text=f"{amplitude:.2f}%",
-                    fg='#ff4444' if amplitude > 5 else '#0056b3'
-                )
-                if amplitude > 5:
-                    self.amplitude_label.config(foreground='#ff4444')
-                else:
-                    self.amplitude_label.config(foreground='#0056b3')
-            self.silver_ax1.legend(loc='upper left')
-            # 只显示最多10个x轴主刻度
-            import matplotlib.ticker as ticker
-            self.silver_ax1.xaxis.set_major_locator(ticker.MaxNLocator(10))
-            self.silver_ax1.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%Y-%m-%d'))
-            self.silver_fig.autofmt_xdate()
-            self.silver_canvas.draw_idle()
-            # 已取消悬停详情显示
-        except Exception as e:
-            print(f"Error drawing silver price chart: {e}")
-
-    def reset_silver_zoom(self):
-        self.silver_ax1.autoscale()
-        self.silver_canvas.draw_idle()
-
-    def auto_refresh_silver_price(self):
-        if self.auto_refresh_var.get():
-            self.refresh_silver_price()
-            self.root.after(60000, self.auto_refresh_silver_price)  # 每分钟刷新一次
-
-    def export_silver_chart(self):
-        import tkinter.filedialog as fd
-        file_path = fd.asksaveasfilename(defaultextension='.png', filetypes=[('PNG图片', '*.png')])
-        if file_path:
-            self.silver_fig.savefig(file_path, dpi=200)
-            messagebox.showinfo("成功", f"图表已导出到 {file_path}")
-
-    def export_silver_data(self):
-        import tkinter.filedialog as fd
-        file_path = fd.asksaveasfilename(defaultextension='.csv', filetypes=[('CSV文件', '*.csv')])
-        if not file_path:
-            return
-        data = getattr(self, '_last_silver_data', None)
-        if not data:
-            messagebox.showerror("错误", "暂无可导出的数据")
-            return
-        all_keys = list(data['series'].keys())
-        # 取最长的时间轴
-        max_len = max(len(data['dates'][k]) for k in all_keys if isinstance(data['dates'][k], list))
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write('时间,' + ','.join(all_keys) + '\n')
-            for i in range(max_len):
-                row = []
-                t = data['dates'][all_keys[0]][i] if i < len(data['dates'][all_keys[0]]) else ''
-                row.append(t)
-                for k in all_keys:
-                    v = data['series'][k][i] if i < len(data['series'][k]) else ''
-                    row.append(str(v))
-                f.write(','.join(row) + '\n')
-        messagebox.showinfo("成功", f"数据已导出到 {file_path}")
-
-    def gen_silver_stats(self, data):
-        """生成统计区文本"""
-        lines = []
-        for series, price_list in data['series'].items():
-            arr = np.array(price_list)
-            lines.append(f"{series}：均价{arr.mean():.4f}，最高{arr.max():.4f}，最低{arr.min():.4f}，波动率{(arr.std()/arr.mean()*100 if arr.mean() else 0):.2f}%")
-        return '\n'.join(lines)
-
-    def _save_operation_logs(self):
-        pass  # 废弃本地文件写入
-
-    def _load_operation_logs(self):
-        # 直接从数据库加载
-        return self.db_manager.get_operation_logs(page=1, page_size=200)
+            self.log_tab.refresh_log_tab()
 
     def _on_tab_changed_ocr(self, event=None):
         tab = self.notebook.tab(self.notebook.select(), 'text')
@@ -3321,26 +3078,28 @@ class GameTradingSystemGUI:
         messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images_monitor)}张图片，点击批量识别可统一导入。")
 
     def refresh_ocr_image_preview_monitor(self):
+        """刷新OCR图片预览区"""
         # 清空预览区
         for widget in self.ocr_image_preview_frame_monitor.winfo_children():
             widget.destroy()
-        # 显示所有待识别图片的缩略图
-        if not hasattr(self, '_pending_ocr_images_monitor'):
-            self._pending_ocr_images_monitor = []
-        for idx, img in enumerate(self._pending_ocr_images_monitor):
-            thumb = img.copy()
-            thumb.thumbnail((80, 80))
-            from PIL import ImageTk
-            photo = ImageTk.PhotoImage(thumb)
-            lbl = ttk.Label(self.ocr_image_preview_frame_monitor, image=photo)
-            lbl.image = photo
-            lbl.grid(row=0, column=idx*2, padx=4, pady=2)
-            btn = ttk.Button(self.ocr_image_preview_frame_monitor, text='删除', width=5, command=lambda i=idx: self.delete_ocr_image_monitor(i))
-            btn.grid(row=1, column=idx*2, padx=4, pady=2)
+        
+        # 显示所有待处理的图片
+        for i, image_data in enumerate(self._pending_ocr_images_monitor):
+            preview_frame = ttk.Frame(self.ocr_image_preview_frame_monitor)
+            preview_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
+            
+            # 显示图片名称
+            ttk.Label(preview_frame, text=f"图片 {i+1}").pack(side=tk.LEFT, padx=5)
+            
+            # 删除按钮
+            ttk.Button(preview_frame, text="删除", 
+                      command=lambda idx=i: self.delete_ocr_image_monitor(idx)).pack(side=tk.RIGHT, padx=5)
 
     def delete_ocr_image_monitor(self, idx):
-        del self._pending_ocr_images_monitor[idx]
-        self.refresh_ocr_image_preview_monitor()
+        """删除指定索引的OCR图片"""
+        if 0 <= idx < len(self._pending_ocr_images_monitor):
+            del self._pending_ocr_images_monitor[idx]
+            self.refresh_ocr_image_preview_monitor()
 
     def _on_silver_press(self, event):
         if event.button == 1:  # 左键
@@ -3364,32 +3123,76 @@ class GameTradingSystemGUI:
 
     def show_preview(self):
         """显示预览窗口"""
-        preview_window = tb.Toplevel(self.root)
+        preview_window = tk.Toplevel(self.root)
         preview_window.title("预览")
         preview_window.geometry("800x600")
         
-        # 创建预览内容
-        preview_frame = ttk.Frame(preview_window, padding="10")
-        preview_frame.pack(fill=BOTH, expand=True)
+        text_widget = tk.Text(preview_window)
+        text_widget.pack(fill='both', expand=True)
         
-        # 添加预览内容
-        ttk.Label(preview_frame, text="预览内容").pack()
-        
-        # 关闭按钮
-        ttk.Button(preview_frame, text="关闭", command=preview_window.destroy).pack(pady=10)
+        # 显示预览内容
+        text_widget.insert('1.0', "预览内容将在这里显示")
 
     def open_data_migration(self):
         """打开数据迁移窗口"""
-        migration_window = tb.Toplevel(self.root)
+        migration_window = tk.Toplevel(self.root)
         migration_window.title("数据迁移")
-        migration_window.geometry("600x400")
+        migration_window.geometry("400x300")
         
-        # 创建主框架
-        main_frame = ttk.Frame(migration_window, padding="10")
-        main_frame.pack(fill=BOTH, expand=True)
+        main_frame = ttk.Frame(migration_window, padding=20)
+        main_frame.pack(fill='both', expand=True)
         
         # 添加说明标签
+        ttk.Label(main_frame, text="数据迁移功能正在开发中，敬请期待。").pack(pady=10)
+
+    def _load_operation_logs(self):
+        """加载操作日志"""
+        try:
+            cursor = self.db_manager.get_connection().cursor()
+            cursor.execute("SELECT * FROM operation_logs ORDER BY operation_time DESC")
+            logs = cursor.fetchall()
+            cursor.close()
+            return logs
+        except Exception as e:
+            print(f"加载操作日志失败: {e}")
+            return []
+
+    def delete_log_items(self):
+        selected_items = self.log_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("提示", "请先选择要删除的日志记录！")
+            return
+        if not messagebox.askyesno("确认", f"确定要删除选中的 {len(selected_items)} 条日志记录吗？此操作不可恢复。"):
+            return
+        deleted_count = 0
+        for item in selected_items:
+            values = self.log_tree.item(item)['values']
+            # 通过操作类型、标签页、操作时间唯一定位日志
+            op_type = values[0].replace("（已回退）", "")
+            tab = values[1]
+            op_time = values[2]
+            # 删除数据库中的日志
+            try:
+                conn = self.db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM operation_logs WHERE operation_type=%s AND tab_name=%s AND operation_time=%s",
+                    (op_type, tab, op_time)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                print(f"删除数据库日志失败: {e}")
+            # 删除界面上的
+            self.log_tree.delete(item)
+            deleted_count += 1
+        messagebox.showinfo("成功", f"已删除 {deleted_count} 条日志记录！")
+        self.refresh_log_tab()
+
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 现代天蓝色主题
+    root.title("游戏交易管理系统")
+    root.geometry("1280x800")
     app = GameTradingSystemGUI(root)
     root.mainloop() 

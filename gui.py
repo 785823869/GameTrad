@@ -385,6 +385,8 @@ class GameTradingSystemGUI:
         self.stock_in_tree.configure(yscrollcommand=scrollbar.set)
         self.stock_in_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
+        # 合计高亮
+        self.stock_in_tree.tag_configure('total', background='#ffe066', font=('微软雅黑', 11, 'bold'))
         
         # 右侧操作面板
         right_panel = ttk.Frame(stock_in_frame, width=260)
@@ -978,6 +980,8 @@ class GameTradingSystemGUI:
         self.stock_out_tree.configure(yscrollcommand=scrollbar.set)
         self.stock_out_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
+        # 合计高亮
+        self.stock_out_tree.tag_configure('total', background='#ffe066', font=('微软雅黑', 11, 'bold'))
         # 右侧操作面板
         right_panel = ttk.Frame(stock_out_frame, width=260)
         right_panel.pack(side='right', fill='y', padx=8, pady=5)
@@ -1230,6 +1234,7 @@ class GameTradingSystemGUI:
         for col in columns:
             self.monitor_tree.heading(col, text=col, anchor='center')
             self.monitor_tree.column(col, width=120, anchor='center')
+        # 删除合计高亮配置（监控页不需要）
         # 添加滚动条
         scrollbar = ttk.Scrollbar(monitor_frame, orient="vertical", command=self.monitor_tree.yview)
         self.monitor_tree.configure(yscrollcommand=scrollbar.set)
@@ -1447,7 +1452,7 @@ class GameTradingSystemGUI:
                     tree_new.pack(fill=tk.X, padx=10)
                     return
                 # 如果是字典，转换为列表
-            if isinstance(data, dict):
+                if isinstance(data, dict):
                     data = [data]
                 
                 # 根据标签页类型设置列和字段映射
@@ -1514,14 +1519,14 @@ class GameTradingSystemGUI:
                                         val = f"{val:.2f}%"
                                     elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
                                         val = f"{val:,.2f}"
-                    else:
+                                    else:
                                         val = f"{int(val):,}"
                                 elif isinstance(val, str) and val.replace(".", "").isdigit():
                                     if "率" in col:
                                         val = f"{float(val):.2f}%"
                                     elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
                                         val = f"{float(val):,.2f}"
-            else:
+                                    else:
                                         val = f"{int(float(val)):,}"
                             except (ValueError, TypeError):
                                 pass
@@ -1547,6 +1552,7 @@ class GameTradingSystemGUI:
                             except (ValueError, TypeError):
                                 pass
                             values.append(str(val))
+                        
                     tree.insert('', 'end', values=values)
                 
                 # 添加滚动条
@@ -1625,7 +1631,7 @@ class GameTradingSystemGUI:
                 title='导出报表'
             )
             if not file_path:
-            return
+                return
 
             ext = os.path.splitext(file_path)[1].lower()
             if ext == '.xlsx':
@@ -2227,7 +2233,7 @@ class GameTradingSystemGUI:
         if filter_text and filtered:
             self.stock_in_tree.insert('', 'end', values=(
                 '合计', '', total[0], total[1], total[2]//len(filtered), ''
-            ))
+            ), tags=('total',))
 
     def refresh_stock_out(self):
         for item in self.stock_out_tree.get_children():
@@ -2263,7 +2269,7 @@ class GameTradingSystemGUI:
             total_amount = sum(int(row[5]) for row in filtered)
             self.stock_out_tree.insert('', 'end', values=(
                 '合计', '', total_qty, '', total_fee, total_amount, ''
-            ))
+            ), tags=('total',))
 
     def refresh_monitor(self):
         threading.Thread(target=self._fetch_and_draw_monitor, daemon=True).start()
@@ -2335,6 +2341,7 @@ class GameTradingSystemGUI:
             self.monitor_tree.delete(item)
         for row in table_data:
             self.monitor_tree.insert('', 'end', values=row)
+        # 不插入合计行
 
     def add_stock_in(self):
         """添加入库记录"""
@@ -3115,7 +3122,7 @@ class GameTradingSystemGUI:
     def delete_ocr_image_monitor(self, idx):
         """删除指定索引的OCR图片"""
         if 0 <= idx < len(self._pending_ocr_images_monitor):
-        del self._pending_ocr_images_monitor[idx]
+            del self._pending_ocr_images_monitor[idx]
         self.refresh_ocr_image_preview_monitor()
 
     def _on_silver_press(self, event):

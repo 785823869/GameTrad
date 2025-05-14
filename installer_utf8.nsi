@@ -1,10 +1,10 @@
-﻿; UTF-8 缂栫爜澹版槑
+﻿; UTF-8 编码声明
 Unicode true
 
-; 瀹夎绋嬪簭鍒濆瀹氫箟甯搁噺
-!define PRODUCT_NAME "娓告垙浜ゆ槗绯荤粺"
+; 安装程序初始定义常量
+!define PRODUCT_NAME "游戏交易系统"
 !define PRODUCT_VERSION "1.0"
-!define PRODUCT_PUBLISHER "涓夊彧灏忕尓"
+!define PRODUCT_PUBLISHER "三只小猪"
 !define PRODUCT_WEB_SITE "http://www.example.com"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\GameTrad.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -12,44 +12,44 @@ Unicode true
 
 SetCompressor lzma
 
-; MUI 鐜颁唬鐣岄潰瀹氫箟
+; MUI 现代界面定义
 !include "MUI2.nsh"
 
-; MUI 棰勫畾涔?
+; MUI 预定义
 !define MUI_ABORTWARNING
 !define MUI_ICON "data\icon.ico"
 !define MUI_UNICON "data\icon.ico"
 
-; 娆㈣繋椤甸潰
+; 欢迎页面
 !insertmacro MUI_PAGE_WELCOME
-; 璁稿彲鍗忚椤甸潰
+; 许可协议页面
 !insertmacro MUI_PAGE_LICENSE "LICENSE"
-; 瀹夎鐩綍閫夋嫨椤甸潰
+; 安装目录选择页面
 !insertmacro MUI_PAGE_DIRECTORY
-; 瀹夎杩囩▼椤甸潰
+; 安装过程页面
 !insertmacro MUI_PAGE_INSTFILES
-; 瀹夎瀹屾垚椤甸潰
+; 安装完成页面
 !define MUI_FINISHPAGE_RUN "$INSTDIR\GameTrad.exe"
 !insertmacro MUI_PAGE_FINISH
 
-; 鍗歌浇绋嬪簭椤甸潰
+; 卸载程序页面
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-; 瀹夎鐣岄潰鍖呭惈鐨勮瑷€璁剧疆
+; 安装界面包含的语言设置
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
-; 瀹夎绋嬪簭鐗堟湰鍙?
+; 安装程序版本号
 VIProductVersion "1.0.0.0"
-VIAddVersionKey /LANG=2052 "ProductName" "娓告垙浜ゆ槗绯荤粺"
-VIAddVersionKey /LANG=2052 "Comments" "娓告垙浜ゆ槗绠＄悊绯荤粺"
-VIAddVersionKey /LANG=2052 "CompanyName" "涓夊彧灏忕尓"
+VIAddVersionKey /LANG=2052 "ProductName" "游戏交易系统"
+VIAddVersionKey /LANG=2052 "Comments" "游戏交易管理系统"
+VIAddVersionKey /LANG=2052 "CompanyName" "三只小猪"
 VIAddVersionKey /LANG=2052 "LegalTrademarks" ""
 VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2024"
-VIAddVersionKey /LANG=2052 "FileDescription" "娓告垙浜ゆ槗绯荤粺瀹夎绋嬪簭"
+VIAddVersionKey /LANG=2052 "FileDescription" "游戏交易系统安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "1.0.0.0"
 
-; 瀹夎绋嬪簭鍚嶇О
+; 安装程序名称
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "GameTrad_Setup.exe"
 InstallDir "$PROGRAMFILES\GameTrad"
@@ -64,12 +64,12 @@ Section "MainSection" SEC01
   ; 复制主程序文件
   File "dist\GameTrad.exe"
   
-  ; 鍒涘缓寮€濮嬭彍鍗曞揩鎹锋柟寮?
-  CreateDirectory "$SMPROGRAMS\GameTrad"
-  CreateShortCut "$SMPROGRAMS\GameTrad\GameTrad.lnk" "$INSTDIR\GameTrad.exe"
-  CreateShortCut "$DESKTOP\GameTrad.lnk" "$INSTDIR\GameTrad.exe"
+  ; 创建开始菜单快捷方式
+  CreateDirectory "$SMPROGRAMS\游戏交易系统"
+  CreateShortCut "$SMPROGRAMS\游戏交易系统\游戏交易系统.lnk" "$INSTDIR\GameTrad.exe"
+  CreateShortCut "$DESKTOP\游戏交易系统.lnk" "$INSTDIR\GameTrad.exe"
   
-  ; 鍐欏叆鍗歌浇淇℃伅
+  ; 写入卸载信息
   WriteUninstaller "$INSTDIR\uninst.exe"
   WriteRegStr HKLM "${PRODUCT_DIR_REGKEY}" "" "$INSTDIR\GameTrad.exe"
   WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DisplayName" "$(^Name)"
@@ -81,19 +81,19 @@ Section "MainSection" SEC01
 SectionEnd
 
 Section Uninstall
-  ; 鍒犻櫎绋嬪簭鏂囦欢
+  ; 删除程序文件
   Delete "$INSTDIR\GameTrad.exe"
   Delete "$INSTDIR\uninst.exe"
   
-  ; 鍒犻櫎蹇嵎鏂瑰紡
-  Delete "$SMPROGRAMS\GameTrad\GameTrad.lnk"
-  Delete "$DESKTOP\GameTrad.lnk"
-  RMDir "$SMPROGRAMS\GameTrad"
+  ; 删除快捷方式
+  Delete "$SMPROGRAMS\游戏交易系统\游戏交易系统.lnk"
+  Delete "$DESKTOP\游戏交易系统.lnk"
+  RMDir "$SMPROGRAMS\游戏交易系统"
   
-  ; 鍒犻櫎娉ㄥ唽琛ㄩ」
+  ; 删除注册表项
   DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
   DeleteRegKey HKLM "${PRODUCT_DIR_REGKEY}"
   
-  ; 鍒犻櫎瀹夎鐩綍
+  ; 删除安装目录
   RMDir /r "$INSTDIR"
 SectionEnd 

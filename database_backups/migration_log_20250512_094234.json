@@ -1,0 +1,15 @@
+{
+  "migration_time": "2025-05-12 09:42:34",
+  "tables": [
+    "stock_in",
+    "stock_out",
+    "trade_monitor",
+    "inventory",
+    "operation_logs",
+    "item_dict",
+    "silver_monitor"
+  ],
+  "source_db": "game_trading",
+  "target_db": "OcrTrade",
+  "target_host": "192.168.3.22"
+}

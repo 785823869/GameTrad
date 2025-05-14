@@ -140,7 +140,9 @@ class GameTradingSystemGUI:
                 self.server_chan_key.set(config.get('key', ''))
                 self.server_chan_enabled.set(config.get('enabled', '0'))
                 self.price_threshold.set(str(config.get('price_threshold', 1000000)))
+                self.last_push_time = config.get('last_push_time', '')
         except FileNotFoundError:
+            self.last_push_time = ''
             pass
             
     def save_server_chan_config(self):
@@ -148,11 +150,71 @@ class GameTradingSystemGUI:
         config = {
             'key': self.server_chan_key.get(),
             'enabled': self.server_chan_enabled.get(),
-            'price_threshold': float(self.price_threshold.get())
+            'price_threshold': float(self.price_threshold.get()),
+            'last_push_time': self.last_push_time
         }
         with open('server_chan_config.json', 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
             
+    def should_send_daily_notification(self):
+        """检查是否应该发送每日通知"""
+        if not self.last_push_time:
+            return True
+        
+        last_push = datetime.strptime(self.last_push_time, '%Y-%m-%d %H:%M:%S')
+        now = datetime.now()
+        
+        # 如果是新的一天，则应该发送通知
+        return last_push.date() < now.date()
+
+    def send_daily_price_notification(self):
+        """发送每日价格通知"""
+        if not self.should_send_daily_notification():
+            return
+
+        try:
+            # 获取银两价格数据
+            silver_data = self.fetch_silver_price_multi_series(1)  # 只获取1天的数据
+            silver_price = None
+            if silver_data and 'series' in silver_data:
+                for platform, prices in silver_data['series'].items():
+                    if prices and len(prices) > 0:
+                        silver_price = prices[-1]
+                        break
+
+            # 获取女娲石价格数据
+            nvwa_price = None
+            try:
+                url = f"https://www.zxsjinfo.com/api/nvwa-price?days=1&server=%E7%91%B6%E5%85%89%E6%B2%81%E9%9B%AA"
+                resp = requests.get(url, timeout=20, verify=False)
+                resp.raise_for_status()
+                nvwa_data = resp.json()
+                if nvwa_data and 'series' in nvwa_data:
+                    for platform, prices in nvwa_data['series'].items():
+                        if prices and len(prices) > 0:
+                            nvwa_price = prices[-1]
+                            break
+            except Exception as e:
+                print(f"获取女娲石价格失败: {e}")
+
+            if silver_price is not None or nvwa_price is not None:
+                title = "每日价格更新"
+                content = "当前价格信息：\n"
+                if silver_price is not None:
+                    content += f"银两：{silver_price:.4f} 元/万两\n"
+                if nvwa_price is not None:
+                    content += f"女娲石：{nvwa_price:.4f} 元/颗\n"
+
+                # 发送通知
+                self.send_server_chan_notification(title, content)
+                
+                # 更新最后推送时间
+                self.last_push_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                self.save_server_chan_config()
+
+        except Exception as e:
+            print(f"发送每日价格通知失败: {e}")
+
     def send_server_chan_notification(self, title, content):
         """发送Server酱通知"""
         if self.server_chan_enabled.get() != "1":
@@ -243,7 +305,6 @@ class GameTradingSystemGUI:
         self.create_stock_in_tab()
         self.create_stock_out_tab()
         self.create_trade_monitor_tab()
-        self.create_analysis_tab()
         self.create_log_tab()
         self.create_silver_price_tab()
         self.nvwa_price_tab = NvwaPriceTab(self.notebook)  # 新增女娲石价格标签页
@@ -1457,23 +1518,49 @@ class GameTradingSystemGUI:
 
     def export_log_csv(self):
         import pandas as pd
-        type_f = self.filter_type.get()
-        tab_f = self.filter_tab.get()
-        rev_f = self.filter_reverted.get()
-        keyword = self.log_search_var.get().strip() or None
-        logs = self.db_manager.get_operation_logs(
-            tab_name=None if tab_f == "全部" else tab_f,
-            op_type=None if type_f == "全部" else type_f,
-            keyword=keyword,
-            reverted=None if rev_f == "全部" else (rev_f == "是"),
-            page=1, page_size=10000
-        )
-        if not logs:
-            messagebox.showinfo("提示", "没有可导出的日志数据")
-            return
-        df = pd.DataFrame(logs)
-        df.to_csv("operation_logs_export.csv", index=False, encoding="utf-8-sig")
-        messagebox.showinfo("导出成功", "日志已导出到 operation_logs_export.csv")
+        import os
+        from tkinter import filedialog
+        try:
+            # 收集所有表格数据
+            inventory_data = [self.inventory_tree.item(item)['values'] for item in self.inventory_tree.get_children()]
+            stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
+            stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
+            monitor_data = [self.monitor_tree.item(item)['values'] for item in self.monitor_tree.get_children()]
+
+            # 定义表头
+            inventory_columns = ['物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值']
+            stock_in_columns = ['物品', '当前时间', '入库数量', '入库花费', '入库均价', '备注']
+            stock_out_columns = ['物品', '当前时间', '出库数量', '单价', '手续费', '出库总金额', '备注']
+            monitor_columns = ['物品', '当前时间', '数量', '一口价', '目标买入价', '计划卖出价', '保本卖出价', '利润', '利润率', '出库策略']
+
+            # 让用户选择文件名和格式
+            file_path = filedialog.asksaveasfilename(
+                defaultextension='.xlsx',
+                filetypes=[('Excel文件', '*.xlsx'), ('CSV文件', '*.csv')],
+                title='导出报表'
+            )
+            if not file_path:
+                return
+
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.xlsx':
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    pd.DataFrame(inventory_data, columns=inventory_columns).to_excel(writer, sheet_name='库存', index=False)
+                    pd.DataFrame(stock_in_data, columns=stock_in_columns).to_excel(writer, sheet_name='入库', index=False)
+                    pd.DataFrame(stock_out_data, columns=stock_out_columns).to_excel(writer, sheet_name='出库', index=False)
+                    pd.DataFrame(monitor_data, columns=monitor_columns).to_excel(writer, sheet_name='监控', index=False)
+                messagebox.showinfo('成功', f'所有报表已导出到 {file_path}')
+            elif ext == '.csv':
+                base = os.path.splitext(file_path)[0]
+                pd.DataFrame(inventory_data, columns=inventory_columns).to_csv(base + '_库存.csv', index=False, encoding='utf-8-sig')
+                pd.DataFrame(stock_in_data, columns=stock_in_columns).to_csv(base + '_入库.csv', index=False, encoding='utf-8-sig')
+                pd.DataFrame(stock_out_data, columns=stock_out_columns).to_csv(base + '_出库.csv', index=False, encoding='utf-8-sig')
+                pd.DataFrame(monitor_data, columns=monitor_columns).to_csv(base + '_监控.csv', index=False, encoding='utf-8-sig')
+                messagebox.showinfo('成功', f'所有报表已导出为多个csv文件（以{base}_开头）')
+            else:
+                messagebox.showerror('错误', '不支持的文件格式')
+        except Exception as e:
+            messagebox.showerror('错误', f'导出报表失败: {str(e)}')
 
     def log_operation(self, op_type, tab_name, data=None, reverted=False):
         """记录操作日志，data为被操作的数据内容，reverted为是否已回退"""
@@ -2732,6 +2819,10 @@ class GameTradingSystemGUI:
 
     def _draw_silver_price(self, data, platform, days):
         try:
+            # 尝试发送每日价格通知
+            self.send_daily_price_notification()
+            
+            # 原有的绘图逻辑
             self.silver_ax1.clear()
             self.silver_ax1.set_title(f"银两价格走势 ({days}天)")
             self.silver_ax1.set_xlabel("时间")

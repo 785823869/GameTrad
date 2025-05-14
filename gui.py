@@ -37,6 +37,7 @@ from nvwa_price_tab import NvwaPriceTab
 from silver_price_tab import SilverPriceTab
 from log_tab import LogTab
 from trade_monitor_tab import TradeMonitorTab
+from inventory_tab import InventoryTab
 
 def safe_float(val, default=0.0):
     try:
@@ -289,13 +290,13 @@ class GameTradingSystemGUI:
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
         
         # 创建各个功能页面
-        self.create_inventory_tab()
+        self.inventory_tab = InventoryTab(self.notebook, self)  # 新增：库存管理Tab
         self.create_stock_in_tab()
         self.create_stock_out_tab()
-        self.trade_monitor_tab = TradeMonitorTab(self.notebook, self)  # 新增：交易监控Tab
-        self.silver_price_tab = SilverPriceTab(self.notebook)  # 使用新的 SilverPriceTab 类
-        self.nvwa_price_tab = NvwaPriceTab(self.notebook)  # 新增女娲石价格标签页
-        self.log_tab = LogTab(self.notebook, self)  # 新增操作日志标签页
+        self.trade_monitor_tab = TradeMonitorTab(self.notebook, self)
+        self.silver_price_tab = SilverPriceTab(self.notebook)
+        self.nvwa_price_tab = NvwaPriceTab(self.notebook)
+        self.log_tab = LogTab(self.notebook, self)
         
         # 加载保存的数据
         self.load_saved_data()
@@ -318,58 +319,6 @@ class GameTradingSystemGUI:
         if tab == '操作日志':
             self.log_tab.refresh_log_tab()
 
-    def create_inventory_tab(self):
-        """创建库存管理标签页"""
-        inventory_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(inventory_frame, text="库存管理")
-        
-        # 库存表格
-        columns = ('物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值')
-        self.inventory_tree = ttk.Treeview(inventory_frame, columns=columns, show='headings', height=18)
-        
-        for col in columns:
-            self.inventory_tree.heading(col, text=col, anchor='center')
-            self.inventory_tree.column(col, width=120, anchor='center')
-        
-        scrollbar = ttk.Scrollbar(inventory_frame, orient="vertical", command=self.inventory_tree.yview)
-        self.inventory_tree.configure(yscrollcommand=scrollbar.set)
-        
-        self.inventory_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-        scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        
-        # 右侧操作面板
-        right_panel = ttk.Frame(inventory_frame, width=260)
-        right_panel.pack(side='right', fill='y', padx=8, pady=5)
-        right_panel.pack_propagate(False)
-        
-        ttk.Button(right_panel, text="刷新库存", command=self.refresh_inventory).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="导出库存", command=self.export_inventory).pack(fill='x', pady=(0, 10), ipady=4)
-        
-        self.inventory_menu = tb.Menu(self.inventory_tree, tearoff=0)
-        self.inventory_menu.add_command(label="删除", command=self.delete_inventory_item)
-        self.inventory_tree.bind("<Button-3>", self.show_inventory_menu)
-    
-    def show_inventory_menu(self, event):
-        """显示库存右键菜单"""
-        item = self.inventory_tree.identify_row(event.y)
-        if item:
-            # 多选支持：如果当前行未被选中，则只选中该行，否则保持多选
-            if item not in self.inventory_tree.selection():
-                self.inventory_tree.selection_set(item)
-            self.inventory_menu.post(event.x_root, event.y_root)
-
-    def delete_inventory_item(self):
-        """批量删除库存记录"""
-        selected_items = self.inventory_tree.selection()
-        if not selected_items:
-            return
-        names = [self.inventory_tree.item(item)['values'][0] for item in selected_items]
-        msg = "确定要删除以下库存物品吗？\n" + "，".join(str(n) for n in names)
-        if messagebox.askyesno("确认", msg):
-            for item in selected_items:
-                self.inventory_tree.delete(item)
-            self.refresh_inventory()
-    
     def create_stock_in_tab(self):
         """创建入库管理标签页"""
         stock_in_frame = ttk.Frame(self.notebook, padding=10)
@@ -421,7 +370,7 @@ class GameTradingSystemGUI:
         ttk.Button(add_frame, text="添加入库", command=self.add_stock_in).grid(row=4, column=0, columnspan=2, pady=10, sticky='ew')
         
         ttk.Button(right_panel, text="刷新入库记录", command=self.refresh_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="上传图片自动入库", command=self.ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
+        ttk.Button(right_panel, text="上传图片自动入库", command=self.batch_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         self.ocr_image_preview_frame = ttk.Frame(right_panel)
         self.ocr_image_preview_frame.pack(fill='x', pady=5)
@@ -651,321 +600,11 @@ class GameTradingSystemGUI:
             return
         names = [self.stock_in_tree.item(item)['values'][0] for item in selected_items]
         msg = "确定要删除以下入库记录吗？\n" + "，".join(str(n) for n in names)
-        deleted_data = []
         if messagebox.askyesno("确认", msg):
             for item in selected_items:
-                values = self.stock_in_tree.item(item)['values']
-                self.db_manager.delete_stock_in(values[0], values[1])
-                deleted_data.append(values)
+                self.stock_in_tree.delete(item)
             self.refresh_stock_in()
-            self.log_operation('删除', '入库管理', deleted_data)
     
-    def ocr_import_stock_in(self):
-        """通过UMI-OCR图片识别自动批量入库（新版接口，支持游戏截图格式，带预览确认）"""
-        file_paths = fd.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
-            return
-        try:
-            from PIL import Image
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images.append(img)
-                count += 1
-            self.refresh_ocr_image_preview()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
-        except Exception as e:
-            messagebox.showerror("错误", f"图片加载失败: {e}")
-
-    def show_ocr_preview(self, preview_data, columns=None, field_map=None):
-        """显示OCR预览窗口，支持自定义表头和字段映射"""
-        if columns is None:
-            columns = ('物品', '数量', '单价', '手续费', '总金额', '备注')
-        if field_map is None:
-            field_map = ['item_name', 'quantity', 'price', 'fee', 'total_amount', 'note']
-        preview_window = tb.Toplevel(self.root)
-        preview_window.title("OCR预览")
-        preview_window.geometry("900x600")
-
-        # 主Frame
-        main_frame = ttk.Frame(preview_window)
-        main_frame.pack(fill='both', expand=True)
-
-        # 表格区
-        table_frame = ttk.Frame(main_frame)
-        table_frame.pack(side='top', fill='both', expand=True, padx=10, pady=(10, 0))
-
-        preview_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=20)
-        for col in columns:
-            preview_tree.heading(col, text=col, anchor='center')
-            preview_tree.column(col, width=120, anchor='center')
-
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=preview_tree.yview)
-        preview_tree.configure(yscrollcommand=scrollbar.set)
-        preview_tree.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-
-        # 添加数据
-        for data in preview_data:
-            values = tuple(data.get(field, '') for field in field_map)
-            preview_tree.insert('', 'end', values=values)
-
-        # 按钮区
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side='bottom', fill='x', pady=16)
-
-        for text, cmd in [
-            ("全选", lambda: self._select_all_items(preview_tree)),
-            ("取消全选", lambda: self._deselect_all_items(preview_tree)),
-            ("确认导入", lambda: self._confirm_import(preview_tree, preview_data, preview_window)),
-            ("取消", preview_window.destroy)
-        ]:
-            ttk.Button(button_frame, text=text, command=cmd).pack(side='left', expand=True, padx=20, ipadx=10, ipady=4)
-
-        # 添加右键菜单
-        preview_menu = tb.Menu(preview_tree, tearoff=0)
-        preview_tree.bind("<Button-3>", lambda e: self._show_preview_menu(e, preview_tree, preview_menu))
-        # 双击编辑
-        preview_tree.bind("<Double-1>", lambda e: self._edit_preview_item(e, preview_tree))
-    
-    def _select_all_items(self, tree):
-        """全选预览项目"""
-        for item in tree.get_children():
-            tree.selection_add(item)
-    
-    def _deselect_all_items(self, tree):
-        """取消全选预览项目"""
-        for item in tree.get_children():
-            tree.selection_remove(item)
-    
-    def _show_preview_menu(self, event, tree, menu):
-        """显示预览右键菜单"""
-        item = tree.identify_row(event.y)
-        if item:
-            tree.selection_set(item)
-            menu.delete(0, 'end')
-            menu.add_command(label="编辑", command=lambda: self._edit_preview_item(None, tree))
-            menu.add_command(label="删除", command=lambda: self._delete_preview_item(tree))
-            menu.post(event.x_root, event.y_root)
-    
-    def _edit_preview_item(self, event, tree):
-        """编辑预览项目"""
-        selected = tree.selection()
-        if not selected:
-            return
-        
-        item = selected[0]
-        values = tree.item(item)['values']
-        
-        # 创建编辑窗口
-        edit_window = tb.Toplevel(self.root)
-        edit_window.title("编辑项目")
-        edit_window.geometry("400x300")
-        
-        # 创建输入框
-        ttk.Label(edit_window, text="物品:").grid(row=0, column=0, padx=5, pady=5)
-        item_name = ttk.Entry(edit_window)
-        item_name.insert(0, values[0])
-        item_name.grid(row=0, column=1, padx=5, pady=5)
-        
-        ttk.Label(edit_window, text="数量:").grid(row=1, column=0, padx=5, pady=5)
-        quantity = ttk.Entry(edit_window)
-        quantity.insert(0, values[1])
-        quantity.grid(row=1, column=1, padx=5, pady=5)
-        
-        ttk.Label(edit_window, text="单价:").grid(row=2, column=0, padx=5, pady=5)
-        price = ttk.Entry(edit_window)
-        price.insert(0, values[2])
-        price.grid(row=2, column=1, padx=5, pady=5)
-        
-        ttk.Label(edit_window, text="手续费:").grid(row=3, column=0, padx=5, pady=5)
-        fee = ttk.Entry(edit_window)
-        fee.insert(0, values[3])
-        fee.grid(row=3, column=1, padx=5, pady=5)
-        
-        ttk.Label(edit_window, text="总金额:").grid(row=4, column=0, padx=5, pady=5)
-        total_amount = ttk.Entry(edit_window)
-        total_amount.insert(0, values[4])
-        total_amount.grid(row=4, column=1, padx=5, pady=5)
-        
-        ttk.Label(edit_window, text="备注:").grid(row=5, column=0, padx=5, pady=5)
-        note = ttk.Entry(edit_window)
-        note.insert(0, values[5])
-        note.grid(row=5, column=1, padx=5, pady=5)
-        
-        def save_edit():
-            try:
-                new_values = (
-                    item_name.get(),
-                    int(quantity.get()),
-                    int(price.get()),
-                    int(fee.get()),
-                    int(total_amount.get()),
-                    note.get() if note.get() is not None else ''
-                )
-                tree.item(item, values=new_values)
-                edit_window.destroy()
-            except ValueError:
-                messagebox.showerror("错误", "请输入有效的数字")
-        
-        ttk.Button(edit_window, text="保存", command=save_edit).grid(row=6, column=0, columnspan=2, pady=10)
-    
-    def _delete_preview_item(self, tree):
-        """删除预览项目"""
-        selected = tree.selection()
-        if not selected:
-            return
-        if messagebox.askyesno("确认", "确定要删除选中的项目吗？"):
-            for item in selected:
-                tree.delete(item)
-    
-    def _confirm_import(self, tree, preview_data, preview_window):
-        """自动识别数据类型并导入到正确的标签页，支持中英文字段名兼容，修复出库和监控类型判定及字段补全问题"""
-        in_count = 0
-        out_count = 0
-        monitor_count = 0
-        skipped = 0
-        success = True
-        for item in tree.get_children():
-            values = tree.item(item)['values']
-            data = {}
-            for i, col in enumerate(tree['columns']):
-                data[col] = values[i]
-            # 字段兼容处理
-            item_name = data.get('item_name') or data.get('物品')
-            quantity = data.get('quantity') or data.get('数量') or data.get('入库数量')
-            cost = data.get('cost') or data.get('入库花费')
-            avg_cost = data.get('avg_cost') or data.get('入库均价')
-            unit_price = data.get('unit_price') or data.get('单价')
-            fee = data.get('fee') or data.get('手续费')
-            total_amount = data.get('total_amount') or data.get('总金额')
-            market_price = data.get('market_price') or data.get('一口价')
-            target_price = data.get('target_price') or data.get('目标买入价')
-            planned_price = data.get('planned_price') or data.get('计划卖出价')
-            # 类型判断
-            try:
-                quantity_val = float(str(quantity).strip()) if quantity is not None and str(quantity).strip() != '' else 0
-            except Exception:
-                print(f"数量字段无法转换: {quantity}")
-                quantity_val = 0
-            try:
-                unit_price_val = float(str(unit_price).strip()) if unit_price is not None and str(unit_price).strip() != '' else 0
-            except Exception:
-                print(f"单价字段无法转换: {unit_price}")
-                unit_price_val = 0
-            try:
-                fee_val = float(str(fee).strip()) if fee is not None and str(fee).strip() != '' else 0
-            except Exception:
-                print(f"手续费字段无法转换: {fee}")
-                fee_val = 0
-            try:
-                total_amount_val = float(str(total_amount).strip()) if total_amount is not None and str(total_amount).strip() != '' else 0
-            except Exception:
-                print(f"总金额字段无法转换: {total_amount}")
-                total_amount_val = 0
-            try:
-                market_price_val = float(str(market_price).strip()) if market_price is not None and str(market_price).strip() != '' else 0
-            except Exception:
-                print(f"一口价字段无法转换: {market_price}")
-                market_price_val = 0
-            try:
-                target_price_val = float(str(target_price).strip()) if target_price is not None and str(target_price).strip() != '' else 0
-            except Exception:
-                print(f"目标买入价字段无法转换: {target_price}")
-                target_price_val = 0
-            try:
-                planned_price_val = float(str(planned_price).strip()) if planned_price is not None and str(planned_price).strip() != '' else 0
-            except Exception:
-                print(f"计划卖出价字段无法转换: {planned_price}")
-                planned_price_val = 0
-            # 入库数据
-            if item_name and quantity_val and cost and avg_cost:
-                try:
-                    stock_in_data = {
-                        'item_name': item_name,
-                        'transaction_time': data.get('transaction_time') or data.get('当前时间') or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'quantity': quantity_val,
-                        'cost': cost,
-                        'avg_cost': avg_cost,
-                        'note': data.get('note') or data.get('备注') or ''
-                    }
-                    self.db_manager.save_stock_in(stock_in_data)
-                    self.db_manager.decrease_inventory(item_name, quantity_val)
-                    in_count += 1
-                    continue
-                except Exception as e:
-                    print(f"导入入库数据失败: {e}")
-                    success = False
-                    break
-            # 出库数据（只要有物品、数量、单价、总金额即可，所有数值字段强制转float）
-            if item_name and quantity_val and unit_price_val and total_amount_val:
-                try:
-                    stock_out_data = {
-                        'item_name': item_name,
-                        'transaction_time': data.get('transaction_time') or data.get('当前时间') or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'quantity': quantity_val,
-                        'unit_price': unit_price_val,
-                        'fee': fee_val,
-                        'deposit': 0.0,
-                        'total_amount': total_amount_val,
-                        'note': data.get('note') or data.get('备注') or ''
-                    }
-                    self.db_manager.save_stock_out(stock_out_data)
-                    out_count += 1
-                    continue
-                except Exception as e:
-                    print(f"导入出库数据失败: {e}")
-                    success = False
-                    break
-            # 监控数据（只要有物品、数量、一口价即可，其余字段补0/空）
-            if item_name and quantity_val and market_price_val:
-                try:
-                    trade_monitor_data = {
-                        'item_name': item_name,
-                        'monitor_time': data.get('monitor_time') or data.get('当前时间') or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'quantity': quantity_val,
-                        'market_price': market_price_val,
-                        'target_price': target_price_val if target_price_val is not None else 0,
-                        'planned_price': planned_price_val if planned_price_val is not None else 0,
-                        'break_even_price': float(data.get('break_even_price') or data.get('保本卖出价') or 0),
-                        'profit': float(data.get('profit') or data.get('利润') or 0),
-                        'profit_rate': float(data.get('profit_rate') or data.get('利润率') or 0),
-                        'strategy': data.get('strategy') or data.get('出库策略') or ''
-                    }
-                    self.db_manager.save_trade_monitor(trade_monitor_data)
-                    monitor_count += 1
-                    continue
-                except Exception as e:
-                    print(f"导入监控数据失败: {e}")
-                    success = False
-                    break
-            # 无法识别类型，详细打印缺失的核心字段
-            missing_fields = []
-            if not item_name:
-                missing_fields.append('物品')
-            if not quantity_val:
-                missing_fields.append('数量')
-            if not (market_price_val or unit_price_val or cost or avg_cost or total_amount_val):
-                missing_fields.append('价格相关字段')
-            print(f"跳过无效数据: {data}，缺失: {','.join(missing_fields) if missing_fields else '类型不匹配'}")
-            skipped += 1
-        msg = "数据导入成功！"
-        if in_count > 0:
-            msg += f"\n入库数据：{in_count}条"
-        if out_count > 0:
-            msg += f"\n出库数据：{out_count}条"
-        if monitor_count > 0:
-            msg += f"\n监控数据：{monitor_count}条"
-        if skipped > 0:
-            msg += f"\n有{skipped}条无效数据已被自动跳过。"
-        if success:
-            messagebox.showinfo("成功", msg)
-            self.refresh_all()
-            if preview_window:
-                preview_window.destroy()
-        else:
-            messagebox.showerror("错误", "部分数据导入失败，请检查数据格式是否正确")
-
     def create_stock_out_tab(self):
         """创建出库管理标签页"""
         stock_out_frame = ttk.Frame(self.notebook, padding=10)
@@ -1498,7 +1137,7 @@ class GameTradingSystemGUI:
         from tkinter import filedialog
         try:
             # 收集所有表格数据
-            inventory_data = [self.inventory_tree.item(item)['values'] for item in self.inventory_tree.get_children()]
+            inventory_data = [self.inventory_tab.inventory_tree.item(item)['values'] for item in self.inventory_tab.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
             stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
             monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
@@ -1600,14 +1239,14 @@ class GameTradingSystemGUI:
                 values = self.stock_in_tree.item(last_item)['values']
                 self.db_manager.delete_stock_in(values[0], values[1])
                 self.refresh_stock_in()
-                self.refresh_inventory()
+                self.inventory_tab.refresh_inventory()
         elif op_type == '添加' and tab == '出库管理':
             if self.stock_out_tree.get_children():
                 last_item = self.stock_out_tree.get_children()[0]
                 values = self.stock_out_tree.item(last_item)['values']
                 self.db_manager.delete_stock_out(values[0], values[1])
                 self.refresh_stock_out()
-                self.refresh_inventory()
+                self.inventory_tab.refresh_inventory()
         elif op_type == '添加' and tab == '交易监控':
             if self.trade_monitor_tab.monitor_tree.get_children():
                 last_item = self.trade_monitor_tab.monitor_tree.get_children()[0]
@@ -1626,7 +1265,7 @@ class GameTradingSystemGUI:
                     'note': values[5] if values[5] is not None else ''
                 })
             self.refresh_stock_in()
-            self.refresh_inventory()
+            self.inventory_tab.refresh_inventory()
         elif op_type == '删除' and tab == '出库管理' and data:
             for values in data:
                 self.db_manager.save_stock_out({
@@ -1639,7 +1278,7 @@ class GameTradingSystemGUI:
                     'note': values[6] if values[6] is not None else ''
                 })
             self.refresh_stock_out()
-            self.refresh_inventory()
+            self.inventory_tab.refresh_inventory()
         elif op_type == '删除' and tab == '交易监控' and data:
             for values in data:
                 self.db_manager.save_trade_monitor({
@@ -1814,7 +1453,7 @@ class GameTradingSystemGUI:
             for item in inventory_data:
                 try:
                     _, item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = item
-                    self.inventory_tree.insert('', 'end', values=(
+                    self.inventory_tab.inventory_tree.insert('', 'end', values=(
                         item_name,
                         quantity,
                         f"{safe_float(avg_price):.2f}",
@@ -1899,8 +1538,8 @@ class GameTradingSystemGUI:
             self.nvwa_price_tab.refresh_nvwa_price()
     
     def refresh_inventory(self):
-        for item in self.inventory_tree.get_children():
-            self.inventory_tree.delete(item)
+        for item in self.inventory_tab.inventory_tree.get_children():
+            self.inventory_tab.inventory_tree.delete(item)
         stock_in_data = self.db_manager.get_stock_in()
         stock_out_data = self.db_manager.get_stock_out()
         inventory_dict = {}
@@ -1973,7 +1612,7 @@ class GameTradingSystemGUI:
             profit_rate = calc_field('利润率')
             total_profit = calc_field('成交利润额')
             value = calc_field('库存价值')
-            self.inventory_tree.insert('', 'end', values=(
+            self.inventory_tab.inventory_tree.insert('', 'end', values=(
                 item,
                 int(remain_qty),
                 str(int(round(in_avg))),
@@ -2079,10 +1718,10 @@ class GameTradingSystemGUI:
         self.root.after(0, lambda: self._draw_inventory(table_data))
 
     def _draw_inventory(self, table_data):
-        for item in self.inventory_tree.get_children():
-            self.inventory_tree.delete(item)
+        for item in self.inventory_tab.inventory_tree.get_children():
+            self.inventory_tab.inventory_tree.delete(item)
         for row in table_data:
-            self.inventory_tree.insert('', 'end', values=row)
+            self.inventory_tab.inventory_tree.insert('', 'end', values=row)
 
     def refresh_stock_in(self):
         for item in self.stock_in_tree.get_children():
@@ -2303,7 +1942,7 @@ class GameTradingSystemGUI:
         from tkinter import filedialog
         try:
             # 收集所有表格数据
-            inventory_data = [self.inventory_tree.item(item)['values'] for item in self.inventory_tree.get_children()]
+            inventory_data = [self.inventory_tab.inventory_tree.item(item)['values'] for item in self.inventory_tab.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
             stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
             monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
@@ -2350,9 +1989,9 @@ class GameTradingSystemGUI:
         try:
             with open("inventory_report.csv", "w", encoding="utf-8") as f:
                 f.write("物品,库存数,总入库均价,保本均价,总出库均价,利润,利润率,成交利润额,库存价值\n")
-                for item in self.inventory_tree.get_children():
+                for item in self.inventory_tab.inventory_tree.get_children():
                     try:
-                        values = self.inventory_tree.item(item)['values']
+                        values = self.inventory_tab.inventory_tree.item(item)['values']
                         item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = values
                         # 将数字字段转换为整数
                         formatted_values = [

@@ -36,6 +36,7 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 from nvwa_price_tab import NvwaPriceTab
 from silver_price_tab import SilverPriceTab
 from log_tab import LogTab
+from trade_monitor_tab import TradeMonitorTab
 
 def safe_float(val, default=0.0):
     try:
@@ -46,9 +47,14 @@ def safe_float(val, default=0.0):
 class GameTradingSystemGUI:
     def __init__(self, root):
         self.root = root
-        self.db_manager = DatabaseManager()  # 必须最先初始化
         self.root.title("游戏交易系统")
-        self.root.geometry("1542x852")
+        self.root.minsize(1200, 800)
+        self.db_manager = DatabaseManager()
+        self._pending_ocr_images = []
+        self._pending_ocr_images_out = []
+        # 删除 self._pending_ocr_images_monitor
+        self.create_main_interface()
+        self.load_saved_data()
         
         # 添加Server酱配置
         self.server_chan_key = StringVar()
@@ -58,9 +64,6 @@ class GameTradingSystemGUI:
         
         # 创建菜单
         self.create_menu()
-        
-        # 创建主界面
-        self.create_main_interface()
         
     def create_menu(self):
         menubar = tb.Menu(self.root)
@@ -289,7 +292,7 @@ class GameTradingSystemGUI:
         self.create_inventory_tab()
         self.create_stock_in_tab()
         self.create_stock_out_tab()
-        self.create_trade_monitor_tab()
+        self.trade_monitor_tab = TradeMonitorTab(self.notebook, self)  # 新增：交易监控Tab
         self.silver_price_tab = SilverPriceTab(self.notebook)  # 使用新的 SilverPriceTab 类
         self.nvwa_price_tab = NvwaPriceTab(self.notebook)  # 新增女娲石价格标签页
         self.log_tab = LogTab(self.notebook, self)  # 新增操作日志标签页
@@ -309,9 +312,6 @@ class GameTradingSystemGUI:
         # 在 __init__ 里添加：
         self.current_ocr_tab = None
         self.root.bind('<<NotebookTabChanged>>', self._on_tab_changed_ocr)
-        self._pending_ocr_images_out = []
-        self._pending_ocr_images = []
-        self._pending_ocr_images_monitor = []
     
     def on_tab_changed(self, event):
         tab = self.notebook.tab(self.notebook.select(), 'text')
@@ -1223,121 +1223,6 @@ class GameTradingSystemGUI:
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
-    def create_trade_monitor_tab(self):
-        """创建交易监控标签页"""
-        monitor_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(monitor_frame, text="交易监控")
-        # 交易监控表格
-        columns = ('物品', '当前时间', '数量', '一口价', '目标买入价', '计划卖出价', '保本卖出价', '利润', '利润率', '出库策略')
-        self.monitor_tree = ttk.Treeview(monitor_frame, columns=columns, show='headings', height=16)
-        # 设置列标题和内容居中
-        for col in columns:
-            self.monitor_tree.heading(col, text=col, anchor='center')
-            self.monitor_tree.column(col, width=120, anchor='center')
-        # 删除合计高亮配置（监控页不需要）
-        # 添加滚动条
-        scrollbar = ttk.Scrollbar(monitor_frame, orient="vertical", command=self.monitor_tree.yview)
-        self.monitor_tree.configure(yscrollcommand=scrollbar.set)
-        # 布局
-        self.monitor_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-        scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        # 右侧操作面板（固定宽度，无滚动条）
-        right_panel = ttk.Frame(monitor_frame, width=260)
-        right_panel.pack(side='right', fill='y', padx=8, pady=5)
-        right_panel.pack_propagate(False)
-        # 添加监控记录
-        add_frame = ttk.LabelFrame(right_panel, text="添加监控", padding=10)
-        add_frame.pack(fill='x', pady=8)
-        ttk.Label(add_frame, text="物品:").grid(row=0, column=0, padx=5, pady=5)
-        self.monitor_item = ttk.Entry(add_frame)
-        self.monitor_item.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="数量:").grid(row=1, column=0, padx=5, pady=5)
-        self.monitor_quantity = ttk.Entry(add_frame)
-        self.monitor_quantity.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="一口价:").grid(row=2, column=0, padx=5, pady=5)
-        self.monitor_price = ttk.Entry(add_frame)
-        self.monitor_price.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="目标买入价:").grid(row=3, column=0, padx=5, pady=5)
-        self.monitor_target_price = ttk.Entry(add_frame)
-        self.monitor_target_price.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="计划卖出价:").grid(row=4, column=0, padx=5, pady=5)
-        self.monitor_planned_price = ttk.Entry(add_frame)
-        self.monitor_planned_price.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="入库策略:").grid(row=5, column=0, padx=5, pady=5)
-        self.monitor_strategy = ttk.Entry(add_frame)
-        self.monitor_strategy.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
-        add_frame.columnconfigure(1, weight=1)
-        ttk.Button(add_frame, text="添加监控", command=self.add_monitor).grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')
-        # 刷新按钮
-        ttk.Button(right_panel, text="刷新监控", command=self.refresh_monitor).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_monitor).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_monitor).pack(fill='x', pady=(0, 10), ipady=4)
-        self.ocr_image_preview_frame_monitor = ttk.Frame(right_panel)
-        self.ocr_image_preview_frame_monitor.pack(fill='x', pady=5)
-        right_panel.bind_all('<Control-v>', self.paste_ocr_import_monitor)
-        self.monitor_tree.bind("<Double-1>", self.edit_monitor_item)
-        # 添加右键菜单支持批量删除
-        self.monitor_menu = tb.Menu(self.monitor_tree, tearoff=0)
-        self.monitor_menu.add_command(label="删除", command=self.delete_monitor_item)
-        self.monitor_tree.bind("<Button-3>", self.show_monitor_menu)
-    
-    def show_monitor_menu(self, event):
-        item = self.monitor_tree.identify_row(event.y)
-        if not item:
-            return
-        # 只有当当前行未被选中时，才只选中该行，否则保持多选
-        if item not in self.monitor_tree.selection():
-            self.monitor_tree.selection_set(item)
-        self.monitor_menu.post(event.x_root, event.y_root)
-
-    def delete_monitor_item(self):
-        """批量删除监控记录"""
-        selected_items = self.monitor_tree.selection()
-        if not selected_items:
-            return
-        names = [self.monitor_tree.item(item)['values'][0] for item in selected_items]
-        msg = "确定要删除以下监控记录吗？\n" + "，".join(str(n) for n in names)
-        deleted_data = []
-        if messagebox.askyesno("确认", msg):
-            for item in selected_items:
-                values = self.monitor_tree.item(item)['values']
-                self.db_manager.delete_trade_monitor(values[0], values[1])
-                deleted_data.append(values)
-            self.refresh_monitor()
-            self.log_operation('删除', '交易监控', deleted_data)
-    
-    def upload_ocr_import_monitor(self):
-        file_paths = fd.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
-            return
-        try:
-            from PIL import Image
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images_monitor.append(img)
-                count += 1
-            self.refresh_ocr_image_preview_monitor()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
-        except Exception as e:
-            messagebox.showerror("错误", f"图片加载失败: {e}")
-
-    def create_analysis_tab(self):
-        """创建分析报告标签页"""
-        analysis_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(analysis_frame, text="分析报告")
-        
-        # 创建分析结果文本框
-        self.analysis_text = tb.Text(analysis_frame, wrap=tb.WORD, width=80, height=30, font=('微软雅黑', 11))
-        self.analysis_text.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # 分析按钮
-        button_frame = tb.Frame(analysis_frame, padding=8)
-        button_frame.pack(fill='x', pady=8)
-        
-        ttk.Button(button_frame, text="生成分析报告", command=self.generate_analysis).pack(side='left', padx=8)
-        ttk.Button(button_frame, text="保存报告", command=self.save_analysis).pack(side='left', padx=8)
-    
     def create_log_tab(self):
         """创建日志标签页"""
         log_frame = ttk.Frame(self.notebook, padding=10)
@@ -1616,7 +1501,7 @@ class GameTradingSystemGUI:
             inventory_data = [self.inventory_tree.item(item)['values'] for item in self.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
             stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
-            monitor_data = [self.monitor_tree.item(item)['values'] for item in self.monitor_tree.get_children()]
+            monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
 
             # 定义表头
             inventory_columns = ['物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值']
@@ -1724,9 +1609,9 @@ class GameTradingSystemGUI:
                 self.refresh_stock_out()
                 self.refresh_inventory()
         elif op_type == '添加' and tab == '交易监控':
-            if self.monitor_tree.get_children():
-                last_item = self.monitor_tree.get_children()[0]
-                values = self.monitor_tree.item(last_item)['values']
+            if self.trade_monitor_tab.monitor_tree.get_children():
+                last_item = self.trade_monitor_tab.monitor_tree.get_children()[0]
+                values = self.trade_monitor_tab.monitor_tree.item(last_item)['values']
                 self.db_manager.delete_trade_monitor(values[0], values[1])
                 self.refresh_monitor()
         elif op_type == '删除' and tab == '入库管理' and data:
@@ -1984,7 +1869,7 @@ class GameTradingSystemGUI:
             for item in monitor_data:
                 try:
                     _, item_name, monitor_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = item
-                    self.monitor_tree.insert('', 'end', values=(
+                    self.trade_monitor_tab.monitor_tree.insert('', 'end', values=(
                         item_name,
                         monitor_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(monitor_time, 'strftime') else str(monitor_time),
                         quantity,
@@ -2008,7 +1893,7 @@ class GameTradingSystemGUI:
         self.refresh_inventory()
         self.refresh_stock_in()
         self.refresh_stock_out()
-        self.refresh_monitor()
+        self.trade_monitor_tab.refresh_monitor()
         self.log_tab.refresh_log_tab()
         if hasattr(self, 'nvwa_price_tab'):
             self.nvwa_price_tab.refresh_nvwa_price()
@@ -2337,10 +2222,10 @@ class GameTradingSystemGUI:
         self.root.after(0, lambda: self._draw_monitor(table_data))
 
     def _draw_monitor(self, table_data):
-        for item in self.monitor_tree.get_children():
-            self.monitor_tree.delete(item)
+        for item in self.trade_monitor_tab.monitor_tree.get_children():
+            self.trade_monitor_tab.monitor_tree.delete(item)
         for row in table_data:
-            self.monitor_tree.insert('', 'end', values=row)
+            self.trade_monitor_tab.monitor_tree.insert('', 'end', values=row)
         # 不插入合计行
 
     def add_stock_in(self):
@@ -2412,188 +2297,6 @@ class GameTradingSystemGUI:
         except ValueError as e:
             messagebox.showerror("错误", str(e))
     
-    def add_monitor(self):
-        """添加监控记录"""
-        try:
-            item = self.monitor_item.get()
-            quantity = int(self.monitor_quantity.get())
-            price = float(self.monitor_price.get())
-            target_price = float(self.monitor_target_price.get())
-            planned_price = float(self.monitor_planned_price.get())
-            strategy = self.monitor_strategy.get()
-            break_even_price = target_price * 1.05
-            profit = price - target_price
-            profit_rate = (profit / target_price) * 100
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.db_manager.save_trade_monitor({
-                'item_name': item,
-                'monitor_time': now,
-                'quantity': quantity,
-                'market_price': price,
-                'target_price': target_price,
-                'planned_price': planned_price,
-                'break_even_price': break_even_price,
-                'profit': profit,
-                'profit_rate': profit_rate,
-                'strategy': strategy
-            })
-            self.refresh_monitor()
-            self.monitor_item.delete(0, 'end')
-            self.monitor_quantity.delete(0, 'end')
-            self.monitor_price.delete(0, 'end')
-            self.monitor_target_price.delete(0, 'end')
-            self.monitor_planned_price.delete(0, 'end')
-            self.monitor_strategy.delete(0, 'end')
-            self.log_operation('修改', '交易监控')
-            messagebox.showinfo("成功", "监控记录添加成功！")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
-    
-    def generate_analysis(self):
-        """生成分析报告"""
-        self.analysis_text.delete(1.0, tb.END)
-        # 添加库存状态
-        self.analysis_text.insert(tb.END, "=== 库存状态 ===\n")
-        for item in self.inventory_tree.get_children():
-            try:
-                values = self.inventory_tree.item(item)['values']
-                item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = values
-                self.analysis_text.insert(tb.END, 
-                    f"物品: {item_name}, 库存数: {int(quantity)}, 总入库均价: {int(avg_price)}, "
-                    f"保本均价: {int(break_even_price)}, 总出库均价: {int(selling_price)}, 利润: {str(profit)}, "
-                    f"利润率: {values[6]}, 成交利润额: {str(total_profit)}, 库存价值: {str(inventory_value)}\n")
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"inventory_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                continue
-        # 添加入库统计
-        self.analysis_text.insert(tb.END, "\n=== 入库统计 ===\n")
-        for item in self.stock_in_tree.get_children():
-            try:
-                values = self.stock_in_tree.item(item)['values']
-                item_name, transaction_time, quantity, cost, avg_cost, note, *_ = values
-                self.analysis_text.insert(tb.END,
-                    f"物品: {item_name}, 时间: {transaction_time}, 数量: {int(quantity)}, "
-                    f"花费: {int(round(cost))}, 均价: {int(round(avg_cost))}, 备注: {note}\n")
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"stock_in_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                continue
-        # 添加出库统计
-        self.analysis_text.insert(tb.END, "\n=== 出库统计 ===\n")
-        for item in self.stock_out_tree.get_children():
-            try:
-                values = self.stock_out_tree.item(item)['values']
-                item_name, transaction_time, quantity, unit_price, fee, total_amount, note, *_ = values
-                self.analysis_text.insert(tb.END,
-                    f"物品: {item_name}, 时间: {transaction_time}, 数量: {int(quantity)}, "
-                    f"单价: {int(unit_price)}, 手续费: {int(fee)}, 总金额: {int(total_amount)}, 备注: {note}\n"
-                )
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"stock_out_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                continue
-        # 添加监控统计
-        self.analysis_text.insert(tb.END, "\n=== 监控统计 ===\n")
-        for item in self.monitor_tree.get_children():
-            try:
-                values = self.monitor_tree.item(item)['values']
-                item_name, transaction_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = values
-                self.analysis_text.insert(tb.END,
-                    f"物品: {item_name}, 时间: {transaction_time}, 数量: {int(quantity)}, "
-                    f"一口价: {float(market_price):.2f}, 目标买入价: {float(target_price):.2f}, 计划卖出价: {float(planned_price):.2f}, "
-                    f"保本卖出价: {float(break_even_price):.2f}, 利润: {float(profit):.2f}, 利润率: {profit_rate}, "
-                    f"出库策略: {strategy}\n"
-                )
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"monitor_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                continue
-    
-    def save_analysis(self):
-        """保存分析报告"""
-        try:
-            with open("analysis_report.txt", "w", encoding="utf-8") as f:
-                f.write(self.analysis_text.get(1.0, tb.END))
-            messagebox.showinfo("成功", "分析报告已保存到 analysis_report.txt")
-        except Exception as e:
-            messagebox.showerror("错误", f"保存报告失败: {str(e)}")
-
-    def save_all_data(self):
-        """保存所有数据到数据库"""
-        try:
-            # 保存库存数据
-            for item in self.inventory_tree.get_children():
-                try:
-                    values = self.inventory_tree.item(item)['values']
-                    item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = values
-                    self.db_manager.save_inventory({
-                        'item_name': item_name,
-                        'quantity': int(quantity),
-                        'avg_price': float(avg_price),
-                        'break_even_price': float(break_even_price),
-                        'selling_price': float(selling_price),
-                        'profit': float(profit),
-                        'profit_rate': float(profit_rate.strip('%')),
-                        'total_profit': float(total_profit),
-                        'inventory_value': float(inventory_value)
-                    })
-                except Exception as e:
-                    messagebox.showerror("数据结构异常", f"inventory_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                    continue
-            # 保存入库记录
-            for item in self.stock_in_tree.get_children():
-                try:
-                    values = self.stock_in_tree.item(item)['values']
-                    item_name, transaction_time, quantity, cost, avg_cost, note, *_ = values
-                    self.db_manager.save_stock_in({
-                        'item_name': item_name,
-                        'transaction_time': transaction_time,
-                        'quantity': int(quantity),
-                        'cost': float(cost),
-                        'avg_cost': float(avg_cost),
-                        'note': note if note is not None else ''
-                    })
-                except Exception as e:
-                    messagebox.showerror("数据结构异常", f"stock_in_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                    continue
-            # 保存出库记录
-            for item in self.stock_out_tree.get_children():
-                try:
-                    values = self.stock_out_tree.item(item)['values']
-                    item_name, transaction_time, quantity, unit_price, fee, total_amount, note, *_ = values
-                    self.db_manager.save_stock_out({
-                        'item_name': item_name,
-                        'transaction_time': transaction_time,
-                        'quantity': int(quantity),
-                        'unit_price': float(unit_price),
-                        'fee': float(fee),
-                        'total_amount': float(total_amount),
-                        'note': note if note is not None else ''
-                    })
-                except Exception as e:
-                    messagebox.showerror("数据结构异常", f"stock_out_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                    continue
-            # 保存监控记录
-            for item in self.monitor_tree.get_children():
-                try:
-                    values = self.monitor_tree.item(item)['values']
-                    item_name, transaction_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = values
-                    self.db_manager.save_trade_monitor({
-                        'item_name': item_name,
-                        'monitor_time': transaction_time,
-                        'quantity': int(quantity),
-                        'market_price': float(market_price),
-                        'target_price': float(target_price),
-                        'planned_price': float(planned_price),
-                        'break_even_price': float(break_even_price),
-                        'profit': float(profit),
-                        'profit_rate': float(profit_rate),
-                        'strategy': strategy
-                    })
-                except Exception as e:
-                    messagebox.showerror("数据结构异常", f"monitor_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
-                    continue
-            messagebox.showinfo("成功", "所有数据已保存到数据库")
-        except Exception as e:
-            messagebox.showerror("错误", f"保存数据失败: {str(e)}")
-
     def export_reports(self):
         import pandas as pd
         import os
@@ -2603,7 +2306,7 @@ class GameTradingSystemGUI:
             inventory_data = [self.inventory_tree.item(item)['values'] for item in self.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
             stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
-            monitor_data = [self.monitor_tree.item(item)['values'] for item in self.monitor_tree.get_children()]
+            monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
 
             # 定义表头
             inventory_columns = ['物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值']
@@ -2734,9 +2437,9 @@ class GameTradingSystemGUI:
         try:
             with open("monitor_report.csv", "w", encoding="utf-8") as f:
                 f.write("物品,当前时间,数量,一口价,目标买入价,计划卖出价,保本卖出价,利润,利润率,出库策略\n")
-                for item in self.monitor_tree.get_children():
+                for item in self.trade_monitor_tab.monitor_tree.get_children():
                     try:
-                        values = self.monitor_tree.item(item)['values']
+                        values = self.trade_monitor_tab.monitor_tree.item(item)['values']
                         item_name, transaction_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = values
                         # 将数字字段转换为整数
                         formatted_values = [
@@ -2779,7 +2482,7 @@ class GameTradingSystemGUI:
             self.root.bind_all('<Control-v>', self.paste_ocr_import_stock_out)
             self.current_ocr_tab = 'out'
         elif tab == '交易监控':
-            self.root.bind_all('<Control-v>', self.paste_ocr_import_monitor)
+            self.root.bind_all('<Control-v>', self.trade_monitor_tab.paste_ocr_import_monitor)
             self.current_ocr_tab = 'monitor'
         else:
             self.current_ocr_tab = None
@@ -2938,85 +2641,6 @@ class GameTradingSystemGUI:
         except FileNotFoundError:
             return []
 
-    def edit_monitor_item(self, event):
-        item_id = self.monitor_tree.identify_row(event.y)
-        if not item_id:
-            return
-        values = self.monitor_tree.item(item_id)['values']
-        edit_win = tb.Toplevel(self.root)
-        edit_win.title("编辑监控记录")
-        edit_win.minsize(480, 400)
-        edit_win.configure(bg='#f4f8fb')
-        style = ttk.Style()
-        style.configure('Edit.TLabel', font=('微软雅黑', 11), background='#f4f8fb')
-        style.configure('Edit.TEntry', font=('微软雅黑', 11))
-        style.configure('Edit.TButton', font=('微软雅黑', 12, 'bold'), background='#3399ff', foreground='#fff', padding=10)
-        style.map('Edit.TButton', background=[('active', '#66c2ff')], foreground=[('active', '#003366')])
-        content_frame = ttk.Frame(edit_win, style='Edit.TFrame')
-        content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
-        labels = ["物品", "数量", "一口价", "目标买入价", "计划卖出价", "出库策略"]
-        types = [str, int, float, float, float, str]
-        entries = []
-        error_labels = []
-        edit_indices = [0, 2, 3, 4, 5, 9]  # 对应表格字段索引
-        for i, (label, idx, typ) in enumerate(zip(labels, edit_indices, types)):
-            ttk.Label(content_frame, text=label+":", style='Edit.TLabel').grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
-            vcmd = None
-            if typ is int:
-                vcmd = (edit_win.register(lambda s: s.isdigit() or s==''), '%P')
-            elif typ is float:
-                vcmd = (edit_win.register(lambda s: s.replace('.','',1).isdigit() or s==''), '%P')
-            entry = ttk.Entry(content_frame, validate='key', validatecommand=vcmd, style='Edit.TEntry') if vcmd else ttk.Entry(content_frame, style='Edit.TEntry')
-            entry.insert(0, values[idx])
-            entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='w')
-            entries.append(entry)
-            err = ttk.Label(content_frame, text="", foreground="red", background='#f4f8fb', font=('微软雅黑', 10))
-            err.grid(row=i*2+1, column=0, columnspan=2, sticky='w', padx=12)
-            error_labels.append(err)
-        def save():
-            new_vals = [e.get() for e in entries]
-            valid = True
-            for idx, (val, typ, err_lbl) in enumerate(zip(new_vals, types, error_labels)):
-                err_lbl.config(text="")
-                if typ is int:
-                    if not val.isdigit():
-                        err_lbl.config(text="请输入正整数")
-                        entries[idx].focus_set()
-                        valid = False
-                        break
-                elif typ is float:
-                    try:
-                        float(val)
-                    except Exception:
-                        err_lbl.config(text="请输入数字")
-                        entries[idx].focus_set()
-                        valid = False
-                        break
-            if not valid:
-                return
-            # 更新数据库：先删除原有记录再插入新记录
-            try:
-                self.db_manager.delete_trade_monitor(values[0], values[1])
-                self.db_manager.save_trade_monitor({
-                    'item_name': new_vals[0],
-                    'monitor_time': values[1],  # 时间不变
-                    'quantity': int(new_vals[1]),
-                    'market_price': float(new_vals[2]),
-                    'target_price': float(new_vals[3]),
-                    'planned_price': float(new_vals[4]),
-                    'break_even_price': float(values[6]),  # 保本卖出价公式自动算
-                    'profit': float(values[7]),            # 利润公式自动算
-                    'profit_rate': float(str(values[8]).replace('%','')), # 利润率公式自动算
-                    'strategy': new_vals[5]
-                })
-                self.refresh_monitor()
-                edit_win.destroy()
-            except Exception as e:
-                error_labels[0].config(text=f"保存失败: {e}")
-        button_frame = ttk.Frame(edit_win, style='Edit.TFrame')
-        button_frame.pack(side='bottom', fill='x', pady=20)
-        ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
-
     def show_about(self):
         """显示关于对话框"""
         about_text = """
@@ -3044,86 +2668,6 @@ class GameTradingSystemGUI:
                 messagebox.showwarning("提示", f"页码范围：1~{self.log_total_pages}")
         except Exception:
             messagebox.showwarning("提示", "请输入有效的页码")
-
-    def batch_ocr_import_monitor(self):
-        if not hasattr(self, '_pending_ocr_images_monitor') or not self._pending_ocr_images_monitor:
-            messagebox.showwarning("无图片", "请先粘贴图片")
-            return
-        all_preview_data = []
-        for img in self._pending_ocr_images_monitor:
-            try:
-                import io, base64, requests
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                url = "http://sql.didiba.uk:1224/api/ocr"
-                payload = {
-                    "base64": img_b64,
-                    "options": {
-                        "data.format": "text"
-                    }
-                }
-                headers = {"Content-Type": "application/json"}
-                resp = requests.post(url, json=payload, headers=headers, timeout=20)
-                resp.raise_for_status()
-                ocr_result = resp.json()
-                text = ocr_result.get('data')
-                if not text:
-                    continue
-                # 使用交易监控专用解析函数
-                parsed_data = self.parse_monitor_ocr_text(text)
-                if parsed_data:
-                    all_preview_data.extend(parsed_data)
-            except Exception as e:
-                print(f"OCR识别失败: {e}")
-        if all_preview_data:
-            self.show_ocr_preview(
-                all_preview_data,
-                columns=('物品', '数量', '一口价', '备注'),
-                field_map=['item_name', 'quantity', 'market_price', 'note']
-            )
-        else:
-            messagebox.showwarning("无有效数据", "未识别到有效的监控数据行！")
-        self._pending_ocr_images_monitor.clear()
-        self.refresh_ocr_image_preview_monitor()
-
-    def paste_ocr_import_monitor(self, event=None):
-        from PIL import ImageGrab
-        img = ImageGrab.grabclipboard()
-        if isinstance(img, list):
-            img = img[0] if img else None
-        if img is None or not hasattr(img, 'save'):
-            messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
-            return
-        if not hasattr(self, '_pending_ocr_images_monitor'):
-            self._pending_ocr_images_monitor = []
-        self._pending_ocr_images_monitor.append(img)
-        self.refresh_ocr_image_preview_monitor()
-        messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images_monitor)}张图片，点击批量识别可统一导入。")
-
-    def refresh_ocr_image_preview_monitor(self):
-        """刷新OCR图片预览区"""
-        # 清空预览区
-        for widget in self.ocr_image_preview_frame_monitor.winfo_children():
-            widget.destroy()
-        
-        # 显示所有待处理的图片
-        for i, image_data in enumerate(self._pending_ocr_images_monitor):
-            preview_frame = ttk.Frame(self.ocr_image_preview_frame_monitor)
-            preview_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
-            
-            # 显示图片名称
-            ttk.Label(preview_frame, text=f"图片 {i+1}").pack(side=tk.LEFT, padx=5)
-            
-            # 删除按钮
-            ttk.Button(preview_frame, text="删除", 
-                      command=lambda idx=i: self.delete_ocr_image_monitor(idx)).pack(side=tk.RIGHT, padx=5)
-
-    def delete_ocr_image_monitor(self, idx):
-        """删除指定索引的OCR图片"""
-        if 0 <= idx < len(self._pending_ocr_images_monitor):
-            del self._pending_ocr_images_monitor[idx]
-        self.refresh_ocr_image_preview_monitor()
 
     def _on_silver_press(self, event):
         if event.button == 1:  # 左键

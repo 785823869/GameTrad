@@ -551,7 +551,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            query = "SELECT op_type, tab_name, data, timestamp, reverted FROM operation_logs WHERE 1=1"
+            query = "SELECT id, op_type, tab_name, data, timestamp, reverted FROM operation_logs WHERE 1=1"
             params = []
             if tab_name:
                 query += " AND tab_name LIKE %s"
@@ -570,17 +570,18 @@ class DatabaseManager:
             cursor.execute(query, tuple(params))
             results = []
             for row in cursor.fetchall():
-                op_type, tab_name, data, timestamp, reverted = row
+                id, op_type, tab_name, data, timestamp, reverted = row
                 try:
                     data = json.loads(data)
                 except Exception:
                     pass
                 results.append({
+                    'id': id,
                     '操作类型': op_type,
                     '标签页': tab_name,
                     '操作时间': timestamp.strftime("%Y-%m-%d %H:%M:%S") if hasattr(timestamp, 'strftime') else str(timestamp),
                     '数据': data,
-                    '已回退': reverted
+                    '已回退': bool(reverted)
                 })
             return results
         finally:
@@ -620,11 +621,29 @@ class DatabaseManager:
         try:
             cursor.execute(
                 "INSERT INTO operation_logs (op_type, tab_name, data, reverted) VALUES (%s, %s, %s, %s)",
-                (op_type, tab_name, json.dumps(data, ensure_ascii=False), reverted)
+                (op_type, tab_name, json.dumps(data, ensure_ascii=False), int(bool(reverted)))
+            )
+            conn.commit()
+            log_id = cursor.lastrowid
+            return log_id
+        except Exception as e:
+            print(f"保存操作日志失败: {e}")
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_operation_log_reverted(self, log_id, reverted=True):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE operation_logs SET reverted=%s WHERE id=%s",
+                (int(bool(reverted)), log_id)
             )
             conn.commit()
         except Exception as e:
-            print(f"保存操作日志失败: {e}")
+            print(f'更新操作日志回退状态失败: {e}')
         finally:
             cursor.close()
             conn.close() 

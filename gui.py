@@ -38,6 +38,7 @@ from silver_price_tab import SilverPriceTab
 from log_tab import LogTab
 from trade_monitor_tab import TradeMonitorTab
 from inventory_tab import InventoryTab
+from stock_out_tab import StockOutTab
 
 def safe_float(val, default=0.0):
     try:
@@ -292,7 +293,7 @@ class GameTradingSystemGUI:
         # 创建各个功能页面
         self.inventory_tab = InventoryTab(self.notebook, self)  # 新增：库存管理Tab
         self.create_stock_in_tab()
-        self.create_stock_out_tab()
+        self.stock_out_tab = StockOutTab(self.notebook, self)  # 新增：出库管理Tab
         self.trade_monitor_tab = TradeMonitorTab(self.notebook, self)
         self.silver_price_tab = SilverPriceTab(self.notebook)
         self.nvwa_price_tab = NvwaPriceTab(self.notebook)
@@ -611,16 +612,16 @@ class GameTradingSystemGUI:
         self.notebook.add(stock_out_frame, text="出库管理")
         # 出库表格
         columns = ('物品', '当前时间', '数量', '单价', '手续费', '总金额', '备注')
-        self.stock_out_tree = ttk.Treeview(stock_out_frame, columns=columns, show='headings', height=16)
+        self.stock_out_tab.stock_out_tree = ttk.Treeview(stock_out_frame, columns=columns, show='headings', height=16)
         for col in columns:
-            self.stock_out_tree.heading(col, text=col, anchor='center')
-            self.stock_out_tree.column(col, width=120, anchor='center')
-        scrollbar = ttk.Scrollbar(stock_out_frame, orient="vertical", command=self.stock_out_tree.yview)
-        self.stock_out_tree.configure(yscrollcommand=scrollbar.set)
-        self.stock_out_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+            self.stock_out_tab.stock_out_tree.heading(col, text=col, anchor='center')
+            self.stock_out_tab.stock_out_tree.column(col, width=120, anchor='center')
+        scrollbar = ttk.Scrollbar(stock_out_frame, orient="vertical", command=self.stock_out_tab.stock_out_tree.yview)
+        self.stock_out_tab.stock_out_tree.configure(yscrollcommand=scrollbar.set)
+        self.stock_out_tab.stock_out_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
         # 合计高亮
-        self.stock_out_tree.tag_configure('total', background='#ffe066', font=('微软雅黑', 11, 'bold'))
+        self.stock_out_tab.stock_out_tree.tag_configure('total', background='#ffe066', font=('微软雅黑', 11, 'bold'))
         # 右侧操作面板
         right_panel = ttk.Frame(stock_out_frame, width=260)
         right_panel.pack(side='right', fill='y', padx=8, pady=5)
@@ -661,17 +662,17 @@ class GameTradingSystemGUI:
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         self.ocr_image_preview_frame_out = ttk.Frame(right_panel)
         self.ocr_image_preview_frame_out.pack(fill='x', pady=5)
-        self.stock_out_menu = tb.Menu(self.stock_out_tree, tearoff=0)
+        self.stock_out_menu = tb.Menu(self.stock_out_tab.stock_out_tree, tearoff=0)
         self.stock_out_menu.add_command(label="删除", command=self.delete_stock_out_item)
-        self.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
-        self.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tree.selection_set(self.stock_out_tree.get_children()), 'break'])
-        self.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
+        self.stock_out_tab.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
+        self.stock_out_tab.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tab.stock_out_tree.selection_set(self.stock_out_tab.stock_out_tree.get_children()), 'break'])
+        self.stock_out_tab.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
     
     def edit_stock_out_item(self, event):
-        item_id = self.stock_out_tree.identify_row(event.y)
+        item_id = self.stock_out_tab.stock_out_tree.identify_row(event.y)
         if not item_id:
             return
-        values = self.stock_out_tree.item(item_id)['values']
+        values = self.stock_out_tab.stock_out_tree.item(item_id)['values']
         edit_win = tb.Toplevel(self.root)
         edit_win.title("编辑出库记录")
         edit_win.minsize(440, 440)
@@ -824,23 +825,23 @@ class GameTradingSystemGUI:
 
     def show_stock_out_menu(self, event):
         """显示入库右键菜单"""
-        item = self.stock_out_tree.identify_row(event.y)
+        item = self.stock_out_tab.stock_out_tree.identify_row(event.y)
         if item:
-            if item not in self.stock_out_tree.selection():
-                self.stock_out_tree.selection_set(item)
+            if item not in self.stock_out_tab.stock_out_tree.selection():
+                self.stock_out_tab.stock_out_tree.selection_set(item)
             self.stock_out_menu.post(event.x_root, event.y_root)
 
     def delete_stock_out_item(self):
         """批量删除出库记录"""
-        selected_items = self.stock_out_tree.selection()
+        selected_items = self.stock_out_tab.stock_out_tree.selection()
         if not selected_items:
             return
-        names = [self.stock_out_tree.item(item)['values'][0] for item in selected_items]
+        names = [self.stock_out_tab.stock_out_tree.item(item)['values'][0] for item in selected_items]
         msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
         deleted_data = []
         if messagebox.askyesno("确认", msg):
             for item in selected_items:
-                values = self.stock_out_tree.item(item)['values']
+                values = self.stock_out_tab.stock_out_tree.item(item)['values']
                 self.db_manager.delete_stock_out(values[0], values[1])
                 deleted_data.append(values)
             self.refresh_stock_out()
@@ -1139,7 +1140,7 @@ class GameTradingSystemGUI:
             # 收集所有表格数据
             inventory_data = [self.inventory_tab.inventory_tree.item(item)['values'] for item in self.inventory_tab.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
-            stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
+            stock_out_data = [self.stock_out_tab.stock_out_tree.item(item)['values'] for item in self.stock_out_tab.stock_out_tree.get_children()]
             monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
 
             # 定义表头
@@ -1241,9 +1242,9 @@ class GameTradingSystemGUI:
                 self.refresh_stock_in()
                 self.inventory_tab.refresh_inventory()
         elif op_type == '添加' and tab == '出库管理':
-            if self.stock_out_tree.get_children():
-                last_item = self.stock_out_tree.get_children()[0]
-                values = self.stock_out_tree.item(last_item)['values']
+            if self.stock_out_tab.stock_out_tree.get_children():
+                last_item = self.stock_out_tab.stock_out_tree.get_children()[0]
+                values = self.stock_out_tab.stock_out_tree.item(last_item)['values']
                 self.db_manager.delete_stock_out(values[0], values[1])
                 self.refresh_stock_out()
                 self.inventory_tab.refresh_inventory()
@@ -1490,7 +1491,7 @@ class GameTradingSystemGUI:
             for item in stock_out_data:
                 try:
                     _, item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note, *_ = item
-                    self.stock_out_tree.insert('', 'end', values=(
+                    self.stock_out_tab.stock_out_tree.insert('', 'end', values=(
                         item_name,
                         transaction_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(transaction_time, 'strftime') else str(transaction_time),
                         int(quantity),
@@ -1760,8 +1761,8 @@ class GameTradingSystemGUI:
             ), tags=('total',))
 
     def refresh_stock_out(self):
-        for item in self.stock_out_tree.get_children():
-            self.stock_out_tree.delete(item)
+        for item in self.stock_out_tab.stock_out_tree.get_children():
+            self.stock_out_tab.stock_out_tree.delete(item)
         records = self.db_manager.get_stock_out()
         filter_text = self.stock_out_filter_var.get().strip().lower() if hasattr(self, 'stock_out_filter_var') else ''
         keywords = filter_text.split()
@@ -1782,7 +1783,7 @@ class GameTradingSystemGUI:
                     note if note is not None else ''
                 )
                 filtered.append(values)
-                self.stock_out_tree.insert('', 'end', values=values)
+                self.stock_out_tab.stock_out_tree.insert('', 'end', values=values)
             except Exception as e:
                 messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrecord={record}")
                 continue
@@ -1791,7 +1792,7 @@ class GameTradingSystemGUI:
             total_qty = sum(int(row[2]) for row in filtered)
             total_fee = sum(int(row[4]) for row in filtered)
             total_amount = sum(int(row[5]) for row in filtered)
-            self.stock_out_tree.insert('', 'end', values=(
+            self.stock_out_tab.stock_out_tree.insert('', 'end', values=(
                 '合计', '', total_qty, '', total_fee, total_amount, ''
             ), tags=('total',))
 
@@ -1944,7 +1945,7 @@ class GameTradingSystemGUI:
             # 收集所有表格数据
             inventory_data = [self.inventory_tab.inventory_tree.item(item)['values'] for item in self.inventory_tab.inventory_tree.get_children()]
             stock_in_data = [self.stock_in_tree.item(item)['values'] for item in self.stock_in_tree.get_children()]
-            stock_out_data = [self.stock_out_tree.item(item)['values'] for item in self.stock_out_tree.get_children()]
+            stock_out_data = [self.stock_out_tab.stock_out_tree.item(item)['values'] for item in self.stock_out_tab.stock_out_tree.get_children()]
             monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
 
             # 定义表头
@@ -1993,17 +1994,16 @@ class GameTradingSystemGUI:
                     try:
                         values = self.inventory_tab.inventory_tree.item(item)['values']
                         item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = values
-                        # 将数字字段转换为整数
                         formatted_values = [
-                            item_name,  # 物品名称
-                            str(int(quantity)),  # 库存数
-                            str(int(avg_price)),  # 总入库均价
-                            str(int(break_even_price)),  # 保本均价
-                            str(int(selling_price)),  # 总出库均价
-                            str(int(profit)),  # 利润（已为"xx万"字符串）
-                            values[6],  # 利润率
-                            str(int(total_profit)),  # 成交利润额（已为"xx万"字符串）
-                            str(int(inventory_value))   # 库存价值（已为"xx万"字符串）
+                            item_name,
+                            str(int(quantity)),
+                            str(int(avg_price)),
+                            str(int(break_even_price)),
+                            str(int(selling_price)),
+                            str(int(profit)),
+                            values[6],
+                            str(int(total_profit)),
+                            str(int(inventory_value))
                         ]
                         f.write(",".join(formatted_values) + "\n")
                     except Exception as e:
@@ -2024,18 +2024,17 @@ class GameTradingSystemGUI:
                     try:
                         values = self.stock_in_tree.item(item)['values']
                         item_name, transaction_time, quantity, cost, avg_cost, note, *_ = values
-                        # 将数字字段转换为整数
                         formatted_values = [
-                            item_name,  # 物品名称
-                            transaction_time,  # 当前时间
-                            str(int(quantity)),  # 入库数量
-                            str(int(round(cost))),  # 入库花费
-                            str(int(round(avg_cost))),  # 入库均价
-                            note  # 备注
+                            item_name,
+                            transaction_time,
+                            str(int(quantity)),
+                            str(int(round(cost))),
+                            str(int(round(avg_cost))),
+                            note
                         ]
                         f.write(",".join(formatted_values) + "\n")
                     except Exception as e:
-                        messagebox.showerror("数据结构异常", f"stock_in_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
+                        self.root.after(0, lambda: messagebox.showerror("数据结构异常", f"stock_in_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}"))
                         continue
             self.root.after(0, lambda: messagebox.showinfo("成功", "入库报表已导出到 stock_in_report.csv"))
         except Exception as e:
@@ -2048,9 +2047,9 @@ class GameTradingSystemGUI:
         try:
             with open("stock_out_report.csv", "w", encoding="utf-8") as f:
                 f.write("物品,当前时间,出库数量,单价,手续费,出库总金额,备注\n")
-                for item in self.stock_out_tree.get_children():
+                for item in self.stock_out_tab.stock_out_tree.get_children():
                     try:
-                        values = self.stock_out_tree.item(item)['values']
+                        values = self.stock_out_tab.stock_out_tree.item(item)['values']
                         item_name, transaction_time, quantity, unit_price, fee, total_amount, note, *_ = values
                         formatted_values = [
                             item_name,
@@ -2063,7 +2062,7 @@ class GameTradingSystemGUI:
                         ]
                         f.write(",".join(formatted_values) + "\n")
                     except Exception as e:
-                        messagebox.showerror("数据结构异常", f"stock_out_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
+                        self.root.after(0, lambda: messagebox.showerror("数据结构异常", f"stock_out_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}"))
                         continue
             self.root.after(0, lambda: messagebox.showinfo("成功", "出库报表已导出到 stock_out_report.csv"))
         except Exception as e:
@@ -2080,22 +2079,21 @@ class GameTradingSystemGUI:
                     try:
                         values = self.trade_monitor_tab.monitor_tree.item(item)['values']
                         item_name, transaction_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = values
-                        # 将数字字段转换为整数
                         formatted_values = [
-                            item_name,  # 物品名称
-                            transaction_time,  # 当前时间
-                            str(int(quantity)),  # 数量
-                            str(int(values[3])),  # 一口价
-                            str(int(values[4])),  # 目标买入价
-                            str(int(values[5])),  # 计划卖出价
-                            str(int(values[6])),  # 保本卖出价
-                            str(int(values[7])),  # 利润
-                            values[8],  # 利润率
-                            values[9]   # 出库策略
+                            item_name,
+                            transaction_time,
+                            str(int(quantity)),
+                            str(int(values[3])),
+                            str(int(values[4])),
+                            str(int(values[5])),
+                            str(int(values[6])),
+                            str(int(values[7])),
+                            values[8],
+                            values[9]
                         ]
                         f.write(",".join(formatted_values) + "\n")
                     except Exception as e:
-                        messagebox.showerror("数据结构异常", f"monitor_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
+                        self.root.after(0, lambda: messagebox.showerror("数据结构异常", f"monitor_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}"))
                         continue
             self.root.after(0, lambda: messagebox.showinfo("成功", "监控报表已导出到 monitor_report.csv"))
         except Exception as e:

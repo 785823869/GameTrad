@@ -33,6 +33,7 @@ import tkinter.simpledialog as simpledialog
 import tkinter as tk
 import webbrowser
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+from nvwa_price_tab import NvwaPriceTab
 
 def safe_float(val, default=0.0):
     try:
@@ -245,6 +246,7 @@ class GameTradingSystemGUI:
         self.create_analysis_tab()
         self.create_log_tab()
         self.create_silver_price_tab()
+        self.nvwa_price_tab = NvwaPriceTab(self.notebook)  # 新增女娲石价格标签页
         
         # 加载保存的数据
         self.load_saved_data()
@@ -382,6 +384,8 @@ class GameTradingSystemGUI:
         self.stock_in_tree.bind("<Button-3>", self.show_stock_in_menu)
         # 新增：Ctrl+A全选
         self.stock_in_tree.bind('<Control-a>', lambda e: [self.stock_in_tree.selection_set(self.stock_in_tree.get_children()), 'break'])
+        # 在create_stock_in_tab末尾添加事件绑定
+        self.stock_in_tree.bind("<Double-1>", self.edit_stock_in_item)
     
     def edit_stock_in_item(self, event):
         item_id = self.stock_in_tree.identify_row(event.y)
@@ -459,6 +463,8 @@ class GameTradingSystemGUI:
             })
             self.refresh_stock_in()
             edit_win.destroy()
+            # 在edit_stock_in_item的save()中，保存前加：
+            self.log_operation('修改', '入库管理', {'old': values, 'new': new_vals})
         button_frame = ttk.Frame(edit_win, style='Edit.TFrame')
         button_frame.pack(side='bottom', fill='x', pady=20)
         ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
@@ -968,6 +974,8 @@ class GameTradingSystemGUI:
         self.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
         # 新增：Ctrl+A全选
         self.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tree.selection_set(self.stock_out_tree.get_children()), 'break'])
+        # 在create_stock_out_tab末尾添加事件绑定
+        self.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
     
     def edit_stock_out_item(self, event):
         item_id = self.stock_out_tree.identify_row(event.y)
@@ -1048,6 +1056,8 @@ class GameTradingSystemGUI:
             })
             self.refresh_stock_out()
             edit_win.destroy()
+            # 在edit_stock_out_item的save()中，保存前加：
+            self.log_operation('修改', '出库管理', {'old': values, 'new': new_vals})
         button_frame = ttk.Frame(edit_win, style='Edit.TFrame')
         button_frame.pack(side='bottom', fill='x', pady=20)
         ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
@@ -1280,7 +1290,7 @@ class GameTradingSystemGUI:
         """创建日志标签页"""
         log_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(log_frame, text="操作日志")
-        columns = ("操作类型", "标签页", "操作时间")
+        columns = ("操作类型", "标签页", "操作时间", "数据")
         self.log_tree = ttk.Treeview(log_frame, columns=columns, show='headings', height=18)
         for col in columns:
             self.log_tree.heading(col, text=col, anchor='center')
@@ -1342,34 +1352,71 @@ class GameTradingSystemGUI:
             scrollbar = ttk.Scrollbar(text, command=text.yview)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             text.config(yscrollcommand=scrollbar.set)
+            # 字段映射
+            field_map = {
+                "old": "修改前",
+                "new": "修改后",
+                "item_name": "物品名",
+                "transaction_time": "时间",
+                "quantity": "数量",
+                "cost": "花费",
+                "avg_cost": "均价",
+                "unit_price": "单价",
+                "fee": "手续费",
+                "deposit": "保证金",
+                "total_amount": "总金额",
+                "note": "备注",
+                "market_price": "市场价",
+                "target_price": "目标价",
+                "planned_price": "计划价",
+                "break_even_price": "保本价",
+                "profit": "利润",
+                "profit_rate": "利润率",
+                "strategy": "策略",
+            }
+            def beautify_row(row):
+                # row为dict或list
+                if isinstance(row, dict):
+                    return ', '.join(f"{field_map.get(k, k)}: {v}" for k, v in row.items())
+                elif isinstance(row, list):
+                    # 可能是字段顺序的list
+                    # 尝试用常见字段顺序映射
+                    keys = ["物品名", "时间", "数量", "单价", "手续费", "总金额", "备注"]
+                    return ', '.join(f"{keys[i] if i < len(keys) else i+1}: {v}" for i, v in enumerate(row))
+                else:
+                    return str(row)
+            def beautify(obj):
+                if isinstance(obj, dict):
+                    lines = []
+                    for k, v in obj.items():
+                        cname = field_map.get(k, k)
+                        if isinstance(v, (dict, list)):
+                            # 嵌套的old/new
+                            if isinstance(v, list) and v and not isinstance(v[0], (dict, list)):
+                                # 普通字段list
+                                lines.append(f"{cname}: {beautify_row(v)}")
+                            else:
+                                lines.append(f"{cname}: {beautify(v)}")
+                        else:
+                            lines.append(f"{cname}: {v}")
+                    return '\n'.join(lines)
+                elif isinstance(obj, list):
+                    # 只显示一行
+                    return beautify_row(obj)
+                else:
+                    return str(obj)
             # 显示详情
             detail = f"操作类型: {op_type}\n"
             detail += f"标签页: {tab_name}\n"
             detail += f"时间: {timestamp}\n"
             detail += "数据:\n"
+            import json
             if isinstance(data, str):
                 try:
                     data = json.loads(data)
                 except:
                     pass
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    detail += f"{key}: {value}\n"
-            elif isinstance(data, list):
-                for i, row in enumerate(data):
-                    if isinstance(row, dict):
-                        detail += f"[{i}]\n"
-                        for key, value in row.items():
-                            detail += f"  {key}: {value}\n"
-                    else:
-                        detail += f"  [{i}] {row}\n"
-            else:
-                import json
-                try:
-                    data_str = json.dumps(data, ensure_ascii=False, indent=2)
-                    detail += data_str
-                except Exception:
-                    detail += str(data)
+            detail += beautify(data)
             text.insert(tk.END, detail)
             text.config(state=tk.DISABLED)
         self.log_tree.bind('<Double-1>', show_log_detail)
@@ -1388,38 +1435,24 @@ class GameTradingSystemGUI:
         self.refresh_log_tab()
 
     def refresh_log_tab(self):
-        # 清空并重新加载日志，支持筛选
+        # 先清空表格
         for item in self.log_tree.get_children():
             self.log_tree.delete(item)
-        type_f = self.filter_type.get()
-        tab_f = self.filter_tab.get()
-        rev_f = self.filter_reverted.get()
-        keyword = self.log_search_var.get().strip() or None
-        # 计算总页数
-        total_count = self.db_manager.count_operation_logs(
-            tab_name=None if tab_f == "全部" else tab_f,
-            op_type=None if type_f == "全部" else type_f,
-            keyword=keyword,
-            reverted=None if rev_f == "全部" else (rev_f == "是")
-        )
-        self.log_total_pages = max(1, (total_count + self.log_page_size - 1) // self.log_page_size)
-        if self.log_page > self.log_total_pages:
-            self.log_page = self.log_total_pages
-        self.log_page_label.config(text=f"第{self.log_page}/{self.log_total_pages}页")
         logs = self.db_manager.get_operation_logs(
-            tab_name=None if tab_f == "全部" else tab_f,
-            op_type=None if type_f == "全部" else type_f,
-            keyword=keyword,
-            reverted=None if rev_f == "全部" else (rev_f == "是"),
-            page=self.log_page,
-            page_size=self.log_page_size
+            tab_name=None,
+            op_type=None,
+            keyword=None,
+            reverted=None,
+            page=1,
+            page_size=100
         )
-        self._current_log_page_data = logs  # 保存当前页日志
         for log in logs:
+            is_reverted = bool(log.get('已回退')) or str(log.get('已回退')) in ('1', 'True', 'true', "b'\\x01'")
             self.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if log.get('已回退') else ""),
+                log['操作类型'] + ("（已回退）" if is_reverted else ""),
                 log['标签页'],
-                log['操作时间']
+                log['操作时间'],
+                json.dumps(log.get('数据'), ensure_ascii=False)
             ))
 
     def export_log_csv(self):
@@ -1460,55 +1493,44 @@ class GameTradingSystemGUI:
         self.log_tree.insert('', 'end', values=(
             log['操作类型'] + ("（已回退）" if reverted else ""),
             log['标签页'],
-            log['操作时间']
+            log['操作时间'],
+            json.dumps(log.get('数据'), ensure_ascii=False)
         ))
 
     def refresh_log_tab(self):
-        # 清空并重新加载日志，支持筛选
+        # 先清空表格
         for item in self.log_tree.get_children():
             self.log_tree.delete(item)
-        type_f = self.filter_type.get()
-        tab_f = self.filter_tab.get()
-        rev_f = self.filter_reverted.get()
-        keyword = self.log_search_var.get().strip() or None
-        # 计算总页数
-        total_count = self.db_manager.count_operation_logs(
-            tab_name=None if tab_f == "全部" else tab_f,
-            op_type=None if type_f == "全部" else type_f,
-            keyword=keyword,
-            reverted=None if rev_f == "全部" else (rev_f == "是")
-        )
-        self.log_total_pages = max(1, (total_count + self.log_page_size - 1) // self.log_page_size)
-        if self.log_page > self.log_total_pages:
-            self.log_page = self.log_total_pages
-        self.log_page_label.config(text=f"第{self.log_page}/{self.log_total_pages}页")
         logs = self.db_manager.get_operation_logs(
-            tab_name=None if tab_f == "全部" else tab_f,
-            op_type=None if type_f == "全部" else type_f,
-            keyword=keyword,
-            reverted=None if rev_f == "全部" else (rev_f == "是"),
-            page=self.log_page,
-            page_size=self.log_page_size
+            tab_name=None,
+            op_type=None,
+            keyword=None,
+            reverted=None,
+            page=1,
+            page_size=100
         )
-        self._current_log_page_data = logs  # 保存当前页日志
         for log in logs:
+            is_reverted = bool(log.get('已回退')) or str(log.get('已回退')) in ('1', 'True', 'true', "b'\\x01'")
             self.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if log.get('已回退') else ""),
+                log['操作类型'] + ("（已回退）" if is_reverted else ""),
                 log['标签页'],
-                log['操作时间']
+                log['操作时间'],
+                json.dumps(log.get('数据'), ensure_ascii=False)
             ))
 
     def undo_last_operation(self):
-        # 跳过已回退的操作
-        while self.undo_stack and self.undo_stack[-1].get('已回退'):
-            self.undo_stack.pop()
-        if not self.undo_stack:
+        # 每次都从数据库获取最新一条未回退的日志
+        logs = self.db_manager.get_operation_logs(
+            tab_name=None, op_type=None, keyword=None, reverted=False, page=1, page_size=1
+        )
+        if not logs:
             messagebox.showinfo("提示", "没有可回退的操作！")
             return
-        last_log = self.undo_stack.pop()
+        last_log = logs[0]
         op_type = last_log['操作类型']
         tab = last_log['标签页']
         data = last_log.get('数据')
+        # 按类型回退数据
         if op_type == '添加' and tab == '入库管理':
             if self.stock_in_tree.get_children():
                 last_item = self.stock_in_tree.get_children()[0]
@@ -1570,13 +1592,46 @@ class GameTradingSystemGUI:
                     'strategy': values[9]
                 })
             self.refresh_monitor()
+        elif op_type == '修改' and tab == '入库管理' and data:
+            old = data.get('old')
+            if old:
+                self.db_manager.delete_stock_in(old[0], old[1])
+                self.db_manager.save_stock_in({
+                    'item_name': old[0],
+                    'transaction_time': old[1],
+                    'quantity': int(old[2]),
+                    'cost': float(old[3]),
+                    'avg_cost': float(old[4]),
+                    'note': old[5] if len(old) > 5 else ''
+                })
+                self.refresh_stock_in()
+                self.refresh_inventory()
+        elif op_type == '修改' and tab == '出库管理' and data:
+            old = data.get('old')
+            if old:
+                self.db_manager.delete_stock_out(old[0], old[1])
+                self.db_manager.save_stock_out({
+                    'item_name': old[0],
+                    'transaction_time': old[1],
+                    'quantity': int(old[2]),
+                    'unit_price': float(old[3]),
+                    'fee': float(old[4]),
+                    'deposit': 0.0,
+                    'total_amount': float(old[5]),
+                    'note': old[6] if len(old) > 6 else ''
+                })
+                self.refresh_stock_out()
+                self.refresh_inventory()
         else:
             messagebox.showinfo("提示", "该操作类型暂不支持回退！")
             return
         # 标记日志为已回退
         last_log['已回退'] = True
         self.redo_stack.append(last_log)
-        self.refresh_log_tab()
+        # 只更新数据库，不插入新日志
+        if 'id' in last_log:
+            self.db_manager.update_operation_log_reverted(last_log['id'], True)
+        self.refresh_log_tab()  # 强制刷新
         self._save_operation_logs()
         messagebox.showinfo("提示", f"已回退操作: {op_type} - {tab}")
 
@@ -1646,14 +1701,47 @@ class GameTradingSystemGUI:
             for values in data:
                 self.db_manager.delete_trade_monitor(values[0], values[1])
             self.refresh_monitor()
+        elif op_type == '修改' and tab == '入库管理' and data:
+            new = data.get('new')
+            if new:
+                self.db_manager.delete_stock_in(new[0], new[1])
+                self.db_manager.save_stock_in({
+                    'item_name': new[0],
+                    'transaction_time': new[1],
+                    'quantity': int(new[2]),
+                    'cost': float(new[3]),
+                    'avg_cost': float(new[4]),
+                    'note': new[5] if len(new) > 5 else ''
+                })
+                self.refresh_stock_in()
+                self.refresh_inventory()
+        elif op_type == '修改' and tab == '出库管理' and data:
+            new = data.get('new')
+            if new:
+                self.db_manager.delete_stock_out(new[0], new[1])
+                self.db_manager.save_stock_out({
+                    'item_name': new[0],
+                    'transaction_time': new[1],
+                    'quantity': int(new[2]),
+                    'unit_price': float(new[3]),
+                    'fee': float(new[4]),
+                    'deposit': 0.0,
+                    'total_amount': float(new[5]),
+                    'note': new[6] if len(new) > 6 else ''
+                })
+                self.refresh_stock_out()
+                self.refresh_inventory()
         else:
             messagebox.showinfo("提示", "该操作类型暂不支持前进！")
             return
         last_log['已回退'] = False
         self.undo_stack.append(last_log)
-        self.refresh_log_tab()
+        self.refresh_log_tab()  # 强制刷新
         self._save_operation_logs()
         messagebox.showinfo("提示", f"已恢复操作: {op_type} - {tab}")
+        # 在redo_last_operation最后加：
+        if 'id' in last_log:
+            self.db_manager.update_operation_log_reverted(last_log['id'], False)
 
     def load_saved_data(self):
         """从数据库加载数据"""
@@ -1825,10 +1913,10 @@ class GameTradingSystemGUI:
                 str(int(round(in_avg))),
                 str(int(round(in_avg))),  # 保本均价=入库均价
                 str(int(round(out_avg))),
-                str(int(round(profit))),
+                f"{int(profit/10000)}万",  # 利润以万为单位整数
                 f"{int(round(profit_rate))}%",
-                f"{total_profit/10000:.2f}万",  # 成交利润额以万为单位
-                f"{value/10000:.2f}万"  # 库存价值以万为单位
+                f"{int(total_profit/10000)}万",  # 成交利润额以万为单位整数
+                f"{value/10000:.2f}万"  # 库存价值以万为单位保留两位小数
             ))
 
     def _fetch_and_draw_inventory(self):
@@ -2083,7 +2171,7 @@ class GameTradingSystemGUI:
             self.stock_in_quantity.delete(0, 'end')
             self.stock_in_cost.delete(0, 'end')
             self.stock_in_note.delete(0, 'end')
-            self.log_operation('添加', '入库管理')
+            self.log_operation('修改', '入库管理')
             messagebox.showinfo("成功", "入库记录添加成功！")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
@@ -2122,7 +2210,7 @@ class GameTradingSystemGUI:
             self.stock_out_fee.delete(0, 'end')
             self.stock_out_note.delete(0, 'end')
             # 记录操作日志
-            self.log_operation('添加', '出库管理')
+            self.log_operation('修改', '出库管理')
             messagebox.showinfo("成功", "出库记录添加成功！")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
@@ -2159,7 +2247,7 @@ class GameTradingSystemGUI:
             self.monitor_target_price.delete(0, 'end')
             self.monitor_planned_price.delete(0, 'end')
             self.monitor_strategy.delete(0, 'end')
-            self.log_operation('添加', '交易监控')
+            self.log_operation('修改', '交易监控')
             messagebox.showinfo("成功", "监控记录添加成功！")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
@@ -2175,8 +2263,8 @@ class GameTradingSystemGUI:
                 item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = values
                 self.analysis_text.insert(tb.END, 
                     f"物品: {item_name}, 库存数: {int(quantity)}, 总入库均价: {int(avg_price)}, "
-                    f"保本均价: {int(break_even_price)}, 总出库均价: {int(selling_price)}, 利润: {int(profit)}, "
-                    f"利润率: {values[6]}, 成交利润额: {int(total_profit)}, 库存价值: {int(inventory_value)}\n")
+                    f"保本均价: {int(break_even_price)}, 总出库均价: {int(selling_price)}, 利润: {str(profit)}, "
+                    f"利润率: {values[6]}, 成交利润额: {str(total_profit)}, 库存价值: {str(inventory_value)}\n")
             except Exception as e:
                 messagebox.showerror("数据结构异常", f"inventory_tree数据结构异常: {e}\nvalues={values if 'values' in locals() else ''}")
                 continue
@@ -2373,10 +2461,10 @@ class GameTradingSystemGUI:
                             str(int(avg_price)),  # 总入库均价
                             str(int(break_even_price)),  # 保本均价
                             str(int(selling_price)),  # 总出库均价
-                            str(int(profit)),  # 利润
+                            str(int(profit)),  # 利润（已为"xx万"字符串）
                             values[6],  # 利润率
-                            str(int(total_profit)),  # 成交利润额
-                            str(int(inventory_value))   # 库存价值
+                            str(int(total_profit)),  # 成交利润额（已为"xx万"字符串）
+                            str(int(inventory_value))   # 库存价值（已为"xx万"字符串）
                         ]
                         f.write(",".join(formatted_values) + "\n")
                     except Exception as e:
@@ -3070,7 +3158,7 @@ class GameTradingSystemGUI:
 - 数据分析
 - 数据迁移
 
-作者：小明
+作者：三只小猪
         """
         messagebox.showinfo("关于", about_text)
 

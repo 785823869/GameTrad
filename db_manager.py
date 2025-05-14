@@ -511,14 +511,6 @@ class DatabaseManager:
                 total_profit DECIMAL(18,2) NOT NULL,
                 inventory_value DECIMAL(18,2) NOT NULL
             )''',
-            '''CREATE TABLE IF NOT EXISTS operation_logs (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                op_type VARCHAR(50) NOT NULL,
-                tab_name VARCHAR(50) NOT NULL,
-                data TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                reverted BOOLEAN DEFAULT FALSE
-            )''',
             '''CREATE TABLE IF NOT EXISTS item_dict (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 item_name VARCHAR(128) NOT NULL UNIQUE,
@@ -531,6 +523,15 @@ class DatabaseManager:
                 price DECIMAL(18,2) NOT NULL,
                 ma_price DECIMAL(18,2) NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS operation_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                operation_type VARCHAR(50) NOT NULL,
+                tab_name VARCHAR(50) NOT NULL,
+                operation_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                operation_data TEXT,
+                reverted BOOLEAN DEFAULT FALSE,
+                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )'''
         ]
         for sql in table_sqls:
@@ -551,36 +552,36 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            query = "SELECT id, op_type, tab_name, data, timestamp, reverted FROM operation_logs WHERE 1=1"
+            query = "SELECT id, operation_type, tab_name, operation_data, operation_time, reverted FROM operation_logs WHERE 1=1"
             params = []
             if tab_name:
                 query += " AND tab_name LIKE %s"
                 params.append(f"%{tab_name}%")
             if op_type:
-                query += " AND op_type LIKE %s"
+                query += " AND operation_type LIKE %s"
                 params.append(f"%{op_type}%")
             if keyword:
-                query += " AND data LIKE %s"
+                query += " AND operation_data LIKE %s"
                 params.append(f"%{keyword}%")
             if reverted is not None:
                 query += " AND reverted=%s"
                 params.append(reverted)
-            query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+            query += " ORDER BY operation_time DESC LIMIT %s OFFSET %s"
             params.extend([page_size, (page-1)*page_size])
             cursor.execute(query, tuple(params))
             results = []
             for row in cursor.fetchall():
-                id, op_type, tab_name, data, timestamp, reverted = row
+                id, operation_type, tab_name, operation_data, operation_time, reverted = row
                 try:
-                    data = json.loads(data)
+                    operation_data = json.loads(operation_data)
                 except Exception:
                     pass
                 results.append({
                     'id': id,
-                    '操作类型': op_type,
+                    '操作类型': operation_type,
                     '标签页': tab_name,
-                    '操作时间': timestamp.strftime("%Y-%m-%d %H:%M:%S") if hasattr(timestamp, 'strftime') else str(timestamp),
-                    '数据': data,
+                    '操作时间': operation_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(operation_time, 'strftime') else str(operation_time),
+                    '数据': operation_data,
                     '已回退': bool(reverted)
                 })
             return results
@@ -598,10 +599,10 @@ class DatabaseManager:
                 query += " AND tab_name LIKE %s"
                 params.append(f"%{tab_name}%")
             if op_type:
-                query += " AND op_type LIKE %s"
+                query += " AND operation_type LIKE %s"
                 params.append(f"%{op_type}%")
             if keyword:
-                query += " AND data LIKE %s"
+                query += " AND operation_data LIKE %s"
                 params.append(f"%{keyword}%")
             if reverted is not None:
                 query += " AND reverted=%s"
@@ -620,7 +621,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "INSERT INTO operation_logs (op_type, tab_name, data, reverted) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO operation_logs (operation_type, tab_name, operation_data, reverted) VALUES (%s, %s, %s, %s)",
                 (op_type, tab_name, json.dumps(data, ensure_ascii=False), int(bool(reverted)))
             )
             conn.commit()
@@ -646,4 +647,16 @@ class DatabaseManager:
             print(f'更新操作日志回退状态失败: {e}')
         finally:
             cursor.close()
-            conn.close() 
+            conn.close()
+
+    def _load_operation_logs(self):
+        """加载操作日志"""
+        try:
+            cursor = self.db_manager.get_connection().cursor()
+            cursor.execute("SELECT * FROM operation_logs ORDER BY operation_time DESC")
+            logs = cursor.fetchall()
+            cursor.close()
+            return logs
+        except Exception as e:
+            print(f"加载操作日志失败: {e}")
+            return [] 

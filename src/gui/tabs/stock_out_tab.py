@@ -299,6 +299,8 @@ class StockOutTab:
                     '备注': 'note'
                 }
             )
+            # 新增：记录添加日志
+            self.main_gui.log_operation('添加', '出库管理', all_preview_data)
         else:
             messagebox.showwarning("无有效数据", "未识别到有效的出库数据！")
         self._pending_ocr_images_out.clear()

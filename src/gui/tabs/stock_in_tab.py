@@ -54,7 +54,7 @@ class StockInTab:
         add_frame.columnconfigure(1, weight=1)
         ttk.Button(add_frame, text="添加入库", command=self.add_stock_in).grid(row=4, column=0, columnspan=2, pady=10, sticky='ew')
         ttk.Button(right_panel, text="刷新入库记录", command=self.refresh_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="上传图片自动入库", command=self.batch_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
+        ttk.Button(right_panel, text="上传图片自动入库", command=self.upload_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         self.ocr_image_preview_frame = ttk.Frame(right_panel)
         self.ocr_image_preview_frame.pack(fill='x', pady=5)
@@ -215,11 +215,17 @@ class StockInTab:
         if not selected_items:
             return
         names = [self.stock_in_tree.item(item)['values'][0] for item in selected_items]
+        times = [self.stock_in_tree.item(item)['values'][1] for item in selected_items]
         msg = "确定要删除以下入库记录吗？\n" + "，".join(str(n) for n in names)
+        deleted_data = []
         if messagebox.askyesno("确认", msg):
-            for item in selected_items:
-                self.stock_in_tree.delete(item)
+            for item, name, t in zip(selected_items, names, times):
+                values = self.stock_in_tree.item(item)['values']
+                deleted_data.append(values)
+                self.db_manager.delete_stock_in(name, t)
             self.refresh_stock_in()
+            self.main_gui.log_operation('删除', '入库管理', deleted_data)
+            messagebox.showinfo("成功", "已删除所选入库记录！")
 
     def refresh_ocr_image_preview(self):
         for widget in self.ocr_image_preview_frame.winfo_children():
@@ -238,16 +244,21 @@ class StockInTab:
         del self._pending_ocr_images[idx]
         self.refresh_ocr_image_preview()
 
-    def paste_ocr_import_stock_in(self, event=None):
-        img = ImageGrab.grabclipboard()
-        if isinstance(img, list):
-            img = img[0] if img else None
-        if img is None or not hasattr(img, 'save'):
-            messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
+    def upload_ocr_import_stock_in(self):
+        file_paths = filedialog.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
+        if not file_paths:
             return
-        self._pending_ocr_images.append(img)
-        self.refresh_ocr_image_preview()
-        messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images)}张图片，点击批量识别可统一导入。")
+        try:
+            from PIL import Image
+            count = 0
+            for file_path in file_paths:
+                img = Image.open(file_path)
+                self._pending_ocr_images.append(img)
+                count += 1
+            self.refresh_ocr_image_preview()
+            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
+        except Exception as e:
+            messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def batch_ocr_import_stock_in(self):
         if not self._pending_ocr_images:
@@ -282,10 +293,16 @@ class StockInTab:
             except Exception as e:
                 print(f"OCR识别失败: {e}")
         if all_preview_data:
-            self.main_gui.show_ocr_preview(
+            self.main_gui.show_preview(
                 all_preview_data,
                 columns=('物品', '入库数量', '入库花费', '入库均价', '备注'),
-                field_map=['item_name', 'quantity', 'cost', 'avg_cost', 'note']
+                field_map={
+                    '物品': 'item_name',
+                    '入库数量': 'quantity',
+                    '入库花费': 'cost',
+                    '入库均价': 'avg_cost',
+                    '备注': 'note'
+                }
             )
         else:
             messagebox.showwarning("无有效数据", "未识别到有效的入库数据！")
@@ -332,4 +349,15 @@ class StockInTab:
             if item not in self.stock_in_tree.selection():
                 self.stock_in_tree.selection_set(item)
             self.stock_in_menu.post(event.x_root, event.y_root)
+
+    def paste_ocr_import_stock_in(self, event=None):
+        img = ImageGrab.grabclipboard()
+        if isinstance(img, list):
+            img = img[0] if img else None
+        if img is None or not hasattr(img, 'save'):
+            messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
+            return
+        self._pending_ocr_images.append(img)
+        self.refresh_ocr_image_preview()
+        messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images)}张图片，点击批量识别可统一导入。")
     # ...后续补全所有入库管理相关方法... 

@@ -5,6 +5,7 @@ from PIL import ImageGrab, ImageTk
 import io, base64, requests
 from datetime import datetime
 import tkinter as tk
+import re
 
 class StockOutTab:
     def __init__(self, notebook, main_gui):
@@ -286,10 +287,17 @@ class StockOutTab:
             except Exception as e:
                 print(f"OCR识别失败: {e}")
         if all_preview_data:
-            self.main_gui.show_ocr_preview(
+            self.main_gui.show_preview(
                 all_preview_data,
                 columns=('物品', '数量', '单价', '手续费', '总金额', '备注'),
-                field_map=['item_name', 'quantity', 'unit_price', 'fee', 'total_amount', 'note']
+                field_map={
+                    '物品': 'item_name',
+                    '数量': 'quantity',
+                    '单价': 'unit_price',
+                    '手续费': 'fee',
+                    '总金额': 'total_amount',
+                    '备注': 'note'
+                }
             )
         else:
             messagebox.showwarning("无有效数据", "未识别到有效的出库数据！")
@@ -335,24 +343,51 @@ class StockOutTab:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def parse_stock_out_ocr_text(self, text):
-        import re
+        """解析出库OCR文本，所有金额字段转为整数，正则兼容多种格式。"""
         try:
+            # 特殊处理古玉
+            if "古玉" in text:
+                # 提取数量（在古玉前面的数字）
+                quantity_match = re.search(r'(\d+)[^0-9]*古玉', text)
+                if not quantity_match:
+                    return None
+                quantity = int(quantity_match.group(1))
+                # 提取总金额（在收益后面的数字）
+                total_match = re.search(r'收益[^0-9]*(\d+)', text)
+                if not total_match:
+                    return None
+                total_amount = int(total_match.group(1))
+                # 计算单价
+                unit_price = total_amount // quantity
+                return {
+                    'item_name': '古玉',  # 只保留"古玉"
+                    'quantity': quantity,
+                    'unit_price': unit_price,
+                    'fee': 0,  # 古玉不需要手续费
+                    'deposit': 0.0,
+                    'total_amount': total_amount,
+                    'note': 'OCR导入'
+                }
+            # 原有的通用处理逻辑
             item_match = re.search(r'已成功售出([^（(]+)[（(](\d+)[）)]', text)
             if not item_match:
                 return None
             item_name = item_match.group(1).strip()
             quantity = int(item_match.group(2))
+            # 优化正则，兼容多种格式
             price_match = re.search(r'售出单价[:： ]*([0-9]+)银两', text)
             price = int(price_match.group(1)) if price_match else 0
             fee_match = re.search(r'手续费[:： ]*([0-9]+)银两', text)
             fee = int(fee_match.group(1)) if fee_match else 0
-            total_amount = quantity * price - fee
+            deposit_match = re.search(r'退还押金[:： ]*([0-9]+)银两', text)
+            deposit = int(deposit_match.group(1)) if deposit_match else 0
+            total_amount = quantity * price - fee + deposit
             return {
                 'item_name': item_name,
                 'quantity': quantity,
                 'unit_price': int(price),
                 'fee': int(fee),
-                'deposit': 0.0,
+                'deposit': float(deposit),
                 'total_amount': int(total_amount),
                 'note': 'OCR导入'
             }

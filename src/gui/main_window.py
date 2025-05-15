@@ -306,7 +306,7 @@ class GameTradingSystemGUI:
         self.refresh_all()
         
         # 日志持久化
-        self.operation_logs = self._load_operation_logs()
+        self.operation_logs = list(self._load_operation_logs())
         self.undo_stack = [log for log in self.operation_logs if not log[5]]  # 假设"已回退"是元组的第6个字段（索引5）
         self.redo_stack = [log for log in self.operation_logs if log[5]]
         
@@ -827,25 +827,8 @@ class GameTradingSystemGUI:
         self.refresh_log_tab()
 
     def refresh_log_tab(self):
-        # 先清空表格
-        for item in self.log_tree.get_children():
-            self.log_tree.delete(item)
-        logs = self.db_manager.get_operation_logs(
-            tab_name=None,
-            op_type=None,
-            keyword=None,
-            reverted=None,
-            page=1,
-            page_size=100
-        )
-        for log in logs:
-            is_reverted = bool(log[5])
-            self.log_tree.insert('', 'end', values=(
-                log[0] + ("（已回退）" if is_reverted else ""),
-                log[1],
-                log[2],
-                json.dumps(log[3], ensure_ascii=False)
-            ))
+        """刷新日志标签页，调用 log_tab 的方法，避免直接访问 log_tree"""
+        self.log_tab.refresh_log_tab()
 
     def export_log_csv(self):
         import pandas as pd
@@ -908,33 +891,12 @@ class GameTradingSystemGUI:
         self.operation_logs.append(log)
         if not reverted:
             self.undo_stack.append(log)
-        self.log_tree.insert('', 'end', values=(
+        self.log_tab.log_tree.insert('', 'end', values=(
             log['操作类型'] + ("（已回退）" if reverted else ""),
             log['标签页'],
             log['操作时间'],
             json.dumps(log['数据'], ensure_ascii=False)
         ))
-
-    def refresh_log_tab(self):
-        # 先清空表格
-        for item in self.log_tree.get_children():
-            self.log_tree.delete(item)
-        logs = self.db_manager.get_operation_logs(
-            tab_name=None,
-            op_type=None,
-            keyword=None,
-            reverted=None,
-            page=1,
-            page_size=100
-        )
-        for log in logs:
-            is_reverted = bool(log[5])
-            self.log_tree.insert('', 'end', values=(
-                log[0] + ("（已回退）" if is_reverted else ""),
-                log[1],
-                log[2],
-                json.dumps(log[3], ensure_ascii=False)
-            ))
 
     def undo_last_operation(self):
         # 每次都从数据库获取最新一条未回退的日志
@@ -1242,7 +1204,9 @@ class GameTradingSystemGUI:
             
         except Exception as e:
             messagebox.showerror("错误", f"加载数据失败: {str(e)}")
-    
+        # 新增：强制刷新入库表格，确保显示最新数据
+        self.refresh_stock_in()
+
     def refresh_all(self):
         """刷新所有数据"""
         self.refresh_inventory()
@@ -2003,17 +1967,100 @@ class GameTradingSystemGUI:
     def _on_silver_release(self, event):
         self._dragging = False
 
-    def show_preview(self):
-        """显示预览窗口"""
+    def show_preview(self, data, columns=None, field_map=None):
+        import datetime
         preview_window = tk.Toplevel(self.root)
         preview_window.title("预览")
-        preview_window.geometry("800x600")
-        
-        text_widget = tk.Text(preview_window)
-        text_widget.pack(fill='both', expand=True)
-        
-        # 显示预览内容
-        text_widget.insert('1.0', "预览内容将在这里显示")
+        preview_window.geometry("900x600")
+
+        selected_items = set(range(len(data)))
+
+        # 顶部按钮区（左右分布）
+        top_button_frame = ttk.Frame(preview_window)
+        top_button_frame.pack(side=tk.TOP, fill=tk.X, pady=8)
+        btn_style = {'width': 12, 'padding': 6}
+        # 左侧按钮
+        left_btns = ttk.Frame(top_button_frame)
+        left_btns.pack(side=tk.LEFT)
+        def select_all():
+            for iid in tree.get_children():
+                tree.selection_add(iid)
+            selected_items.clear()
+            selected_items.update(range(len(data)))
+        def deselect_all():
+            tree.selection_remove(tree.get_children())
+            selected_items.clear()
+        ttk.Button(left_btns, text="全选", command=select_all, **btn_style).pack(side=tk.LEFT, padx=8)
+        ttk.Button(left_btns, text="全不选", command=deselect_all, **btn_style).pack(side=tk.LEFT, padx=8)
+        # 右侧按钮
+        right_btns = ttk.Frame(top_button_frame)
+        right_btns.pack(side=tk.RIGHT)
+        def confirm():
+            is_stock_in = False
+            for idx in sorted(selected_items):
+                row = data[idx]
+                if isinstance(row, dict):
+                    # 判断是入库还是出库
+                    if 'cost' in row and 'avg_cost' in row:
+                        is_stock_in = True
+                        if 'transaction_time' not in row:
+                            row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        self.db_manager.save_stock_in(row)
+                    else:
+                        if 'transaction_time' not in row:
+                            row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        self.db_manager.save_stock_out(row)
+            if is_stock_in:
+                self.refresh_stock_in()
+            else:
+                self.refresh_stock_out()
+            preview_window.destroy()
+            messagebox.showinfo("成功", "数据已成功导入！")
+        ttk.Button(right_btns, text="取消", command=preview_window.destroy, **btn_style).pack(side=tk.RIGHT, padx=10)
+        ttk.Button(right_btns, text="确认导入", command=confirm, **btn_style).pack(side=tk.RIGHT, padx=10)
+
+        # 创建表格
+        tree = ttk.Treeview(preview_window, columns=columns, show='headings', height=20, selectmode='extended')
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=120, anchor='center')
+        for idx, row in enumerate(data):
+            if isinstance(row, dict):
+                values = []
+                for col in columns:
+                    key = field_map.get(col, col)
+                    val = row.get(key, "")
+                    try:
+                        if isinstance(val, (int, float)):
+                            if "率" in col:
+                                val = f"{val:.2f}%"
+                            elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                val = f"{val:,.2f}"
+                            else:
+                                val = f"{int(val):,}"
+                        elif isinstance(val, str) and val.replace(".", "").isdigit():
+                            if "率" in col:
+                                val = f"{float(val):.2f}%"
+                            elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                val = f"{float(val):,.2f}"
+                            else:
+                                val = f"{int(float(val)):,}"
+                    except (ValueError, TypeError):
+                        pass
+                    values.append(str(val))
+            else:
+                values = [str(x) for x in row]
+            tree.insert('', 'end', iid=str(idx), values=values)
+        tree.selection_set(tree.get_children())
+        def on_select(event):
+            selected_items.clear()
+            for iid in tree.selection():
+                selected_items.add(int(iid))
+        tree.bind('<<TreeviewSelect>>', on_select)
+        scrollbar = ttk.Scrollbar(preview_window, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def open_data_migration(self):
         """打开数据迁移窗口"""
@@ -2101,6 +2148,10 @@ class GameTradingSystemGUI:
         """OCR后刷新所有数据"""
         self.refresh_inventory()
         self.refresh_stock_out()
+
+    def _save_operation_logs(self):
+        """占位方法，防止 AttributeError。可根据需要实现日志持久化。"""
+        pass
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 现代天蓝色主题

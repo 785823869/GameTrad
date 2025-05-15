@@ -34,7 +34,7 @@ class LogTab:
         filter_frame = ttk.Frame(log_frame, padding=4)
         filter_frame.pack(side='top', fill='x')
         ttk.Label(filter_frame, text="操作类型:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_type, values=["全部", "添加", "删除"], width=8, state='readonly').pack(side='left', padx=2)
+        ttk.Combobox(filter_frame, textvariable=self.filter_type, values=["全部", "添加", "修改", "删除", "推送"], width=8, state='readonly').pack(side='left', padx=2)
         ttk.Label(filter_frame, text="标签页:").pack(side='left')
         ttk.Combobox(filter_frame, textvariable=self.filter_tab, values=["全部", "入库管理", "出库管理", "交易监控"], width=10, state='readonly').pack(side='left', padx=2)
         ttk.Label(filter_frame, text="已回退:").pack(side='left')

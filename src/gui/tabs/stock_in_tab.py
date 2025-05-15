@@ -304,6 +304,7 @@ class StockInTab:
                     '备注': 'note'
                 }
             )
+            self.main_gui.log_operation('添加', '入库管理', all_preview_data)
         else:
             messagebox.showwarning("无有效数据", "未识别到有效的入库数据！")
         self._pending_ocr_images.clear()

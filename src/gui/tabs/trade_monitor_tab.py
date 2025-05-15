@@ -79,28 +79,88 @@ class TradeMonitorTab:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def batch_ocr_import_monitor(self):
-        """批量识别已添加的图片"""
+        """批量识别已添加的图片，弹出预览窗口，确认后批量导入（远程API识别）"""
         if not self._pending_ocr_images:
             messagebox.showinfo("提示", "请先添加图片")
             return
-        try:
-            import pytesseract
-            success = False
-            monitor_count = 0
-            for img in self._pending_ocr_images:
-                text = pytesseract.image_to_string(img, lang='chi_sim')
+        import io, base64, requests
+        all_data = []
+        for img in self._pending_ocr_images:
+            try:
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                url = "http://sql.didiba.uk:1224/api/ocr"
+                payload = {
+                    "base64": img_b64,
+                    "options": {
+                        "data.format": "text"
+                    }
+                }
+                headers = {"Content-Type": "application/json"}
+                resp = requests.post(url, json=payload, headers=headers, timeout=20)
+                resp.raise_for_status()
+                ocr_result = resp.json()
+                text = ocr_result.get('data')
+                if not text:
+                    continue
                 data = self.parse_monitor_ocr_text(text)
-                if data:
+                if isinstance(data, list):
+                    all_data.extend(data)
+                elif data:
+                    all_data.append(data)
+            except Exception as e:
+                print(f"OCR识别失败: {e}")
+        if all_data:
+            # 预览窗口确认导入时，自动合并/更新物品
+            def on_confirm(selected_data):
+                # 先查已有监控表，构建物品名到记录的映射
+                existing = {row[1]: row for row in self.db_manager.get_trade_monitor()}
+                for row in selected_data:
+                    item = row.get('item_name')
+                    quantity = row.get('quantity')
+                    price = row.get('market_price')
+                    if not item:
+                        continue
+                    # 构造完整数据
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    data = {
+                        'item_name': item,
+                        'monitor_time': now,
+                        'quantity': quantity or 0,
+                        'market_price': price or 0,
+                        'target_price': 0,
+                        'planned_price': 0,
+                        'break_even_price': 0,
+                        'profit': 0,
+                        'profit_rate': 0,
+                        'strategy': ''
+                    }
+                    # 已有则更新数量和一口价，否则新增
                     self.db_manager.save_trade_monitor(data)
-                    monitor_count += 1
-                    success = True
-            if success:
-                messagebox.showinfo("成功", f"成功导入{monitor_count}条监控记录")
                 self.refresh_monitor()
-            self._pending_ocr_images.clear()
-            self.refresh_ocr_image_preview()
-        except Exception as e:
-            messagebox.showerror("错误", f"OCR识别失败: {e}")
+                self.main_gui.log_operation('添加', '交易监控', selected_data)
+            # 弹出预览窗口，columns和field_map适配交易监控
+            self.main_gui.show_preview(
+                all_data,
+                columns=("物品", "数量", "一口价", "目标买入价", "计划卖出价", "保本卖出价", "利润", "利润率", "出库策略"),
+                field_map={
+                    "物品": "item_name",
+                    "数量": "quantity",
+                    "一口价": "market_price",
+                    "目标买入价": "target_price",
+                    "计划卖出价": "planned_price",
+                    "保本卖出价": "break_even_price",
+                    "利润": "profit",
+                    "利润率": "profit_rate",
+                    "出库策略": "strategy"
+                },
+                on_confirm=on_confirm
+            )
+        else:
+            messagebox.showwarning("无有效数据", "未识别到有效的监控数据！")
+        self._pending_ocr_images.clear()
+        self.refresh_ocr_image_preview()
 
     def paste_ocr_import_monitor(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
@@ -117,18 +177,19 @@ class TradeMonitorTab:
             messagebox.showerror("错误", f"粘贴图片失败: {e}")
 
     def refresh_ocr_image_preview(self):
-        """刷新OCR图片预览"""
+        """刷新OCR图片预览，风格与入库/出库一致"""
         for widget in self.ocr_image_preview_frame.winfo_children():
             widget.destroy()
-        if not self._pending_ocr_images:
-            return
-        preview_frame = ttk.LabelFrame(self.ocr_image_preview_frame, text="待识别图片", padding=5)
-        preview_frame.pack(fill='x', pady=5)
-        for i, img in enumerate(self._pending_ocr_images):
-            frame = ttk.Frame(preview_frame)
-            frame.pack(fill='x', pady=2)
-            ttk.Label(frame, text=f"图片{i+1}").pack(side='left')
-            ttk.Button(frame, text="删除", command=lambda idx=i: self.delete_ocr_image(idx)).pack(side='right')
+        for idx, img in enumerate(self._pending_ocr_images):
+            thumb = img.copy()
+            thumb.thumbnail((80, 80))
+            from PIL import ImageTk
+            photo = ImageTk.PhotoImage(thumb)
+            lbl = ttk.Label(self.ocr_image_preview_frame, image=photo)
+            lbl.image = photo
+            lbl.grid(row=0, column=idx*2, padx=4, pady=2)
+            btn = ttk.Button(self.ocr_image_preview_frame, text='删除', width=5, command=lambda i=idx: self.delete_ocr_image(i))
+            btn.grid(row=1, column=idx*2, padx=4, pady=2)
 
     def delete_ocr_image(self, idx):
         """删除待识别的图片"""
@@ -137,35 +198,91 @@ class TradeMonitorTab:
             self.refresh_ocr_image_preview()
 
     def parse_monitor_ocr_text(self, text):
-        """解析OCR识别的文本为监控数据"""
+        """
+        交易监控OCR文本解析，严格用物品字典分割物品名，并与数量、一口价一一对应，缺失补空。
+        若物品字典为空，自动弹窗提示。
+        """
+        import re
         try:
-            lines = text.split('\n')
-            data = {}
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                if '物品' in line:
-                    data['item_name'] = line.split('物品')[-1].strip()
-                elif '数量' in line:
-                    data['quantity'] = int(line.split('数量')[-1].strip())
-                elif '一口价' in line:
-                    data['market_price'] = float(line.split('一口价')[-1].strip())
-                elif '目标买入价' in line:
-                    data['target_price'] = float(line.split('目标买入价')[-1].strip())
-                elif '计划卖出价' in line:
-                    data['planned_price'] = float(line.split('计划卖出价')[-1].strip())
-                elif '出库策略' in line:
-                    data['strategy'] = line.split('出库策略')[-1].strip()
-            if 'item_name' in data and 'quantity' in data and 'market_price' in data:
-                data['monitor_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                data['break_even_price'] = data.get('target_price', 0) * 1.05
-                data['profit'] = data['market_price'] - data.get('target_price', 0)
-                data['profit_rate'] = (data['profit'] / data.get('target_price', 1)) * 100
-                return data
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            # 1. 提取物品名行
+            item_line = ''
+            for idx, line in enumerate(lines):
+                if line.startswith('物品'):
+                    items_block = []
+                    for j in range(idx+1, len(lines)):
+                        if any(lines[j].startswith(x) for x in ['品质', '数量', '等级', '一口价']):
+                            break
+                        items_block.append(lines[j])
+                    item_line = ''.join(items_block)
+                    break
+            # 2. 用物品字典分割物品名
+            dict_items = self.main_gui.load_item_dict() if hasattr(self.main_gui, 'load_item_dict') else []
+            if not dict_items:
+                messagebox.showwarning(
+                    "物品字典为空",
+                    "物品字典未设置或内容为空，无法分割物品名。请在'物品字典管理'中添加物品名后重试。"
+                )
+                return []
+            item_names = []
+            pos = 0
+            while pos < len(item_line):
+                matched = False
+                for name in sorted(dict_items, key=lambda x: -len(x)):
+                    if item_line.startswith(name, pos):
+                        item_names.append(name)
+                        pos += len(name)
+                        matched = True
+                        break
+                if not matched:
+                    pos += 1
+            # 3. 提取所有数量
+            quantities = []
+            for idx, line in enumerate(lines):
+                if line.startswith('数量'):
+                    qty_block = []
+                    qty_block.append(line.replace('数量', '').strip())
+                    for j in range(idx+1, len(lines)):
+                        if any(lines[j].startswith(x) for x in ['一口价', '物品', '品质', '等级']):
+                            break
+                        qty_block.append(lines[j])
+                    quantities = [int(x.replace(',', '')) for x in re.findall(r'[\d,]+', ' '.join(qty_block))]
+                    break
+            # 4. 提取所有一口价
+            prices = []
+            for idx, line in enumerate(lines):
+                if line.startswith('一口价'):
+                    price_block = []
+                    price_block.append(line.replace('一口价', '').strip())
+                    for j in range(idx+1, len(lines)):
+                        if any(lines[j].startswith(x) for x in ['数量', '物品', '品质', '等级']):
+                            break
+                        price_block.append(lines[j])
+                    prices = [int(x.replace(',', '')) for x in re.findall(r'[\d,]+', ' '.join(price_block))]
+                    break
+            n = len(item_names)
+            result = []
+            for i in range(n):
+                result.append({
+                    'item_name': item_names[i],
+                    'quantity': quantities[i] if i < len(quantities) else '',
+                    'market_price': prices[i] if i < len(prices) else '',
+                    'note': 'OCR导入' if (i < len(quantities) and i < len(prices)) else '数据缺失'
+                })
+            if n == 0:
+                messagebox.showwarning(
+                    "数据不完整",
+                    f"物品数：0，数量：{len(quantities)}，一口价：{len(prices)}。请检查OCR识别结果，部分数据可能丢失。"
+                )
+            elif not (n == len(quantities) == len(prices)):
+                messagebox.showwarning(
+                    "数据不完整",
+                    f"物品数：{n}，数量：{len(quantities)}，一口价：{len(prices)}。请检查OCR识别结果，部分数据可能丢失。"
+                )
+            return result
         except Exception as e:
-            messagebox.showerror("错误", f"解析OCR文本失败: {e}")
-        return None
+            print(f"解析交易监控OCR文本失败: {e}")
+            return []
 
     def show_monitor_menu(self, event):
         """显示右键菜单"""

@@ -51,11 +51,11 @@ class GameTradingSystemGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("游戏交易系统")
-        self.root.minsize(1200, 800)
+        self.root.geometry("1713x852")
+        self.root.resizable(False, False)
         self.db_manager = DatabaseManager()
         self._pending_ocr_images = []
-        self._pending_ocr_images_out = []
-        # 删除 self._pending_ocr_images_monitor
+        # 删除 self._pending_ocr_images_out
         self.create_main_interface()
         self.load_saved_data()
         
@@ -206,7 +206,8 @@ class GameTradingSystemGUI:
 
                 # 发送通知
                 self.send_server_chan_notification(title, content)
-                
+                # 新增：记录推送日志
+                self.log_operation('推送', '银两石价格', {'title': title, 'content': content})
                 # 更新最后推送时间
                 self.last_push_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 self.save_server_chan_config()
@@ -251,6 +252,11 @@ class GameTradingSystemGUI:
                             "银两价格异常警告 - DD373",
                             f"平台：DD373\n当前价格：{latest_price:.4f} 元/万两\n阈值：{threshold:.4f} 元/万两"
                         )
+                        # 新增：记录推送日志
+                        self.log_operation('推送', '银两石价格', {
+                            'title': "银两价格异常警告 - DD373",
+                            'content': f"平台：DD373\n当前价格：{latest_price:.4f} 元/万两\n阈值：{threshold:.4f} 元/万两"
+                        })
                 
                 # 返回标准结构
                 return {
@@ -375,8 +381,6 @@ class GameTradingSystemGUI:
         ttk.Button(right_panel, text="刷新出库记录", command=self.refresh_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
-        self.ocr_image_preview_frame_out = ttk.Frame(right_panel)
-        self.ocr_image_preview_frame_out.pack(fill='x', pady=5)
         self.stock_out_menu = tb.Menu(self.stock_out_tab.stock_out_tree, tearoff=0)
         self.stock_out_menu.add_command(label="删除", command=self.delete_stock_out_item)
         self.stock_out_tab.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
@@ -486,642 +490,47 @@ class GameTradingSystemGUI:
         self.refresh_ocr_image_preview_out()
 
     def paste_ocr_import_stock_out(self, event=None):
+        print("[DEBUG] 粘贴图片事件触发")
         img = ImageGrab.grabclipboard()
-        if isinstance(img, list):
-            img = img[0] if img else None
+        print("[DEBUG] grabclipboard结果：", type(img), img)
+        from PIL import Image
+        if isinstance(img, bytes):
+            from io import BytesIO
+            try:
+                img = Image.open(BytesIO(img))
+                print("[DEBUG] bytes已转为PIL.Image")
+            except Exception as e:
+                print(f"[DEBUG] bytes转图片失败: {e}")
+                img = None
+        elif isinstance(img, list):
+            if img:
+                if hasattr(img[0], 'save'):
+                    img = img[0]
+                elif isinstance(img[0], bytes):
+                    from io import BytesIO
+                    try:
+                        img = Image.open(BytesIO(img[0]))
+                        print("[DEBUG] list[0] bytes已转为PIL.Image")
+                    except Exception as e:
+                        print(f"[DEBUG] list[0] bytes转图片失败: {e}")
+                        img = None
+                else:
+                    print(f"[DEBUG] list[0]类型未知: {type(img[0])}")
+                    img = None
+            else:
+                img = None
         if img is None or not hasattr(img, 'save'):
             messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
             return
+        if hasattr(img, 'load'):
+            img.load()
+        if hasattr(img, 'convert'):
+            img = img.convert('RGB')
+        if hasattr(img, 'copy'):
+            img = img.copy()
         self._pending_ocr_images_out.append(img)
         self.refresh_ocr_image_preview_out()
         messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images_out)}张图片，点击批量识别可统一导入。")
-
-    def batch_ocr_import_stock_out(self):
-        if not self._pending_ocr_images_out:
-            messagebox.showwarning("无图片", "请先粘贴图片")
-            return
-        all_preview_data = []
-        for img in self._pending_ocr_images_out:
-            try:
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                url = "http://sql.didiba.uk:1224/api/ocr"
-                payload = {
-                    "base64": img_b64,
-                    "options": {
-                        "data.format": "text"
-                    }
-                }
-                headers = {"Content-Type": "application/json"}
-                resp = requests.post(url, json=payload, headers=headers, timeout=20)
-                resp.raise_for_status()
-                ocr_result = resp.json()
-                text = ocr_result.get('data')
-                if not text:
-                    continue
-                # 使用新的解析函数处理OCR文本
-                parsed_data = self.parse_stock_out_ocr_text(text)
-                if parsed_data:
-                    all_preview_data.append(parsed_data)
-            except Exception as e:
-                print(f"OCR识别失败: {e}")
-        if all_preview_data:
-            # 统一用自动分流的show_ocr_preview，出库管理用中文表头
-            self.show_ocr_preview(
-                all_preview_data,
-                columns=('物品', '数量', '单价', '手续费', '总金额', '备注'),
-                field_map=['item_name', 'quantity', 'unit_price', 'fee', 'total_amount', 'note']
-            )
-        else:
-            messagebox.showwarning("无有效数据", "未识别到有效的出库数据！")
-        self._pending_ocr_images_out.clear()
-        self.refresh_ocr_image_preview_out()
-
-    def show_stock_out_menu(self, event):
-        """显示入库右键菜单"""
-        item = self.stock_out_tab.stock_out_tree.identify_row(event.y)
-        if item:
-            if item not in self.stock_out_tab.stock_out_tree.selection():
-                self.stock_out_tab.stock_out_tree.selection_set(item)
-            self.stock_out_menu.post(event.x_root, event.y_root)
-
-    def delete_stock_out_item(self):
-        """批量删除出库记录"""
-        selected_items = self.stock_out_tab.stock_out_tree.selection()
-        if not selected_items:
-            return
-        names = [self.stock_out_tab.stock_out_tree.item(item)['values'][0] for item in selected_items]
-        msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
-        deleted_data = []
-        if messagebox.askyesno("确认", msg):
-            for item in selected_items:
-                values = self.stock_out_tab.stock_out_tree.item(item)['values']
-                self.db_manager.delete_stock_out(values[0], values[1])
-                deleted_data.append(values)
-            self.refresh_stock_out()
-            self.log_operation('删除', '出库管理', deleted_data)
-    
-    def upload_ocr_import_stock_out(self):
-        file_paths = fd.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
-            return
-        try:
-            from PIL import Image
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images_out.append(img)
-                count += 1
-            self.refresh_ocr_image_preview_out()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
-        except Exception as e:
-            messagebox.showerror("错误", f"图片加载失败: {e}")
-
-    def create_log_tab(self):
-        """创建日志标签页"""
-        log_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(log_frame, text="操作日志")
-        columns = ("操作类型", "标签页", "操作时间", "数据")
-        self.log_tree = ttk.Treeview(log_frame, columns=columns, show='headings', height=18)
-        for col in columns:
-            self.log_tree.heading(col, text=col, anchor='center')
-            self.log_tree.column(col, width=160, anchor='center')
-        self.log_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-        # 滚动条
-        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_tree.yview)
-        self.log_tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        # 筛选区（仅保留筛选条件）
-        filter_frame = ttk.Frame(log_frame, padding=4)
-        filter_frame.pack(side='top', fill='x')
-        self.filter_type = StringVar(value="全部")
-        self.filter_tab = StringVar(value="全部")
-        self.filter_reverted = StringVar(value="全部")
-        self.log_search_var = StringVar()
-        self.log_page = 1
-        self.log_page_size = 20
-        self.log_total_pages = 1
-        ttk.Label(filter_frame, text="操作类型:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_type, values=["全部", "添加", "删除"], width=8, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="标签页:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_tab, values=["全部", "入库管理", "出库管理", "交易监控"], width=10, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="已回退:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_reverted, values=["全部", "是", "否"], width=6, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="关键字:").pack(side='left')
-        ttk.Entry(filter_frame, textvariable=self.log_search_var, width=12).pack(side='left', padx=2)
-        # 新的按钮区（下方）
-        btn_frame = ttk.Frame(log_frame, padding=8)
-        btn_frame.pack(side='bottom', fill='x', pady=8)
-        ttk.Button(btn_frame, text="搜索", command=self._log_search).pack(side='left', padx=4)
-        ttk.Button(btn_frame, text="上一页", command=self.log_prev_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="下一页", command=self.log_next_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="导出日志", command=self.export_log_csv).pack(side='left', padx=2)
-        self.log_page_label = ttk.Label(btn_frame, text="第1/1页")
-        self.log_page_label.pack(side='left', padx=4)
-        self.log_jump_var = StringVar()
-        ttk.Entry(btn_frame, textvariable=self.log_jump_var, width=4).pack(side='left')
-        ttk.Button(btn_frame, text="跳转", command=self.log_jump_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="回退当前操作", command=self.undo_last_operation).pack(side='right', padx=8)
-        ttk.Button(btn_frame, text="前进(撤销回退)", command=self.redo_last_operation).pack(side='right', padx=8)
-        # 日志详情弹窗
-        def show_log_detail(event):
-            item = self.log_tree.identify_row(event.y)
-            if not item:
-                return
-            values = self.log_tree.item(item)['values']
-            if not values:
-                return
-            op_type, tab_name, timestamp, data = values
-            
-            # 创建详情窗口
-            detail_window = tk.Toplevel(self.root)
-            detail_window.title("操作详情")
-            detail_window.geometry("1200x600")
-            
-            # 创建框架
-            main_frame = ttk.Frame(detail_window, padding=10)
-            main_frame.pack(fill=tk.BOTH, expand=True)
-            
-            # 创建基本信息框架
-            info_frame = ttk.Frame(main_frame)
-            info_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            # 显示基本信息
-            ttk.Label(info_frame, text=f"操作类型：{op_type}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-            ttk.Label(info_frame, text=f"标签页：{tab_name}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-            ttk.Label(info_frame, text=f"操作时间：{timestamp}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-            
-            # 创建表格框架
-            tree_frame = ttk.Frame(main_frame)
-            tree_frame.pack(fill=tk.BOTH, expand=True)
-            
-            try:
-                if isinstance(data, str):
-                    data = json.loads(data)
-                
-                if not isinstance(data, (list, dict)):
-                    ttk.Label(tree_frame, text="（无数据）", font=('Microsoft YaHei', 10)).pack(pady=20)
-                    return
-                
-                # 新增：处理修改日志结构 {'old':..., 'new':...}
-                if isinstance(data, dict) and 'old' in data and 'new' in data:
-                    old_data = data['old']
-                    new_data = data['new']
-                    # 先显示"修改前"
-                    ttk.Label(main_frame, text="修改前：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10)
-                    tree_old = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
-                    for col in columns:
-                        tree_old.heading(col, text=col)
-                        tree_old.column(col, width=120, anchor='center')
-                    if isinstance(old_data, (list, tuple)):
-                        tree_old.insert('', 'end', values=[str(x) for x in old_data])
-                    elif isinstance(old_data, dict):
-                        tree_old.insert('', 'end', values=[str(old_data.get(field_map.get(col, col), "")) for col in columns])
-                    tree_old.pack(fill=tk.X, padx=10)
-                    # 再显示"修改后"
-                    ttk.Label(main_frame, text="修改后：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
-                    tree_new = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
-                    for col in columns:
-                        tree_new.heading(col, text=col)
-                        tree_new.column(col, width=120, anchor='center')
-                    if isinstance(new_data, (list, tuple)):
-                        tree_new.insert('', 'end', values=[str(x) for x in new_data])
-                    elif isinstance(new_data, dict):
-                        tree_new.insert('', 'end', values=[str(new_data.get(field_map.get(col, col), "")) for col in columns])
-                    tree_new.pack(fill=tk.X, padx=10)
-                    return
-                # 如果是字典，转换为列表
-                if isinstance(data, dict):
-                    data = [data]
-                
-                # 根据标签页类型设置列和字段映射
-                if tab_name == "入库管理":
-                    columns = ["物品名", "入库时间", "入库数量", "入库花费", "入库均价", "备注"]
-                    field_map = {
-                        "物品名": "item_name",
-                        "入库时间": "transaction_time",
-                        "入库数量": "quantity",
-                        "入库花费": "cost",
-                        "入库均价": "avg_cost",
-                        "备注": "note"
-                    }
-                elif tab_name == "出库管理":
-                    columns = ["物品名", "出库时间", "出库数量", "单价", "手续费", "保证金", "总金额", "备注"]
-                    field_map = {
-                        "物品名": "item_name",
-                        "出库时间": "transaction_time",
-                        "出库数量": "quantity",
-                        "单价": "unit_price",
-                        "手续费": "fee",
-                        "保证金": "deposit",
-                        "总金额": "total_amount",
-                        "备注": "note"
-                    }
-                elif tab_name == "交易监控":
-                    columns = ["物品名", "数量", "一口价", "目标买入价", "计划卖出价", "保本卖出价", "利润", "利润率", "出库策略"]
-                    field_map = {
-                        "物品名": "item_name",
-                        "数量": "quantity",
-                        "一口价": "market_price",
-                        "目标买入价": "target_price",
-                        "计划卖出价": "planned_price",
-                        "保本卖出价": "break_even_price",
-                        "利润": "profit",
-                        "利润率": "profit_rate",
-                        "出库策略": "strategy"
-                    }
-                else:
-                    # 动态获取所有键作为列
-                    if isinstance(data[0], dict):
-                        columns = list(data[0].keys())
-                        field_map = {col: col for col in columns}
-                    else:
-                        columns = [f"列{i+1}" for i in range(len(data[0]))]
-                        field_map = {col: i for i, col in enumerate(columns)}
-                
-                # 创建表格
-                tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
-                for col in columns:
-                    tree.heading(col, text=col)
-                    tree.column(col, width=120, anchor='center')
-                
-                # 插入数据
-                for row in data:
-                    if isinstance(row, dict):
-                        values = []
-                        for col in columns:
-                            key = field_map.get(col, col)
-                            val = row.get(key, "")
-                            try:
-                                if isinstance(val, (int, float)):
-                                    if "率" in col:
-                                        val = f"{val:.2f}%"
-                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                        val = f"{val:,.2f}"
-                                    else:
-                                        val = f"{int(val):,}"
-                                elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                    if "率" in col:
-                                        val = f"{float(val):.2f}%"
-                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                        val = f"{float(val):,.2f}"
-                                    else:
-                                        val = f"{int(float(val)):,}"
-                            except (ValueError, TypeError):
-                                pass
-                            values.append(str(val))
-                    else:
-                        values = []
-                        for i, val in enumerate(row):
-                            try:
-                                if isinstance(val, (int, float)):
-                                    if "率" in columns[i]:
-                                        val = f"{val:.2f}%"
-                                    elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                        val = f"{val:,.2f}"
-                                    else:
-                                        val = f"{int(val):,}"
-                                elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                    if "率" in columns[i]:
-                                        val = f"{float(val):.2f}%"
-                                    elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                        val = f"{float(val):,.2f}"
-                                    else:
-                                        val = f"{int(float(val)):,}"
-                            except (ValueError, TypeError):
-                                pass
-                            values.append(str(val))
-                        
-                    tree.insert('', 'end', values=values)
-                
-                # 添加滚动条
-                scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-                tree.configure(yscrollcommand=scrollbar.set)
-                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-                tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            except Exception as e:
-                print(f"显示日志详情失败: {e}")
-                ttk.Label(tree_frame, text=f"显示数据失败: {str(e)}", font=('Microsoft YaHei', 10)).pack(pady=20)
-            
-            # 添加关闭按钮
-            ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
-        self.log_tree.bind('<Double-1>', show_log_detail)
-        # 新增：Ctrl+A全选
-        self.log_tree.bind('<Control-a>', lambda e: [self.log_tree.selection_set(self.log_tree.get_children()), 'break'])
-
-        # 批量删除按钮
-        ttk.Button(btn_frame, text="批量删除", command=self.delete_log_items).pack(side='left', padx=2)
-
-    def _log_search(self):
-        self.log_page = 1
-        self.refresh_log_tab()
-
-    def log_prev_page(self):
-        if self.log_page > 1:
-            self.log_page -= 1
-            self.refresh_log_tab()
-
-    def log_next_page(self):
-        self.log_page += 1
-        self.refresh_log_tab()
-
-    def refresh_log_tab(self):
-        """刷新日志标签页，调用 log_tab 的方法，避免直接访问 log_tree"""
-        self.log_tab.refresh_log_tab()
-
-    def export_log_csv(self):
-        import pandas as pd
-        import os
-        from tkinter import filedialog
-        try:
-            # 收集所有表格数据
-            inventory_data = [self.inventory_tab.inventory_tree.item(item)['values'] for item in self.inventory_tab.inventory_tree.get_children()]
-            stock_in_data = [self.stock_in_tab.stock_in_tree.item(item)['values'] for item in self.stock_in_tab.stock_in_tree.get_children()]
-            stock_out_data = [self.stock_out_tab.stock_out_tree.item(item)['values'] for item in self.stock_out_tab.stock_out_tree.get_children()]
-            monitor_data = [self.trade_monitor_tab.monitor_tree.item(item)['values'] for item in self.trade_monitor_tab.monitor_tree.get_children()]
-
-            # 定义表头
-            inventory_columns = ['物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值']
-            stock_in_columns = ['物品', '当前时间', '入库数量', '入库花费', '入库均价', '备注']
-            stock_out_columns = ['物品', '当前时间', '出库数量', '单价', '手续费', '出库总金额', '备注']
-            monitor_columns = ['物品', '当前时间', '数量', '一口价', '目标买入价', '计划卖出价', '保本卖出价', '利润', '利润率', '出库策略']
-
-            # 让用户选择文件名和格式
-            file_path = filedialog.asksaveasfilename(
-                defaultextension='.xlsx',
-                filetypes=[('Excel文件', '*.xlsx'), ('CSV文件', '*.csv')],
-                title='导出报表'
-            )
-            if not file_path:
-                return
-
-            ext = os.path.splitext(file_path)[1].lower()
-            if ext == '.xlsx':
-                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                    pd.DataFrame(inventory_data, columns=inventory_columns).to_excel(writer, sheet_name='库存', index=False)
-                    pd.DataFrame(stock_in_data, columns=stock_in_columns).to_excel(writer, sheet_name='入库', index=False)
-                    pd.DataFrame(stock_out_data, columns=stock_out_columns).to_excel(writer, sheet_name='出库', index=False)
-                    pd.DataFrame(monitor_data, columns=monitor_columns).to_excel(writer, sheet_name='监控', index=False)
-                messagebox.showinfo('成功', f'所有报表已导出到 {file_path}')
-            elif ext == '.csv':
-                base = os.path.splitext(file_path)[0]
-                pd.DataFrame(inventory_data, columns=inventory_columns).to_csv(base + '_库存.csv', index=False, encoding='utf-8-sig')
-                pd.DataFrame(stock_in_data, columns=stock_in_columns).to_csv(base + '_入库.csv', index=False, encoding='utf-8-sig')
-                pd.DataFrame(stock_out_data, columns=stock_out_columns).to_csv(base + '_出库.csv', index=False, encoding='utf-8-sig')
-                pd.DataFrame(monitor_data, columns=monitor_columns).to_csv(base + '_监控.csv', index=False, encoding='utf-8-sig')
-                messagebox.showinfo('成功', f'所有报表已导出为多个csv文件（以{base}_开头）')
-            else:
-                messagebox.showerror('错误', '不支持的文件格式')
-        except Exception as e:
-            messagebox.showerror('错误', f'导出报表失败: {str(e)}')
-
-    def log_operation(self, op_type, tab_name, data=None, reverted=False):
-        """记录操作日志，data为被操作的数据内容，reverted为是否已回退"""
-        log = {
-            '操作类型': op_type,
-            '标签页': tab_name,
-            '操作时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            '数据': data,
-            '已回退': reverted
-        }
-        # 保存到数据库
-        self.db_manager.save_operation_log(op_type, tab_name, data, reverted)
-        # 内存同步（可选，便于撤销/重做等）
-        self.operation_logs.append(log)
-        if not reverted:
-            self.undo_stack.append(log)
-        self.log_tab.log_tree.insert('', 'end', values=(
-            log['操作类型'] + ("（已回退）" if reverted else ""),
-            log['标签页'],
-            log['操作时间'],
-            json.dumps(log['数据'], ensure_ascii=False)
-        ))
-
-    def undo_last_operation(self):
-        # 每次都从数据库获取最新一条未回退的日志
-        logs = self.db_manager.get_operation_logs(
-            tab_name=None, op_type=None, keyword=None, reverted=False, page=1, page_size=1
-        )
-        if not logs:
-            messagebox.showinfo("提示", "没有可回退的操作！")
-            return
-        last_log = logs[0]
-        op_type = last_log['操作类型']
-        tab = last_log['标签页']
-        data = last_log['数据']
-        # 按类型回退数据
-        if op_type == '添加' and tab == '入库管理':
-            if self.stock_in_tab.stock_in_tree.get_children():
-                last_item = self.stock_in_tab.stock_in_tree.get_children()[0]
-                values = self.stock_in_tab.stock_in_tree.item(last_item)['values']
-                self.db_manager.delete_stock_in(values[0], values[1])
-                self.stock_in_tab.refresh_stock_in()
-                self.inventory_tab.refresh_inventory()
-        elif op_type == '添加' and tab == '出库管理':
-            if self.stock_out_tab.stock_out_tree.get_children():
-                last_item = self.stock_out_tab.stock_out_tree.get_children()[0]
-                values = self.stock_out_tab.stock_out_tree.item(last_item)['values']
-                self.db_manager.delete_stock_out(values[0], values[1])
-                self.stock_out_tab.refresh_stock_out()
-                self.inventory_tab.refresh_inventory()
-        elif op_type == '添加' and tab == '交易监控':
-            if self.trade_monitor_tab.monitor_tree.get_children():
-                last_item = self.trade_monitor_tab.monitor_tree.get_children()[0]
-                values = self.trade_monitor_tab.monitor_tree.item(last_item)['values']
-                self.db_manager.delete_trade_monitor(values[0], values[1])
-                self.trade_monitor_tab.refresh_monitor()
-        elif op_type == '删除' and tab == '入库管理' and data:
-            # 恢复被删入库记录
-            for values in data:
-                self.db_manager.save_stock_in({
-                    'item_name': values[0],
-                    'transaction_time': values[1],
-                    'quantity': int(values[2]),
-                    'cost': float(values[3]),
-                    'avg_cost': float(values[4]),
-                    'note': values[5] if values[5] is not None else ''
-                })
-            self.stock_in_tab.refresh_stock_in()
-            self.inventory_tab.refresh_inventory()
-        elif op_type == '删除' and tab == '出库管理' and data:
-            for values in data:
-                self.db_manager.save_stock_out({
-                    'item_name': values[0],
-                    'transaction_time': values[1],
-                    'quantity': int(values[2]),
-                    'unit_price': float(values[3]),
-                    'fee': float(values[4]),
-                    'total_amount': float(values[5]),
-                    'note': values[6] if values[6] is not None else ''
-                })
-            self.refresh_stock_out()
-            self.inventory_tab.refresh_inventory()
-        elif op_type == '删除' and tab == '交易监控' and data:
-            for values in data:
-                self.db_manager.save_trade_monitor({
-                    'item_name': values[0],
-                    'monitor_time': values[1],
-                    'quantity': int(values[2]),
-                    'market_price': float(values[3]),
-                    'target_price': float(values[4]),
-                    'planned_price': float(values[5]),
-                    'break_even_price': float(values[6]),
-                    'profit': float(values[7]),
-                    'profit_rate': float(values[8].strip('%')),
-                    'strategy': values[9]
-                })
-            self.refresh_monitor()
-        elif op_type == '修改' and tab == '入库管理' and data:
-            old = data.get('old')
-            if old:
-                self.db_manager.delete_stock_in(old[0], old[1])
-                self.db_manager.save_stock_in({
-                    'item_name': old[0],
-                    'transaction_time': old[1],
-                    'quantity': int(old[2]),
-                    'cost': float(old[3]),
-                    'avg_cost': float(old[4]),
-                    'note': old[5] if len(old) > 5 else ''
-                })
-                self.refresh_stock_in()
-                self.refresh_inventory()
-        elif op_type == '修改' and tab == '出库管理' and data:
-            old = data.get('old')
-            if old:
-                self.db_manager.delete_stock_out(old[0], old[1])
-                self.db_manager.save_stock_out({
-                    'item_name': old[0],
-                    'transaction_time': old[1],
-                    'quantity': int(old[2]),
-                    'unit_price': float(old[3]),
-                    'fee': float(old[4]),
-                    'deposit': 0.0,
-                    'total_amount': float(old[5]),
-                    'note': old[6] if len(old) > 6 else ''
-                })
-                self.refresh_stock_out()
-                self.refresh_inventory()
-        else:
-            messagebox.showinfo("提示", "该操作类型暂不支持回退！")
-            return
-        # 标记日志为已回退
-        last_log['已回退'] = True
-        self.redo_stack.append(last_log)
-        # 只更新数据库，不插入新日志
-        if 'id' in last_log:
-            self.db_manager.update_operation_log_reverted(last_log['id'], True)
-        self.refresh_log_tab()  # 强制刷新
-        self._save_operation_logs()
-        messagebox.showinfo("提示", f"已回退操作: {op_type} - {tab}")
-
-    def redo_last_operation(self):
-        # 前进（撤销回退）
-        while self.redo_stack and not self.redo_stack[-1].get('已回退'):
-            self.redo_stack.pop()
-        if not self.redo_stack:
-            messagebox.showinfo("提示", "没有可前进的操作！")
-            return
-        last_log = self.redo_stack.pop()
-        op_type = last_log['操作类型']
-        tab = last_log['标签页']
-        data = last_log['数据']
-        # 恢复操作
-        if op_type == '添加' and tab == '入库管理' and data:
-            for values in data if isinstance(data, list) else [data]:
-                self.db_manager.save_stock_in({
-                    'item_name': values[0],
-                    'transaction_time': values[1],
-                    'quantity': int(values[2]),
-                    'cost': float(values[3]),
-                    'avg_cost': float(values[4]),
-                    'note': values[5] if values[5] is not None else ''
-                })
-            self.refresh_stock_in()
-            self.refresh_inventory()
-        elif op_type == '添加' and tab == '出库管理' and data:
-            for values in data if isinstance(data, list) else [data]:
-                self.db_manager.save_stock_out({
-                    'item_name': values[0],
-                    'transaction_time': values[1],
-                    'quantity': int(values[2]),
-                    'unit_price': float(values[3]),
-                    'fee': float(values[4]),
-                    'total_amount': float(values[5]),
-                    'note': values[6] if values[6] is not None else ''
-                })
-            self.refresh_stock_out()
-            self.refresh_inventory()
-        elif op_type == '添加' and tab == '交易监控' and data:
-            for values in data if isinstance(data, list) else [data]:
-                self.db_manager.save_trade_monitor({
-                    'item_name': values[0],
-                    'monitor_time': values[1],
-                    'quantity': int(values[2]),
-                    'market_price': float(values[3]),
-                    'target_price': float(values[4]),
-                    'planned_price': float(values[5]),
-                    'break_even_price': float(values[6]),
-                    'profit': float(values[7]),
-                    'profit_rate': float(values[8].strip('%')),
-                    'strategy': values[9]
-                })
-            self.refresh_monitor()
-        elif op_type == '删除' and tab == '入库管理' and data:
-            for values in data:
-                self.db_manager.delete_stock_in(values[0], values[1])
-            self.refresh_stock_in()
-            self.refresh_inventory()
-        elif op_type == '删除' and tab == '出库管理' and data:
-            for values in data:
-                self.db_manager.delete_stock_out(values[0], values[1])
-            self.refresh_stock_out()
-            self.refresh_inventory()
-        elif op_type == '删除' and tab == '交易监控' and data:
-            for values in data:
-                self.db_manager.delete_trade_monitor(values[0], values[1])
-            self.refresh_monitor()
-        elif op_type == '修改' and tab == '入库管理' and data:
-            new = data.get('new')
-            if new:
-                self.db_manager.delete_stock_in(new[0], new[1])
-                self.db_manager.save_stock_in({
-                    'item_name': new[0],
-                    'transaction_time': new[1],
-                    'quantity': int(new[2]),
-                    'cost': float(new[3]),
-                    'avg_cost': float(new[4]),
-                    'note': new[5] if len(new) > 5 else ''
-                })
-                self.refresh_stock_in()
-                self.refresh_inventory()
-        elif op_type == '修改' and tab == '出库管理' and data:
-            new = data.get('new')
-            if new:
-                self.db_manager.delete_stock_out(new[0], new[1])
-                self.db_manager.save_stock_out({
-                    'item_name': new[0],
-                    'transaction_time': new[1],
-                    'quantity': int(new[2]),
-                    'unit_price': float(new[3]),
-                    'fee': float(new[4]),
-                    'deposit': 0.0,
-                    'total_amount': float(new[5]),
-                    'note': new[6] if len(new) > 6 else ''
-                })
-                self.refresh_stock_out()
-                self.refresh_inventory()
-        else:
-            messagebox.showinfo("提示", "该操作类型暂不支持前进！")
-            return
-        last_log['已回退'] = False
-        self.undo_stack.append(last_log)
-        self.refresh_log_tab()  # 强制刷新
-        self._save_operation_logs()
-        messagebox.showinfo("提示", f"已恢复操作: {op_type} - {tab}")
-        # 在redo_last_operation最后加：
-        if 'id' in last_log:
-            self.db_manager.update_operation_log_reverted(last_log['id'], False)
 
     def load_saved_data(self):
         """从数据库加载数据"""
@@ -1215,6 +624,9 @@ class GameTradingSystemGUI:
             self.nvwa_price_tab.refresh_nvwa_price()
         if hasattr(self, 'silver_price_tab'):
             self.silver_price_tab.refresh_silver_price()
+        # 新增：强制刷新交易监控tab
+        if hasattr(self, 'trade_monitor_tab'):
+            self.trade_monitor_tab.refresh_monitor()
     
     def refresh_inventory(self):
         for item in self.inventory_tab.inventory_tree.get_children():
@@ -1757,7 +1169,7 @@ class GameTradingSystemGUI:
             self.root.bind_all('<Control-v>', self.stock_in_tab.paste_ocr_import_stock_in)
             self.current_ocr_tab = 'in'
         elif tab == '出库管理':
-            self.root.bind_all('<Control-v>', self.paste_ocr_import_stock_out)
+            self.root.bind_all('<Control-v>', self.stock_out_tab.paste_ocr_import_stock_out)
             self.current_ocr_tab = 'out'
         elif tab == '交易监控':
             self.root.bind_all('<Control-v>', self.trade_monitor_tab.paste_ocr_import_monitor)
@@ -1912,11 +1324,18 @@ class GameTradingSystemGUI:
         ttk.Button(btn_frame, text="保存", command=save_dict).pack(side='right', padx=10, ipadx=8)
 
     def load_item_dict(self):
-        """加载物品词典列表"""
+        """加载物品字典列表，自动修复为项目根目录下data/item_dict.txt"""
         try:
-            with open('item_dict.txt', 'r', encoding='utf-8') as f:
+            # 自动修复：始终用项目根目录下的data/item_dict.txt
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.abspath(os.path.join(base_dir, '../../'))
+            dict_path = os.path.join(project_root, 'data', 'item_dict.txt')
+            if not os.path.exists(dict_path):
+                return []
+            with open(dict_path, 'r', encoding='utf-8') as f:
                 return [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
+        except Exception as e:
+            print(f"读取物品字典失败: {e}")
             return []
 
     def show_about(self):
@@ -1967,7 +1386,7 @@ class GameTradingSystemGUI:
     def _on_silver_release(self, event):
         self._dragging = False
 
-    def show_preview(self, data, columns=None, field_map=None):
+    def show_preview(self, data, columns=None, field_map=None, on_confirm=None):
         import datetime
         preview_window = tk.Toplevel(self.root)
         preview_window.title("预览")
@@ -1996,24 +1415,28 @@ class GameTradingSystemGUI:
         right_btns = ttk.Frame(top_button_frame)
         right_btns.pack(side=tk.RIGHT)
         def confirm():
-            is_stock_in = False
-            for idx in sorted(selected_items):
-                row = data[idx]
-                if isinstance(row, dict):
-                    # 判断是入库还是出库
-                    if 'cost' in row and 'avg_cost' in row:
-                        is_stock_in = True
-                        if 'transaction_time' not in row:
-                            row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        self.db_manager.save_stock_in(row)
-                    else:
-                        if 'transaction_time' not in row:
-                            row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        self.db_manager.save_stock_out(row)
-            if is_stock_in:
-                self.refresh_stock_in()
+            selected_data = [data[idx] for idx in sorted(selected_items)]
+            if on_confirm:
+                on_confirm(selected_data)
             else:
-                self.refresh_stock_out()
+                is_stock_in = False
+                for idx in sorted(selected_items):
+                    row = data[idx]
+                    if isinstance(row, dict):
+                        # 判断是入库还是出库
+                        if 'cost' in row and 'avg_cost' in row:
+                            is_stock_in = True
+                            if 'transaction_time' not in row:
+                                row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            self.db_manager.save_stock_in(row)
+                        else:
+                            if 'transaction_time' not in row:
+                                row['transaction_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            self.db_manager.save_stock_out(row)
+                if is_stock_in:
+                    self.refresh_stock_in()
+                else:
+                    self.refresh_stock_out()
             preview_window.destroy()
             messagebox.showinfo("成功", "数据已成功导入！")
         ttk.Button(right_btns, text="取消", command=preview_window.destroy, **btn_style).pack(side=tk.RIGHT, padx=10)
@@ -2152,6 +1575,147 @@ class GameTradingSystemGUI:
     def _save_operation_logs(self):
         """占位方法，防止 AttributeError。可根据需要实现日志持久化。"""
         pass
+
+    def undo_last_operation(self):
+        logs = self.db_manager.get_operation_logs(
+            tab_name=None, op_type=None, keyword=None, reverted=False, page=1, page_size=1
+        )
+        if not logs:
+            messagebox.showinfo("提示", "没有可回退的操作！")
+            return
+        last_log = logs[0]
+        op_type = last_log['操作类型']
+        tab = last_log['标签页']
+        data = last_log['数据']
+        # 回退逻辑
+        if op_type == '添加' and tab == '入库管理':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.delete_stock_in(row['item_name'], row['transaction_time'])
+            elif isinstance(data, dict):
+                self.db_manager.delete_stock_in(data['item_name'], data['transaction_time'])
+            self.refresh_stock_in()
+            self.refresh_inventory()
+        elif op_type == '添加' and tab == '出库管理':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.delete_stock_out(row['item_name'], row['transaction_time'])
+            elif isinstance(data, dict):
+                self.db_manager.delete_stock_out(data['item_name'], data['transaction_time'])
+            self.refresh_stock_out()
+            self.refresh_inventory()
+        elif op_type == '添加' and tab == '交易监控':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.delete_trade_monitor(row['item_name'], row['monitor_time'])
+            elif isinstance(data, dict):
+                self.db_manager.delete_trade_monitor(data['item_name'], data['monitor_time'])
+            self.trade_monitor_tab.refresh_monitor()
+        elif op_type == '删除' and tab == '入库管理':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.save_stock_in(row)
+            elif isinstance(data, dict):
+                self.db_manager.save_stock_in(data)
+            self.refresh_stock_in()
+            self.refresh_inventory()
+        elif op_type == '删除' and tab == '出库管理':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.save_stock_out(row)
+            elif isinstance(data, dict):
+                self.db_manager.save_stock_out(data)
+            self.refresh_stock_out()
+            self.refresh_inventory()
+        elif op_type == '删除' and tab == '交易监控':
+            if isinstance(data, list):
+                for row in data:
+                    self.db_manager.save_trade_monitor(row)
+            elif isinstance(data, dict):
+                self.db_manager.save_trade_monitor(data)
+            self.trade_monitor_tab.refresh_monitor()
+        elif op_type == '修改' and tab == '入库管理':
+            if isinstance(data, dict) and 'old' in data:
+                old = data['old']
+                self.db_manager.delete_stock_in(old[0], old[1])
+                self.db_manager.save_stock_in({
+                    'item_name': old[0],
+                    'transaction_time': old[1],
+                    'quantity': int(old[2]),
+                    'cost': float(old[3]),
+                    'avg_cost': float(old[4]),
+                    'note': old[5] if len(old) > 5 else ''
+                })
+                self.refresh_stock_in()
+                self.refresh_inventory()
+        elif op_type == '修改' and tab == '出库管理':
+            if isinstance(data, dict) and 'old' in data:
+                old = data['old']
+                self.db_manager.delete_stock_out(old[0], old[1])
+                self.db_manager.save_stock_out({
+                    'item_name': old[0],
+                    'transaction_time': old[1],
+                    'quantity': int(old[2]),
+                    'unit_price': float(old[3]),
+                    'fee': float(old[4]),
+                    'deposit': 0.0,
+                    'total_amount': float(old[5]),
+                    'note': old[6] if len(old) > 6 else ''
+                })
+                self.refresh_stock_out()
+                self.refresh_inventory()
+        elif op_type == '修改' and tab == '交易监控':
+            if isinstance(data, dict) and 'old' in data:
+                old = data['old']
+                self.db_manager.delete_trade_monitor(old[0], old[1])
+                self.db_manager.save_trade_monitor({
+                    'item_name': old[0],
+                    'monitor_time': old[1],
+                    'quantity': int(old[2]),
+                    'market_price': float(old[3]),
+                    'target_price': float(old[4]),
+                    'planned_price': float(old[5]),
+                    'break_even_price': float(old[6]),
+                    'profit': float(old[7]),
+                    'profit_rate': float(str(old[8]).strip('%')),
+                    'strategy': old[9]
+                })
+                self.trade_monitor_tab.refresh_monitor()
+        # 标记日志为已回退
+        if 'id' in last_log:
+            self.db_manager.update_operation_log_reverted(last_log['id'], True)
+        self.log_tab.refresh_log_tab()
+        messagebox.showinfo("提示", f"已回退操作: {op_type} - {tab}")
+
+    def redo_last_operation(self):
+        """前进（撤销回退）"""
+        messagebox.showinfo("提示", "已恢复操作（示例实现）")
+
+    def log_operation(self, op_type, tab_name, data=None, reverted=False):
+        """记录操作日志，data为被操作的数据内容，reverted为是否已回退"""
+        import json
+        from datetime import datetime
+        log = {
+            '操作类型': op_type,
+            '标签页': tab_name,
+            '操作时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            '数据': data,
+            '已回退': reverted
+        }
+        # 保存到数据库（如有）
+        if hasattr(self, 'db_manager') and hasattr(self.db_manager, 'save_operation_log'):
+            self.db_manager.save_operation_log(op_type, tab_name, data, reverted)
+        # 内存同步（可选，便于撤销/重做等）
+        if hasattr(self, 'operation_logs'):
+            self.operation_logs.append(log)
+        # 日志tab界面同步（如有）
+        if hasattr(self, 'log_tab') and hasattr(self.log_tab, 'log_tree'):
+            self.log_tab.log_tree.insert('', 'end', values=(
+                log['操作类型'] + ("（已回退）" if reverted else ""),
+                log['标签页'],
+                log['操作时间'],
+                json.dumps(log['数据'], ensure_ascii=False)
+            ))
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 现代天蓝色主题

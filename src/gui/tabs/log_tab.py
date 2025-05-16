@@ -19,9 +19,15 @@ class LogTab:
         
         # 初始化分页变量
         self.log_page = 1
-        self.log_page_size = 20
+        self.log_page_size = 20  # 默认值，后续会动态调整
         self.log_total_pages = 1
         self.log_total_records = 0
+        
+        # 自适应记录数控制变量
+        self.min_records_per_page = 8  # 每页最少显示的记录数
+        self.row_height = 25  # 每行预估高度(像素)
+        self.header_footer_height = 180  # 表头和底部控件的预估高度(像素)
+        self.last_window_height = 0  # 记录上次窗口高度
         
         self._init_ui()
         
@@ -34,6 +40,8 @@ class LogTab:
             # 旧UI结构，notebook是Notebook
             log_frame = ttk.Frame(self.notebook, padding=10)
             self.notebook.add(log_frame, text="操作日志")
+        
+        self.log_frame = log_frame  # 保存引用以便后续使用
         
         # 顶部工具栏
         toolbar_frame = ttk.Frame(log_frame)
@@ -60,7 +68,9 @@ class LogTab:
         
         # 日志表
         columns = ("操作类型", "标签页", "操作时间", "数据")
-        self.log_tree = ttk.Treeview(log_frame, columns=columns, show='headings', height=18)
+        # 动态计算初始高度，但至少保持一个最小值
+        initial_height = max(18, self.calculate_treeview_height())
+        self.log_tree = ttk.Treeview(log_frame, columns=columns, show='headings', height=initial_height)
         for col in columns:
             self.log_tree.heading(col, text=col, anchor='center')
             # 设置列宽
@@ -109,8 +119,64 @@ class LogTab:
         # 绑定双击事件
         self.log_tree.bind("<Double-1>", self.show_log_detail)
         
+        # 绑定窗口大小变化事件
+        self.main_gui.root.bind("<Configure>", self.on_window_resize)
+        
+        # 记录当前窗口高度
+        self.last_window_height = self.main_gui.root.winfo_height()
+        
         # 加载日志数据
         self.refresh_log_tab()
+    
+    def calculate_treeview_height(self):
+        """计算Treeview应该显示的行数"""
+        try:
+            # 获取窗口当前高度
+            window_height = self.main_gui.root.winfo_height()
+            
+            # 如果窗口尚未完全初始化，使用默认值
+            if window_height < 100:
+                return 18
+                
+            # 计算可用高度并转换为行数
+            available_height = window_height - self.header_footer_height
+            rows = max(self.min_records_per_page, int(available_height / self.row_height))
+            
+            return rows
+        except Exception as e:
+            print(f"计算Treeview高度失败: {e}")
+            return 18  # 默认值
+    
+    def calculate_page_size(self):
+        """根据当前窗口大小和Treeview高度计算合适的页面大小"""
+        try:
+            # 获取Treeview可显示的行数
+            visible_rows = self.calculate_treeview_height()
+            
+            # 更新log_tree的height属性
+            self.log_tree.configure(height=visible_rows)
+            
+            # 页面大小等于可见行数
+            self.log_page_size = visible_rows
+            
+            return visible_rows
+        except Exception as e:
+            print(f"计算页面大小失败: {e}")
+            return 20  # 默认值
+    
+    def on_window_resize(self, event=None):
+        """窗口大小变化时的处理函数"""
+        # 仅当来自根窗口且窗口高度变化明显时才处理
+        if (event and event.widget == self.main_gui.root and 
+            abs(self.last_window_height - self.main_gui.root.winfo_height()) > 20):
+            
+            self.last_window_height = self.main_gui.root.winfo_height()
+            # 重新计算页面大小并刷新界面
+            new_page_size = self.calculate_page_size()
+            
+            # 如果页面大小变化明显，则刷新表格
+            if abs(new_page_size - self.log_page_size) >= 2:
+                self.refresh_log_tab()
         
     def _log_search(self):
         self.log_page = 1
@@ -143,6 +209,9 @@ class LogTab:
             self.log_tree.delete(item)
             
         try:
+            # 动态计算页面大小
+            self.calculate_page_size()
+            
             # 获取过滤条件
             tab_name = self.filter_tab.get() if hasattr(self, 'filter_tab') else None
             if tab_name == "全部": tab_name = None
@@ -157,6 +226,22 @@ class LogTab:
                 
             keyword = self.log_search_var.get() if self.log_search_var.get() else None
             
+            # 单独获取总记录数
+            total = self.main_gui.db_manager.count_operation_logs(
+                tab_name=tab_name,
+                op_type=op_type,
+                keyword=keyword,
+                reverted=reverted
+            )
+            
+            # 特殊情况处理：如果总记录数较少，自动调整页面大小以避免过多空白
+            if total > 0 and total < self.log_page_size:
+                # 如果总记录数小于计算出的页面大小，则使用总记录数作为页面大小
+                adjusted_page_size = max(total, self.min_records_per_page)
+                if adjusted_page_size != self.log_page_size:
+                    self.log_page_size = adjusted_page_size
+                    self.log_tree.configure(height=adjusted_page_size)
+            
             # 查询数据
             logs = self.main_gui.db_manager.get_operation_logs(
                 tab_name=tab_name,
@@ -167,21 +252,26 @@ class LogTab:
                 page_size=self.log_page_size
             )
             
-            # 单独获取总记录数
-            total = self.main_gui.db_manager.count_operation_logs(
-                tab_name=tab_name,
-                op_type=op_type,
-                keyword=keyword,
-                reverted=reverted
-            )
-            
             # 更新分页信息
             self.log_total_records = total
             self.log_total_pages = max(1, (total + self.log_page_size - 1) // self.log_page_size)
             
+            # 如果当前页码超出范围，重置为第一页
+            if self.log_page > self.log_total_pages:
+                self.log_page = 1
+                # 重新查询第一页数据
+                logs = self.main_gui.db_manager.get_operation_logs(
+                    tab_name=tab_name,
+                    op_type=op_type,
+                    keyword=keyword,
+                    reverted=reverted,
+                    page=self.log_page,
+                    page_size=self.log_page_size
+                )
+            
             # 更新页码显示
             if hasattr(self, 'log_page_info'):
-                self.log_page_info.config(text=f"页码: {self.log_page} / {self.log_total_pages}  总记录: {total}")
+                self.log_page_info.config(text=f"页码: {self.log_page} / {self.log_total_pages}  总记录: {total}  每页: {self.log_page_size}条")
             elif hasattr(self, 'log_page_label'):
                 self.log_page_label.config(text=f"第{self.log_page}/{self.log_total_pages}页")
             
@@ -293,9 +383,38 @@ class LogTab:
         if not item:
             return
         values = self.log_tree.item(item)['values']
-        if not values:
+        if not values or len(values) < 4:
             return
-        op_type, tab_name, timestamp, data = values
+            
+        op_type, tab_name, timestamp, _ = values  # 不使用Treeview中可能截断的数据
+        
+        # 从数据库中获取完整的日志记录
+        try:
+            # 移除可能的"（已回退）"后缀
+            clean_op_type = op_type.replace("（已回退）", "").strip()
+            
+            # 使用数据库连接直接获取完整日志记录
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT operation_data FROM operation_logs WHERE operation_type=%s AND tab_name=%s AND operation_time=%s LIMIT 1",
+                (clean_op_type, tab_name, timestamp)
+            )
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            if not result or not result[0]:
+                messagebox.showwarning("提示", "未找到详细数据记录")
+                return
+                
+            # 从数据库获取完整的JSON数据
+            data_json = result[0]
+        except Exception as e:
+            messagebox.showerror("错误", f"获取日志详情失败: {str(e)}")
+            return
+            
+        # 创建详情窗口
         detail_window = tk.Toplevel(self.main_gui.root)
         detail_window.title("操作详情")
         detail_window.geometry("1200x600")
@@ -308,12 +427,27 @@ class LogTab:
         ttk.Label(info_frame, text=f"操作时间：{timestamp}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
         tree_frame = ttk.Frame(main_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 解析数据并显示
         try:
-            if isinstance(data, str):
-                data = json.loads(data)
-            if not isinstance(data, (list, dict)):
-                ttk.Label(tree_frame, text="（无数据）", font=('Microsoft YaHei', 10)).pack(pady=20)
+            # 尝试解析JSON数据
+            try:
+                data = json.loads(data_json) if isinstance(data_json, str) else data_json
+            except json.JSONDecodeError as e:
+                ttk.Label(tree_frame, text=f"JSON解析错误: {str(e)}\n\n原始数据:\n{data_json[:1000]}", 
+                         font=('Microsoft YaHei', 10)).pack(pady=20)
+                ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
                 return
+                
+            # 检查数据类型
+            if not isinstance(data, (list, dict)):
+                if data is None:
+                    ttk.Label(tree_frame, text="（无数据）", font=('Microsoft YaHei', 10)).pack(pady=20)
+                else:
+                    ttk.Label(tree_frame, text=f"数据内容: {str(data)}", font=('Microsoft YaHei', 10)).pack(pady=20)
+                ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+                return
+                
             # 先根据tab_name赋值columns和field_map
             if tab_name == "入库管理":
                 columns = ["物品名", "入库时间", "入库数量", "入库花费", "入库均价", "备注"]
@@ -350,6 +484,7 @@ class LogTab:
                     "出库策略": "strategy"
                 }
             else:
+                # 动态确定列和字段映射
                 if isinstance(data, dict) and 'old' in data and 'new' in data:
                     sample = data['old'] if data['old'] else data['new']
                     if isinstance(sample, dict):
@@ -371,23 +506,39 @@ class LogTab:
                     columns = [f"列{i+1}" for i in range(len(data[0]))]
                     field_map = {col: i for i, col in enumerate(columns)}
                 else:
-                    columns = []
-                    field_map = {}
-            # 新增：处理修改日志结构 {'old':..., 'new':...}
+                    # 无法确定列
+                    ttk.Label(tree_frame, text=f"无法确定数据结构。原始数据:\n{str(data)[:1000]}", 
+                             font=('Microsoft YaHei', 10)).pack(pady=20)
+                    ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+                    return
+                    
+            # 处理修改日志结构 {'old':..., 'new':...}
             if isinstance(data, dict) and 'old' in data and 'new' in data:
                 old_data = data['old']
                 new_data = data['new']
+                
                 # 先显示"修改前"
                 ttk.Label(main_frame, text="修改前：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10)
                 tree_old = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
                 for col in columns:
                     tree_old.heading(col, text=col)
                     tree_old.column(col, width=120, anchor='center')
-                if isinstance(old_data, (list, tuple)):
-                    tree_old.insert('', 'end', values=[str(x) for x in old_data])
-                elif isinstance(old_data, dict):
-                    tree_old.insert('', 'end', values=[str(old_data.get(field_map.get(col, col), "")) for col in columns])
+                
+                # 安全地处理旧数据
+                try:
+                    if isinstance(old_data, (list, tuple)):
+                        tree_old.insert('', 'end', values=[str(x) for x in old_data])
+                    elif isinstance(old_data, dict):
+                        tree_old.insert('', 'end', values=[str(old_data.get(field_map.get(col, col), "")) for col in columns])
+                    else:
+                        tree_old.insert('', 'end', values=["(无数据)" for _ in columns])
+                except Exception as e:
+                    # 在出错时显示一个空行
+                    tree_old.insert('', 'end', values=["处理数据出错" for _ in columns])
+                    print(f"处理旧数据出错: {e}")
+                
                 tree_old.pack(fill=tk.X, padx=10)
+                
                 # 再显示"修改后"，高亮显示
                 ttk.Label(main_frame, text="修改后：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
                 style = ttk.Style()
@@ -396,11 +547,22 @@ class LogTab:
                 for col in columns:
                     tree_new.heading(col, text=col)
                     tree_new.column(col, width=120, anchor='center')
-                if isinstance(new_data, (list, tuple)):
-                    tree_new.insert('', 'end', values=[str(x) for x in new_data])
-                elif isinstance(new_data, dict):
-                    tree_new.insert('', 'end', values=[str(new_data.get(field_map.get(col, col), "")) for col in columns])
+                
+                # 安全地处理新数据
+                try:
+                    if isinstance(new_data, (list, tuple)):
+                        tree_new.insert('', 'end', values=[str(x) for x in new_data])
+                    elif isinstance(new_data, dict):
+                        tree_new.insert('', 'end', values=[str(new_data.get(field_map.get(col, col), "")) for col in columns])
+                    else:
+                        tree_new.insert('', 'end', values=["(无数据)" for _ in columns])
+                except Exception as e:
+                    # 在出错时显示一个空行
+                    tree_new.insert('', 'end', values=["处理数据出错" for _ in columns])
+                    print(f"处理新数据出错: {e}")
+                
                 tree_new.pack(fill=tk.X, padx=10)
+                ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
                 return
                 
             # 创建一个Treeview显示所有记录
@@ -417,52 +579,56 @@ class LogTab:
             if isinstance(data, list):
                 # 一次添加多条记录时，显示所有记录
                 for idx, row in enumerate(data):
-                    if isinstance(row, dict):
-                        values = []
-                        for col in columns:
-                            key = field_map.get(col, col)
-                            val = row.get(key, "")
-                            try:
-                                if isinstance(val, (int, float)):
-                                    if "率" in col:
-                                        val = f"{val:.2f}%"
-                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                        val = f"{val:,.2f}"
-                                    else:
-                                        val = f"{int(val):,}"
-                                elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                    if "率" in col:
-                                        val = f"{float(val):.2f}%"
-                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                        val = f"{float(val):,.2f}"
-                                    else:
-                                        val = f"{int(float(val)):,}"
-                            except (ValueError, TypeError):
-                                pass
-                            values.append(str(val))
-                        tree.insert('', 'end', values=values)
-                    elif isinstance(row, (list, tuple)):
-                        values = []
-                        for i, val in enumerate(row):
-                            try:
-                                if isinstance(val, (int, float)):
-                                    if i < len(columns) and "率" in columns[i]:
-                                        val = f"{val:.2f}%"
-                                    elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                        val = f"{val:,.2f}"
-                                    else:
-                                        val = f"{int(val):,}"
-                                elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                    if i < len(columns) and "率" in columns[i]:
-                                        val = f"{float(val):.2f}%"
-                                    elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                        val = f"{float(val):,.2f}"
-                                    else:
-                                        val = f"{int(float(val)):,}"
-                            except (ValueError, TypeError):
-                                pass
-                            values.append(str(val))
-                        tree.insert('', 'end', values=values)
+                    try:
+                        if isinstance(row, dict):
+                            values = []
+                            for col in columns:
+                                key = field_map.get(col, col)
+                                val = row.get(key, "")
+                                try:
+                                    if isinstance(val, (int, float)):
+                                        if "率" in col:
+                                            val = f"{val:.2f}%"
+                                        elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                            val = f"{val:,.2f}"
+                                        else:
+                                            val = f"{int(val):,}"
+                                    elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                        if "率" in col:
+                                            val = f"{float(val):.2f}%"
+                                        elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                            val = f"{float(val):,.2f}"
+                                        else:
+                                            val = f"{int(float(val)):,}"
+                                except (ValueError, TypeError):
+                                    pass
+                                values.append(str(val))
+                            tree.insert('', 'end', values=values)
+                        elif isinstance(row, (list, tuple)):
+                            values = []
+                            for i, val in enumerate(row):
+                                try:
+                                    if isinstance(val, (int, float)):
+                                        if i < len(columns) and "率" in columns[i]:
+                                            val = f"{val:.2f}%"
+                                        elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                            val = f"{val:,.2f}"
+                                        else:
+                                            val = f"{int(val):,}"
+                                    elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                        if i < len(columns) and "率" in columns[i]:
+                                            val = f"{float(val):.2f}%"
+                                        elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                            val = f"{float(val):,.2f}"
+                                        else:
+                                            val = f"{int(float(val)):,}"
+                                except (ValueError, TypeError):
+                                    pass
+                                values.append(str(val))
+                            tree.insert('', 'end', values=values)
+                    except Exception as e:
+                        print(f"处理行数据出错: {e}")
+                        continue
                         
                 # 设置交替行背景色
                 style = ttk.Style()
@@ -514,6 +680,9 @@ class LogTab:
                          font=('Microsoft YaHei', 10)).pack(side=tk.LEFT, pady=5, padx=10)
                 
         except Exception as e:
-            # print(f"显示日志详情失败: {e}")
-            ttk.Label(tree_frame, text=f"显示数据失败: {str(e)}", font=('Microsoft YaHei', 10)).pack(pady=20)
+            import traceback
+            traceback.print_exc()
+            error_msg = f"显示数据失败: {str(e)}"
+            ttk.Label(tree_frame, text=error_msg, font=('Microsoft YaHei', 10)).pack(pady=20)
+            
         ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)

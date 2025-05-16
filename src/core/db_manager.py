@@ -345,7 +345,7 @@ class DatabaseManager:
                     break_even_price=%s,
                     inventory_value=quantity*avg_price
                     WHERE item_name=%s
-                """
+        """
                 cursor.execute(update_query, (quantity, avg_price, avg_price, item_name))
             else:
                 # 物品不存在，创建新记录
@@ -618,7 +618,7 @@ class DatabaseManager:
             cursor.close()
             return logs
         except Exception:
-            return []
+            return [] 
 
     def log_operation(self, tab_name, op_type, data=None, reverted=False):
         """记录操作日志"""

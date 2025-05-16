@@ -7,15 +7,16 @@ import matplotlib.dates
 import numpy as np
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 import platform
 import re
 import matplotlib.font_manager as fm
 import requests
 import time
-import mplcursors
 import threading
 import pandas as pd
+import matplotlib.ticker as ticker
 
 class NvwaPriceTab:
     def __init__(self, notebook, main_gui=None):
@@ -156,18 +157,20 @@ class NvwaPriceTab:
         self.avg_price_label = create_info_card(info_frame, "7日均价")
         self.amplitude_label = create_info_card(info_frame, "振幅", highlight=True)
         
-        # 创建图表 - 使用更现代的设计
+        # 创建图表 - 使用更现代的设计，与银两行情保持一致
         chart_frame = ttk.LabelFrame(self.nvwa_tab, text="价格走势图", style="Card.TLabelframe", padding=10)
         chart_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
-        # 创建图表
-        self.nvwa_fig, self.nvwa_ax1 = plt.subplots(figsize=(10, 6), dpi=100)
-        self.nvwa_canvas = FigureCanvasTkAgg(self.nvwa_fig, chart_frame)
-        self.nvwa_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        # 创建图表，完全与银两行情相同的方式
+        self.nvwa_fig = Figure(figsize=(10, 6), dpi=100, facecolor='#ffffff')
+        self.nvwa_ax1 = self.nvwa_fig.add_subplot(111)
+        self.nvwa_ax1.set_facecolor('#ffffff')
         
-        # 添加交互控件
-        self.nvwa_toolbar = NavigationToolbar2Tk(self.nvwa_canvas, chart_frame)
-        self.nvwa_toolbar.update()
+        # 设置图表样式
+        self.nvwa_fig.subplots_adjust(left=0.08, right=0.92, top=0.9, bottom=0.15)
+        
+        self.nvwa_canvas = FigureCanvasTkAgg(self.nvwa_fig, chart_frame)
+        self.nvwa_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         # 设置鼠标事件
         self.nvwa_canvas.mpl_connect('scroll_event', self._on_nvwa_scroll)
@@ -209,7 +212,7 @@ class NvwaPriceTab:
         thread.start()
     
     def _draw_nvwa_price(self, data, platform, days):
-        """绘制女娲石价格走势图"""
+        """绘制女娲石价格走势图，优化视觉样式"""
         try:
             self.nvwa_ax1.clear()
             
@@ -258,7 +261,7 @@ class NvwaPriceTab:
                     except Exception:
                         time_list = [pd.to_datetime(t) for t in time_list]
                 
-                # 绘制更高对比度的线条
+                # 绘制更高对比度的线条，与银两行情完全相同的样式
                 self.nvwa_ax1.plot(time_list, series_data,
                                   label=series,
                                   color=colors[idx % len(colors)],
@@ -270,6 +273,7 @@ class NvwaPriceTab:
                                   markeredgewidth=1.5,
                                   alpha=1.0)  # 提高不透明度
                 
+                # 更新信息面板
                 if first_valid_series_data is None and series_data:
                     first_valid_series_data = (series, series_data)
                 
@@ -289,6 +293,7 @@ class NvwaPriceTab:
                         )
                         info_updated = True
             
+            # 如果未更新信息面板但有有效数据，则使用第一个有效数据更新
             if not info_updated and first_valid_series_data:
                 _, series_data = first_valid_series_data
                 current_price = series_data[-1]
@@ -304,33 +309,40 @@ class NvwaPriceTab:
                     foreground='#c0392b' if amplitude > 5 else '#2980b9'  # 使用更高对比度的颜色
                 )
             
-            # 设置图例样式 - 提高对比度
-            legend = self.nvwa_ax1.legend(loc='upper left', frameon=True, fancybox=True, 
-                                        framealpha=0.9, edgecolor='#2c3e50')
-            for text in legend.get_texts():
-                text.set_fontproperties(self.chinese_font)
-                text.set_color('#2c3e50')  # 设置图例文字颜色
-            
-            # 设置x轴日期格式
-            import matplotlib.ticker as ticker
-            self.nvwa_ax1.xaxis.set_major_locator(ticker.MaxNLocator(10))
-            self.nvwa_ax1.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%Y-%m-%d'))
-            
-            # 设置刻度标签字体和颜色 - 提高可读性
-            for label in self.nvwa_ax1.get_xticklabels():
-                label.set_fontproperties(self.chinese_font)
-                label.set_fontsize(9)
-                label.set_color('#2c3e50')  # 深色文字
+            # 添加图例
+            if filtered_series:
+                # 设置图例样式 - 提高对比度
+                legend = self.nvwa_ax1.legend(loc='upper left', frameon=True, fancybox=True, 
+                                          framealpha=0.9, edgecolor='#2c3e50')
+                for text in legend.get_texts():
+                    text.set_fontproperties(self.chinese_font)
+                    text.set_color('#2c3e50')  # 设置图例文字颜色
                 
-            for label in self.nvwa_ax1.get_yticklabels():
-                label.set_fontproperties(self.chinese_font)
-                label.set_fontsize(9)
-                label.set_color('#2c3e50')  # 深色文字
+                # 设置x轴日期格式
+                self.nvwa_ax1.xaxis.set_major_locator(ticker.MaxNLocator(10))
+                self.nvwa_ax1.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%Y-%m-%d'))
+                
+                # 设置刻度标签字体和颜色 - 提高可读性
+                for label in self.nvwa_ax1.get_xticklabels():
+                    label.set_fontproperties(self.chinese_font)
+                    label.set_fontsize(9)
+                    label.set_color('#2c3e50')  # 深色文字
+                    
+                for label in self.nvwa_ax1.get_yticklabels():
+                    label.set_fontproperties(self.chinese_font)
+                    label.set_fontsize(9)
+                    label.set_color('#2c3e50')  # 深色文字
+                
+                self.nvwa_fig.autofmt_xdate(rotation=30)
             
-            self.nvwa_fig.autofmt_xdate(rotation=30)
-            self.nvwa_canvas.draw_idle()
+            # 调整布局
+            self.nvwa_fig.tight_layout(pad=3.0)
+            self.nvwa_canvas.draw()
+            
         except Exception as e:
-            print(f"Error drawing nvwa price chart: {e}")
+            print(f"绘制女娲石价格图表错误: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_nvwa_scroll(self, event):
         if event.inaxes != self.nvwa_ax1:

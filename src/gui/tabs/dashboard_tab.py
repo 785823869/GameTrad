@@ -379,14 +379,19 @@ class DashboardTab(Frame):
         Button(tabs_frame, text="详情", bootstyle="secondary").pack(side='left', padx=2)
         Button(tabs_frame, text="分析", bootstyle="secondary").pack(side='left', padx=2)
         
-        # 搜索框
-        search_frame = Frame(top_frame, bootstyle="light")
-        search_frame.pack(side='right', padx=5)
-        search_entry = Entry(search_frame, width=20, font=(self.chinese_font, 9))
-        search_entry.insert(0, "搜索...")
-        search_entry.pack(side='right')
-        search_entry.bind("<FocusIn>", lambda e: search_entry.delete(0, 'end') if search_entry.get() == "搜索..." else None)
-        search_entry.bind("<FocusOut>", lambda e: search_entry.insert(0, "搜索...") if search_entry.get() == "" else None)
+        # 替换搜索框为美化的刷新按钮
+        refresh_frame = Frame(top_frame, bootstyle="light")
+        refresh_frame.pack(side='right', padx=5)
+        
+        # 创建刷新按钮，使用success颜色使其更突出，添加刷新图标字符
+        refresh_button = Button(
+            refresh_frame, 
+            text="刷新数据 ⟳", 
+            bootstyle="success",
+            command=self.refresh_dashboard_data,
+            width=12
+        )
+        refresh_button.pack(side='right')
 
         # 统计卡片区域
         stats_frame = Frame(self, bootstyle="light")
@@ -625,4 +630,17 @@ class DashboardTab(Frame):
     def change_period(self, period_var, period, chart_frame):
         """切换周期并重绘图表"""
         period_var.set(period)
-        self.draw_trend_chart(chart_frame, period) 
+        self.draw_trend_chart(chart_frame, period)
+
+    def refresh_dashboard_data(self):
+        """刷新仪表盘数据"""
+        # 清空所有子部件
+        for widget in self.winfo_children():
+            widget.destroy()
+        
+        # 重新创建所有部件
+        self.create_widgets()
+        
+        # 显示刷新成功消息
+        from tkinter import messagebox
+        messagebox.showinfo("成功", "仪表盘数据已刷新完成") 

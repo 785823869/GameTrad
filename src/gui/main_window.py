@@ -41,6 +41,8 @@ from src.gui.tabs.inventory_tab import InventoryTab
 from src.gui.tabs.stock_out_tab import StockOutTab
 from src.gui.tabs.stock_in_tab import StockInTab
 from src.gui.tabs.dashboard_tab import DashboardTab
+# 导入ImportDataDialog
+from src.gui.import_data_dialog import ImportDataDialog
 
 def safe_float(val, default=0.0):
     try:
@@ -77,6 +79,7 @@ class GameTradingSystemGUI:
         file_menu = tb.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="文件", menu=file_menu)
         file_menu.add_command(label="数据迁移", command=self.open_data_migration)
+        file_menu.add_command(label="导入数据", command=self.open_import_data_dialog)
         file_menu.add_command(label="导出报告", command=self.export_reports)
         file_menu.add_separator()
         file_menu.add_command(label="退出", command=self.root.quit)
@@ -1721,6 +1724,10 @@ class GameTradingSystemGUI:
                 log['操作时间'],
                 json.dumps(log['数据'], ensure_ascii=False)
             ))
+
+    def open_import_data_dialog(self):
+        """打开导入数据对话框"""
+        ImportDataDialog(self.root)
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 现代天蓝色主题

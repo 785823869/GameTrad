@@ -212,9 +212,10 @@ class StockOutTab:
             if not messagebox.askyesno("确认", "确定要保存修改吗？"):
                 return
             self.db_manager.delete_stock_out(values[0], values[1])
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.db_manager.save_stock_out({
                 'item_name': new_vals[0],
-                'transaction_time': new_vals[1],
+                'transaction_time': current_time,
                 'quantity': new_vals[2],
                 'unit_price': new_vals[3],
                 'fee': new_vals[4],

@@ -18,7 +18,7 @@ class LogTab:
         self.log_search_var = StringVar()
         self.log_jump_var = StringVar()
         self._init_ui()
-
+        
     def _init_ui(self):
         log_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(log_frame, text="操作日志")
@@ -31,6 +31,7 @@ class LogTab:
         scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_tree.yview)
         self.log_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
+        
         filter_frame = ttk.Frame(log_frame, padding=4)
         filter_frame.pack(side='top', fill='x')
         ttk.Label(filter_frame, text="操作类型:").pack(side='left')
@@ -41,6 +42,7 @@ class LogTab:
         ttk.Combobox(filter_frame, textvariable=self.filter_reverted, values=["全部", "是", "否"], width=6, state='readonly').pack(side='left', padx=2)
         ttk.Label(filter_frame, text="关键字:").pack(side='left')
         ttk.Entry(filter_frame, textvariable=self.log_search_var, width=12).pack(side='left', padx=2)
+        
         btn_frame = ttk.Frame(log_frame, padding=8)
         btn_frame.pack(side='bottom', fill='x', pady=8)
         ttk.Button(btn_frame, text="搜索", command=self._log_search).pack(side='left', padx=4)
@@ -54,10 +56,11 @@ class LogTab:
         ttk.Button(btn_frame, text="回退当前操作", command=self.main_gui.undo_last_operation).pack(side='right', padx=8)
         ttk.Button(btn_frame, text="前进(撤销回退)", command=self.main_gui.redo_last_operation).pack(side='right', padx=8)
         ttk.Button(btn_frame, text="批量删除", command=self.delete_log_items).pack(side='left', padx=2)
+        
         self.log_tree.bind('<Double-1>', self.show_log_detail)
         self.log_tree.bind('<Control-a>', lambda e: [self.log_tree.selection_set(self.log_tree.get_children()), 'break'])
         self.refresh_log_tab()
-
+        
     def _log_search(self):
         self.log_page = 1
         self.refresh_log_tab()
@@ -118,7 +121,6 @@ class LogTab:
             columns = ["操作类型", "标签页", "操作时间", "数据"]
             data = [[log['操作类型'], log['标签页'], log['操作时间'], json.dumps(log['数据'], ensure_ascii=False)] for log in logs]
             file_path = filedialog.asksaveasfilename(
-                defaultextension='.xlsx',
                 filetypes=[('Excel文件', '*.xlsx'), ('CSV文件', '*.csv')],
                 title='导出日志'
             )
@@ -165,7 +167,7 @@ class LogTab:
             deleted_count += 1
         messagebox.showinfo("成功", f"已删除 {deleted_count} 条日志记录！")
         self.refresh_log_tab()
-
+        
     def show_log_detail(self, event):
         item = self.log_tree.identify_row(event.y)
         if not item:
@@ -204,14 +206,13 @@ class LogTab:
                     "备注": "note"
                 }
             elif tab_name == "出库管理":
-                columns = ["物品名", "出库时间", "出库数量", "单价", "手续费", "保证金", "总金额", "备注"]
+                columns = ["物品名", "出库时间", "出库数量", "单价", "手续费", "总金额", "备注"]
                 field_map = {
                     "物品名": "item_name",
                     "出库时间": "transaction_time",
                     "出库数量": "quantity",
                     "单价": "unit_price",
                     "手续费": "fee",
-                    "保证金": "deposit",
                     "总金额": "total_amount",
                     "备注": "note"
                 }
@@ -281,63 +282,118 @@ class LogTab:
                     tree_new.insert('', 'end', values=[str(new_data.get(field_map.get(col, col), "")) for col in columns])
                 tree_new.pack(fill=tk.X, padx=10)
                 return
-            if isinstance(data, dict):
-                data = [data]
-            for row in data:
-                if isinstance(row, dict):
-                    values = []
-                    for col in columns:
-                        key = field_map.get(col, col)
-                        val = row.get(key, "")
-                        try:
-                            if isinstance(val, (int, float)):
-                                if "率" in col:
-                                    val = f"{val:.2f}%"
-                                elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                    val = f"{val:,.2f}"
-                                else:
-                                    val = f"{int(val):,}"
-                            elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                if "率" in col:
-                                    val = f"{float(val):.2f}%"
-                                elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
-                                    val = f"{float(val):,.2f}"
-                                else:
-                                    val = f"{int(float(val)):,}"
-                        except (ValueError, TypeError):
-                            pass
-                        values.append(str(val))
-                else:
-                    values = []
-                    for i, val in enumerate(row):
-                        try:
-                            if isinstance(val, (int, float)):
-                                if "率" in columns[i]:
-                                    val = f"{val:.2f}%"
-                                elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                    val = f"{val:,.2f}"
-                                else:
-                                    val = f"{int(val):,}"
-                            elif isinstance(val, str) and val.replace(".", "").isdigit():
-                                if "率" in columns[i]:
-                                    val = f"{float(val):.2f}%"
-                                elif any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
-                                    val = f"{float(val):,.2f}"
-                                else:
-                                    val = f"{int(float(val)):,}"
-                        except (ValueError, TypeError):
-                            pass
-                        values.append(str(val))
-                tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
+                
+            # 创建一个Treeview显示所有记录
+            tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
+            for col in columns:
+                tree.heading(col, text=col)
+                tree.column(col, width=120, anchor='center')
+                
+            # 增加滚动条
+            scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+            tree.configure(yscrollcommand=scrollbar.set)
+            
+            # 处理数据是数组的情况（特别是"添加"类型）
+            if isinstance(data, list):
+                # 一次添加多条记录时，显示所有记录
+                for idx, row in enumerate(data):
+                    if isinstance(row, dict):
+                        values = []
+                        for col in columns:
+                            key = field_map.get(col, col)
+                            val = row.get(key, "")
+                            try:
+                                if isinstance(val, (int, float)):
+                                    if "率" in col:
+                                        val = f"{val:.2f}%"
+                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                        val = f"{val:,.2f}"
+                                    else:
+                                        val = f"{int(val):,}"
+                                elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                    if "率" in col:
+                                        val = f"{float(val):.2f}%"
+                                    elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                        val = f"{float(val):,.2f}"
+                                    else:
+                                        val = f"{int(float(val)):,}"
+                            except (ValueError, TypeError):
+                                pass
+                            values.append(str(val))
+                        tree.insert('', 'end', values=values)
+                    elif isinstance(row, (list, tuple)):
+                        values = []
+                        for i, val in enumerate(row):
+                            try:
+                                if isinstance(val, (int, float)):
+                                    if i < len(columns) and "率" in columns[i]:
+                                        val = f"{val:.2f}%"
+                                    elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                        val = f"{val:,.2f}"
+                                    else:
+                                        val = f"{int(val):,}"
+                                elif isinstance(val, str) and val.replace(".", "").isdigit():
+                                    if i < len(columns) and "率" in columns[i]:
+                                        val = f"{float(val):.2f}%"
+                                    elif i < len(columns) and any(keyword in columns[i] for keyword in ["价", "金额", "花费", "利润"]):
+                                        val = f"{float(val):,.2f}"
+                                    else:
+                                        val = f"{int(float(val)):,}"
+                            except (ValueError, TypeError):
+                                pass
+                            values.append(str(val))
+                        tree.insert('', 'end', values=values)
+                        
+                # 设置交替行背景色
+                style = ttk.Style()
+                style.configure('Treeview', rowheight=25)
+                
+                # 先定义标签
+                tree.tag_configure('evenrow', background='#f0f0f0')
+                tree.tag_configure('oddrow', background='white')
+                
+                # 然后应用标签
+                for i, item in enumerate(tree.get_children()):
+                    if i % 2 == 0:
+                        tree.item(item, tags=('evenrow',))
+                    else:
+                        tree.item(item, tags=('oddrow',))
+            elif isinstance(data, dict):
+                # 单条记录，直接添加
+                values = []
                 for col in columns:
-                    tree.heading(col, text=col)
-                    tree.column(col, width=120, anchor='center')
+                    key = field_map.get(col, col)
+                    val = data.get(key, "")
+                    try:
+                        if isinstance(val, (int, float)):
+                            if "率" in col:
+                                val = f"{val:.2f}%"
+                            elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                val = f"{val:,.2f}"
+                            else:
+                                val = f"{int(val):,}"
+                        elif isinstance(val, str) and val.replace(".", "").isdigit():
+                            if "率" in col:
+                                val = f"{float(val):.2f}%"
+                            elif "价" in col or "金额" in col or "花费" in col or "利润" in col:
+                                val = f"{float(val):,.2f}"
+                            else:
+                                val = f"{int(float(val)):,}"
+                    except (ValueError, TypeError):
+                        pass
+                    values.append(str(val))
                 tree.insert('', 'end', values=values)
-                scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-                tree.configure(yscrollcommand=scrollbar.set)
-                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-                tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            # 正确布局组件
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            # 添加记录数显示
+            if isinstance(data, list) and len(data) > 1:
+                ttk.Label(main_frame, text=f"共 {len(data)} 条记录", 
+                         font=('Microsoft YaHei', 10)).pack(side=tk.LEFT, pady=5, padx=10)
+                
         except Exception as e:
             # print(f"显示日志详情失败: {e}")
             ttk.Label(tree_frame, text=f"显示数据失败: {str(e)}", font=('Microsoft YaHei', 10)).pack(pady=20)
-        ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10) 
+        ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)

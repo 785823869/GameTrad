@@ -543,42 +543,85 @@ class DashboardTab(Frame):
         bottom_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
 
         # 数据表
-        table_frame = LabelFrame(bottom_frame, text="流量来源", bootstyle="primary")
+        table_frame = LabelFrame(bottom_frame, text="库存详情", bootstyle="primary", padding=10)
         table_frame.pack(side='left', padx=(0, 10), pady=10, fill='both', expand=True)
         
+        # 创建内部框架，便于控制内边距
+        inner_frame = Frame(table_frame, bootstyle="light")
+        inner_frame.pack(fill='both', expand=True)
+        
         # 使用树形视图
-        source_tree = ttk.Treeview(table_frame, columns=("source", "sessions", "change"), 
+        source_tree = ttk.Treeview(inner_frame, columns=("item", "inventory", "profit_rate"), 
                                   show="headings", height=6, style="Dashboard.Treeview")
-        source_tree.heading("source", text="来源")
-        source_tree.heading("sessions", text="会话数")
-        source_tree.heading("change", text="变化")
+        source_tree.heading("item", text="物品", anchor="center")
+        source_tree.heading("inventory", text="库存数", anchor="center")
+        source_tree.heading("profit_rate", text="利润率", anchor="center")
         
-        source_tree.column("source", width=150)
-        source_tree.column("sessions", width=100, anchor='center')
-        source_tree.column("change", width=100, anchor='center')
+        # 设置列的宽度和对齐方式，全部居中
+        source_tree.column("item", width=150, anchor='center', minwidth=100)
+        source_tree.column("inventory", width=100, anchor='center', minwidth=80)
+        source_tree.column("profit_rate", width=100, anchor='center', minwidth=80)
         
-        source_tree.pack(fill='both', expand=True, padx=5, pady=5)
+        # 创建更好的样式
+        style = ttk.Style()
+        style.configure("Dashboard.Treeview", rowheight=30, font=(self.chinese_font, 10))
+        style.configure("Dashboard.Treeview.Heading", font=(self.chinese_font, 10, "bold"), 
+                        background="#f0f0f0", foreground="#333333", relief="flat")
         
-        # 添加数据
-        source_data = [
-            ("website.net", "4,321", "+84%"),
-            ("search.com", "4,033", "-8%"),
-            ("social.app", "3,128", "+2%"),
-            ("ads.platform", "2,104", "+33%"),
-            ("partner.site", "2,003", "+30%"),
-            ("blog.company", "1,894", "+15%"),
-            ("direct", "405", "-12%"),
-        ]
+        # 设置表格行交替颜色
+        style.map("Dashboard.Treeview",
+                 background=[("selected", "#3498db")],
+                 foreground=[("selected", "#ffffff")])
         
-        for idx, (source, sessions, change) in enumerate(source_data):
-            item_id = source_tree.insert("", "end", values=(source, sessions, change))
-            # 根据变化值设置行颜色
-            if change.startswith("+"):
-                source_tree.tag_configure(f"positive_{idx}", background="#e8fff0")
-                source_tree.item(item_id, tags=(f"positive_{idx}",))
-            elif change.startswith("-"):
-                source_tree.tag_configure(f"negative_{idx}", background="#fff0f0")
-                source_tree.item(item_id, tags=(f"negative_{idx}",))
+        # 添加垂直滚动条
+        source_scrollbar = ttk.Scrollbar(inner_frame, orient="vertical", command=source_tree.yview)
+        source_tree.configure(yscrollcommand=source_scrollbar.set)
+        
+        # 正确的打包顺序：先打包表格，再打包滚动条
+        source_tree.pack(side='left', fill='both', expand=True, padx=(0, 3), pady=0)
+        source_scrollbar.pack(side='right', fill='y', pady=0)
+        
+        # 获取真实库存数据
+        inventory_data = self.get_inventory_data()
+        
+        # 如果没有数据，显示示例数据
+        if not inventory_data:
+            inventory_data = [
+                ("金币（万）", "4,321", "+24.0%", 24),
+                ("银两（万）", "4,033", "+18.0%", 18),
+                ("江湖声望", "3,128", "+32.0%", 32),
+                ("江湖侠名", "2,104", "+33.0%", 33),
+                ("充值点卡", "2,003", "+30.0%", 30),
+                ("内功心法", "1,894", "+15.0%", 15),
+                ("门派令牌", "405", "+12.0%", 12),
+            ]
+        
+        # 添加数据到表格
+        for idx, (item, inventory, profit_rate, rate_value) in enumerate(inventory_data):
+            item_id = source_tree.insert("", "end", values=(item, inventory, profit_rate))
+            
+            # 设置交替行颜色底色
+            if idx % 2 == 0:
+                # 偶数行
+                if rate_value > 0:
+                    bg_color = "#e6f7f0"  # 浅绿色
+                elif rate_value < 0:
+                    bg_color = "#f7e6e6"  # 浅红色
+                else:
+                    bg_color = "#f0f0f0"  # 浅灰色
+            else:
+                # 奇数行 - 稍微深一点的颜色
+                if rate_value > 0:
+                    bg_color = "#d6efe6"  # 深一点的绿色
+                elif rate_value < 0:
+                    bg_color = "#efdbdb"  # 深一点的红色
+                else:
+                    bg_color = "#e6e6e6"  # 深一点的灰色
+            
+            # 配置标签和应用
+            tag_name = f"row_{idx}"
+            source_tree.tag_configure(tag_name, background=bg_color)
+            source_tree.item(item_id, tags=(tag_name,))
 
         # 柱状图
         chart_frame2 = LabelFrame(bottom_frame, text="月度收入", bootstyle="primary")
@@ -643,4 +686,80 @@ class DashboardTab(Frame):
         
         # 显示刷新成功消息
         from tkinter import messagebox
-        messagebox.showinfo("成功", "仪表盘数据已刷新完成") 
+        messagebox.showinfo("成功", "仪表盘数据已刷新完成")
+
+    def get_inventory_data(self):
+        """从数据库获取库存管理数据，计算库存数量和利润率"""
+        db_manager = getattr(self.main_gui, 'db_manager', None)
+        if db_manager is None:
+            return []
+            
+        # 获取入库和出库数据
+        stock_in_data = db_manager.get_stock_in()
+        stock_out_data = db_manager.get_stock_out()
+        
+        # 计算每种物品的库存和价值
+        inventory_dict = {}
+        
+        # 统计入库
+        for row in stock_in_data:
+            try:
+                _, item_name, _, qty, cost, *_ = row
+                qty = float(qty)
+                cost = float(cost)
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['in_qty'] += qty
+                inventory_dict[item_name]['in_amount'] += cost
+            except Exception as e:
+                continue
+                
+        # 统计出库
+        for row in stock_out_data:
+            try:
+                _, item_name, _, qty, unit_price, fee, deposit, total_amount, note, *_ = row
+                qty = float(qty)
+                unit_price = float(unit_price)
+                fee = float(fee)
+                amount = unit_price * qty - fee
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['out_qty'] += qty
+                inventory_dict[item_name]['out_amount'] += amount
+            except Exception as e:
+                continue
+        
+        # 计算库存数量和利润率
+        result = []
+        for item, data in inventory_dict.items():
+            remain_qty = data['in_qty'] - data['out_qty']
+            
+            # 显示所有物品，不管库存是否为正
+            # 计算平均入库成本和平均出库价格
+            in_avg = data['in_amount'] / data['in_qty'] if data['in_qty'] else 0
+            out_avg = data['out_amount'] / data['out_qty'] if data['out_qty'] else 0
+            
+            # 计算利润率
+            profit_rate = 0
+            if in_avg > 0 and out_avg > 0:
+                profit_rate = (out_avg - in_avg) / in_avg * 100
+            
+            # 格式化数据 - 改进格式化方式
+            if abs(remain_qty) < 1000:
+                formatted_qty = f"{int(remain_qty):d}"
+            else:
+                formatted_qty = f"{int(remain_qty):,d}"
+                
+            formatted_rate = f"{profit_rate:+.1f}%"
+            
+            result.append((item, formatted_qty, formatted_rate, profit_rate))
+        
+        # 首先按库存是否为正排序，然后按库存数量从高到低排序
+        result.sort(key=lambda x: (-1 if float(x[1].replace(',', '')) > 0 else 1, -float(x[1].replace(',', '').replace('-', ''))))
+        
+        # 取所有项，但最多显示7项
+        return result[:7] 

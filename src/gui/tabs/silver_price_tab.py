@@ -6,8 +6,13 @@ import threading
 import requests
 from datetime import datetime
 import matplotlib
+import matplotlib.pyplot as plt
 import matplotlib.dates
+import matplotlib.font_manager as fm
 import numpy as np
+import platform
+import os
+import time
 
 class SilverPriceTab:
     def __init__(self, notebook):
@@ -23,57 +28,134 @@ class SilverPriceTab:
         self._refresh_interval = 60
         self._auto_refresh_var = tk.BooleanVar(value=False)
         self._last_silver_data = None
+        
+        # 设置中文字体
+        self.setup_fonts()
+        
         self._init_ui()
         self.refresh_silver_price()
+        
+    def setup_fonts(self):
+        """设置中文字体支持"""
+        # 检测操作系统
+        system = platform.system()
+        
+        # 设置matplotlib中文字体
+        if system == 'Windows':
+            # Windows系统常见中文字体
+            chinese_fonts = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
+        elif system == 'Darwin':  # macOS
+            chinese_fonts = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STFangsong']
+        else:  # Linux等其他系统
+            chinese_fonts = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Droid Sans Fallback']
+        
+        # 查找可用的中文字体
+        font_found = False
+        for font_name in chinese_fonts:
+            try:
+                font_path = fm.findfont(fm.FontProperties(family=font_name))
+                if os.path.basename(font_path).lower() != 'dejavusans.ttf':  # 不是默认字体
+                    plt.rcParams['font.family'] = [font_name, 'sans-serif']
+                    plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
+                    self.chinese_font = font_name
+                    font_found = True
+                    break
+            except Exception:
+                continue
+        
+        # 最后的备选方案
+        if not font_found:
+            try:
+                plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+                plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+                self.chinese_font = 'SimHei'
+            except:
+                # 最后的备选方案
+                self.chinese_font = 'Microsoft YaHei'
+                plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 用来正常显示中文标签
+                plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
     def _init_ui(self):
-        control_frame = ttk.Frame(self.silver_tab)
-        control_frame.pack(fill=tk.X, padx=5, pady=5)
-
+        # 创建现代化的顶部控制栏
+        control_frame = ttk.Frame(self.silver_tab, style="Card.TFrame")
+        control_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        
+        # 使用网格布局，更加整齐
+        control_frame.columnconfigure(0, weight=0)
+        control_frame.columnconfigure(1, weight=0)
+        control_frame.columnconfigure(2, weight=0)
+        control_frame.columnconfigure(3, weight=0)
+        control_frame.columnconfigure(4, weight=0)
+        control_frame.columnconfigure(5, weight=0)
+        control_frame.columnconfigure(6, weight=1)  # 弹性空间
+        
         # 平台选择
-        ttk.Label(control_frame, text="平台:").pack(side=tk.LEFT, padx=5)
-        self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=10)
+        ttk.Label(control_frame, text="平台:", font=(self.chinese_font, 10)).grid(row=0, column=0, padx=(5, 2), pady=5, sticky="e")
+        self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=8, font=(self.chinese_font, 10))
         self.platform.set("全部")
-        self.platform.pack(side=tk.LEFT, padx=5)
+        self.platform.grid(row=0, column=1, padx=2, pady=5, sticky="w")
         self.platform.bind("<<ComboboxSelected>>", lambda e: self.refresh_silver_price())
 
         # 天数选择
-        ttk.Label(control_frame, text="天数:").pack(side=tk.LEFT, padx=5)
-        self.days = ttk.Combobox(control_frame, values=["7", "15", "30", "90", "180", "365"], state="readonly", width=5)
+        ttk.Label(control_frame, text="天数:", font=(self.chinese_font, 10)).grid(row=0, column=2, padx=(10, 2), pady=5, sticky="e")
+        self.days = ttk.Combobox(control_frame, values=["7", "15", "30", "90", "180", "365"], state="readonly", width=5, font=(self.chinese_font, 10))
         self.days.set("30")
-        self.days.pack(side=tk.LEFT, padx=5)
+        self.days.grid(row=0, column=3, padx=2, pady=5, sticky="w")
 
-        # 控制按钮
-        ttk.Button(control_frame, text="刷新", command=self.refresh_silver_price).pack(side=tk.LEFT, padx=5)
-        ttk.Checkbutton(control_frame, text="自动刷新", variable=self._auto_refresh_var, 
-                       command=self.auto_refresh_silver_price).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="重置缩放", command=self.reset_silver_zoom).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="导出图表", command=self.export_silver_chart).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="导出数据", command=self.export_silver_data).pack(side=tk.LEFT, padx=5)
+        # 控制按钮 - 使用更现代的按钮样式
+        refresh_btn = ttk.Button(control_frame, text="刷新", command=self.refresh_silver_price, style="primary.TButton", width=6)
+        refresh_btn.grid(row=0, column=4, padx=(10, 2), pady=5)
+        
+        auto_refresh_cb = ttk.Checkbutton(control_frame, text="自动刷新", variable=self._auto_refresh_var, 
+                       command=self.auto_refresh_silver_price, style="primary.TCheckbutton")
+        auto_refresh_cb.grid(row=0, column=5, padx=5, pady=5)
+        
+        # 右侧按钮组
+        btn_frame = ttk.Frame(control_frame)
+        btn_frame.grid(row=0, column=7, padx=5, pady=5, sticky="e")
+        
+        ttk.Button(btn_frame, text="重置缩放", command=self.reset_silver_zoom, style="info.TButton", width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="导出图表", command=self.export_silver_chart, style="info.TButton", width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="导出数据", command=self.export_silver_data, style="info.TButton", width=8).pack(side=tk.LEFT, padx=2)
 
-        # 信息展示区
-        info_frame = tk.Frame(self.silver_tab, bg='#f8f8f8')
-        info_frame.pack(fill='x', pady=(0, 10))
-        def make_info_label(parent, label_text, value_text, fg='#222', bg='#ffe066', highlight=False):
-            frame = tk.Frame(parent, bg=bg, bd=0, relief='flat')
-            frame.pack(side='left', padx=30, ipadx=8, ipady=2)
-            label = tk.Label(frame, text=label_text, font=('微软雅黑', 12, 'bold'), bg=bg, fg=fg)
-            label.pack(side='top', anchor='center')
-            val_label = tk.Label(
-                frame, text=value_text, font=('微软雅黑', 16, 'bold'),
-                bg=bg, fg=('#ff4444' if highlight else fg)
+        # 信息展示区 - 使用更美观的卡片式设计
+        info_frame = ttk.Frame(self.silver_tab, style="Card.TFrame")
+        info_frame.pack(fill='x', padx=10, pady=5)
+        
+        # 使用更现代的卡片设计
+        def create_info_card(parent, title, value="--", highlight=False):
+            card = ttk.Frame(parent, style="Card.TFrame", padding=10)
+            card.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+            
+            # 标题使用小号字体
+            ttk.Label(card, text=title, font=(self.chinese_font, 11), 
+                     foreground="#555555").pack(anchor="w")
+            
+            # 值使用大号粗体字
+            value_label = ttk.Label(
+                card, text=value, font=(self.chinese_font, 18, "bold"),
+                foreground="#2c3e50" if not highlight else "#e74c3c"
             )
-            val_label.pack(side='top', anchor='center')
-            return val_label
+            value_label.pack(anchor="w", pady=(2, 0))
+            
+            return value_label
+        
+        self.current_price_label = create_info_card(info_frame, "当前价格")
+        self.avg_price_label = create_info_card(info_frame, "7日均价")
+        self.amplitude_label = create_info_card(info_frame, "振幅", highlight=True)
 
-        self.current_price_label = make_info_label(info_frame, "当前价格:", "--", fg='#222', bg='#ffe066')
-        self.avg_price_label = make_info_label(info_frame, "7日均价:", "--", fg='#222', bg='#ffe066')
-        self.amplitude_label = make_info_label(info_frame, "振幅:", "--", fg='#ff4444', bg='#ffe066', highlight=True)
-
-        # 创建图表
-        self.silver_fig = Figure(figsize=(10, 6), dpi=100)
+        # 创建图表 - 使用更现代的设计
+        chart_frame = ttk.LabelFrame(self.silver_tab, text="价格走势图", style="Card.TLabelframe", padding=10)
+        chart_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        self.silver_fig = Figure(figsize=(10, 6), dpi=100, facecolor='#f8f9fa')
         self.silver_ax1 = self.silver_fig.add_subplot(111)
-        self.silver_canvas = FigureCanvasTkAgg(self.silver_fig, master=self.silver_tab)
+        self.silver_ax1.set_facecolor('#f8f9fa')
+        
+        # 设置图表样式
+        self.silver_fig.subplots_adjust(left=0.08, right=0.92, top=0.9, bottom=0.15)
+        
+        self.silver_canvas = FigureCanvasTkAgg(self.silver_fig, master=chart_frame)
         self.silver_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         # 绑定事件
@@ -98,19 +180,33 @@ class SilverPriceTab:
     def _draw_silver_price(self, data, platform, days):
         try:
             self.silver_ax1.clear()
-            self.silver_ax1.set_title(f"银两价格走势 ({days}天)")
-            self.silver_ax1.set_xlabel("时间")
-            self.silver_ax1.set_ylabel("价格 (元/万两)")
-            self.silver_ax1.grid(True, linestyle='--', alpha=0.7)
+            
+            # 使用中文字体设置标题和标签
+            self.silver_ax1.set_title(f"银两价格走势 ({days}天)", 
+                                    fontproperties=self.chinese_font, 
+                                    fontsize=14, 
+                                    color='#2c3e50',
+                                    pad=15)
+            self.silver_ax1.set_xlabel("时间", fontproperties=self.chinese_font, fontsize=11, color='#7f8c8d')
+            self.silver_ax1.set_ylabel("价格 (元/万两)", fontproperties=self.chinese_font, fontsize=11, color='#7f8c8d')
+            
+            # 设置网格线样式
+            self.silver_ax1.grid(True, linestyle='--', alpha=0.3, color='#bdc3c7')
+            
+            # 美化坐标轴
+            self.silver_ax1.spines['top'].set_visible(False)
+            self.silver_ax1.spines['right'].set_visible(False)
+            self.silver_ax1.spines['left'].set_color('#bdc3c7')
+            self.silver_ax1.spines['bottom'].set_color('#bdc3c7')
 
             allowed_platforms = ["7881", "DD373"]
             filtered_series = {}
             filtered_dates = {}
 
             # 重置信息栏
-            self.current_price_label.config(text="--", fg='#222')
-            self.avg_price_label.config(text="--", fg='#222')
-            self.amplitude_label.config(text="--", fg='#ff4444')
+            self.current_price_label.config(text="--")
+            self.avg_price_label.config(text="--")
+            self.amplitude_label.config(text="--")
 
             for series, series_data in data['series'].items():
                 if series not in allowed_platforms:
@@ -131,7 +227,8 @@ class SilverPriceTab:
                 filtered_series[series] = series_data
                 filtered_dates[series] = time_list
 
-            colors = ['#1f77b4', '#ff7f0e']
+            # 使用更美观的颜色方案
+            colors = ['#3498db', '#e74c3c']  # 蓝色和红色
             info_updated = False
             first_valid_series_data = None
 
@@ -146,11 +243,17 @@ class SilverPriceTab:
                         import pandas as pd
                         time_list = [pd.to_datetime(t) for t in time_list]
 
+                # 绘制更美观的线条
                 self.silver_ax1.plot(time_list, series_data,
                                    label=series,
                                    color=colors[idx % len(colors)],
-                                   linewidth=1.5,
-                                   alpha=0.8)
+                                   linewidth=2,
+                                   marker='o',
+                                   markersize=4,
+                                   markerfacecolor='white',
+                                   markeredgecolor=colors[idx % len(colors)],
+                                   markeredgewidth=1.5,
+                                   alpha=0.9)
 
                 if first_valid_series_data is None and series_data:
                     first_valid_series_data = (series, series_data)
@@ -158,38 +261,56 @@ class SilverPriceTab:
                 if not info_updated and (str(platform) == str(series) or (platform == '全部' and idx == 0)):
                     if series_data:
                         current_price = series_data[-1]
-                        self.current_price_label.config(text=f"{current_price:.4f}", fg='#222')
+                        self.current_price_label.config(text=f"{current_price:.4f}")
                         last_7_days = series_data[-7:] if len(series_data) >= 7 else series_data
                         avg_7_days = sum(last_7_days) / len(last_7_days)
-                        self.avg_price_label.config(text=f"{avg_7_days:.4f}", fg='#222')
+                        self.avg_price_label.config(text=f"{avg_7_days:.4f}")
                         max_price = max(series_data)
                         min_price = min(series_data)
                         amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
                         self.amplitude_label.config(
                             text=f"{amplitude:.2f}%",
-                            fg='#ff4444' if amplitude > 5 else '#0056b3'
+                            foreground='#e74c3c' if amplitude > 5 else '#2980b9'
                         )
                         info_updated = True
 
             if not info_updated and first_valid_series_data:
                 _, series_data = first_valid_series_data
                 current_price = series_data[-1]
-                self.current_price_label.config(text=f"{current_price:.4f}", fg='#222')
+                self.current_price_label.config(text=f"{current_price:.4f}")
                 last_7_days = series_data[-7:] if len(series_data) >= 7 else series_data
                 avg_7_days = sum(last_7_days) / len(last_7_days)
-                self.avg_price_label.config(text=f"{avg_7_days:.4f}", fg='#222')
+                self.avg_price_label.config(text=f"{avg_7_days:.4f}")
                 max_price = max(series_data)
                 min_price = min(series_data)
                 amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
                 self.amplitude_label.config(
                     text=f"{amplitude:.2f}%",
-                    fg='#ff4444' if amplitude > 5 else '#0056b3'
+                    foreground='#e74c3c' if amplitude > 5 else '#2980b9'
                 )
 
-            self.silver_ax1.legend(loc='upper left')
+            # 设置图例样式
+            legend = self.silver_ax1.legend(loc='upper left', frameon=True, fancybox=True, 
+                                         framealpha=0.8, edgecolor='#bdc3c7')
+            for text in legend.get_texts():
+                text.set_fontproperties(self.chinese_font)
+                
+            # 设置x轴日期格式
             self.silver_ax1.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(10))
             self.silver_ax1.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%Y-%m-%d'))
-            self.silver_fig.autofmt_xdate()
+            
+            # 设置刻度标签字体
+            for label in self.silver_ax1.get_xticklabels():
+                label.set_fontproperties(self.chinese_font)
+                label.set_fontsize(9)
+                label.set_color('#7f8c8d')
+                
+            for label in self.silver_ax1.get_yticklabels():
+                label.set_fontproperties(self.chinese_font)
+                label.set_fontsize(9)
+                label.set_color('#7f8c8d')
+                
+            self.silver_fig.autofmt_xdate(rotation=30)
             self.silver_canvas.draw_idle()
 
         except Exception as e:

@@ -5,6 +5,8 @@ from PIL import ImageGrab, ImageTk
 import io, base64, requests
 from datetime import datetime
 import tkinter as tk
+from src.gui.dialogs import ModalInputDialog
+from src.gui.components import OCRPreview
 
 class StockInTab:
     def __init__(self, notebook, main_gui):
@@ -44,32 +46,86 @@ class StockInTab:
         filter_entry = ttk.Entry(filter_row, textvariable=self.stock_in_filter_var, width=12)
         filter_entry.pack(side='left', padx=2)
         ttk.Button(filter_row, text="筛选", command=self.refresh_stock_in).pack(side='left', padx=2)
-        add_frame = ttk.LabelFrame(right_panel, text="添加入库记录", padding=10)
-        add_frame.pack(fill='x', pady=8)
-        ttk.Label(add_frame, text="物品:").grid(row=0, column=0, padx=5, pady=5)
-        self.stock_in_item = ttk.Entry(add_frame)
-        self.stock_in_item.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="数量:").grid(row=1, column=0, padx=5, pady=5)
-        self.stock_in_quantity = ttk.Entry(add_frame)
-        self.stock_in_quantity.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="花费:").grid(row=2, column=0, padx=5, pady=5)
-        self.stock_in_cost = ttk.Entry(add_frame)
-        self.stock_in_cost.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="备注:").grid(row=3, column=0, padx=5, pady=5)
-        self.stock_in_note = ttk.Entry(add_frame)
-        self.stock_in_note.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        add_frame.columnconfigure(1, weight=1)
-        ttk.Button(add_frame, text="添加入库", command=self.add_stock_in).grid(row=4, column=0, columnspan=2, pady=10, sticky='ew')
+        
+        # 添加记录按钮 - 替换原来的嵌入式表单
+        ttk.Button(
+            right_panel, 
+            text="添加入库记录", 
+            command=self.show_add_stock_in_dialog,
+            style="primary.TButton"
+        ).pack(fill='x', pady=10, ipady=8)
+        
         ttk.Button(right_panel, text="刷新入库记录", command=self.refresh_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="上传图片自动入库", command=self.upload_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_in).pack(fill='x', pady=(0, 10), ipady=4)
-        self.ocr_image_preview_frame = ttk.Frame(right_panel)
-        self.ocr_image_preview_frame.pack(fill='x', pady=5)
+        
+        # 使用新的OCRPreview组件替换原来的预览区
+        ocr_frame = ttk.LabelFrame(right_panel, text="OCR图片预览")
+        ocr_frame.pack(fill='x', pady=5, padx=2)
+        
+        # 创建OCR预览组件
+        self.ocr_preview = OCRPreview(ocr_frame, height=120)
+        self.ocr_preview.pack(fill='both', expand=True, padx=2, pady=5)
+        self.ocr_preview.set_callback(self.delete_ocr_image)
+        
+        # 绑定Ctrl+V快捷键
+        right_panel.bind_all('<Control-v>', self.paste_ocr_import_stock_in)
+        
         self.stock_in_menu = tb.Menu(self.stock_in_tree, tearoff=0)
         self.stock_in_menu.add_command(label="删除", command=self.delete_stock_in_item)
         self.stock_in_tree.bind("<Button-3>", self.show_stock_in_menu)
         self.stock_in_tree.bind('<Control-a>', lambda e: [self.stock_in_tree.selection_set(self.stock_in_tree.get_children()), 'break'])
         self.stock_in_tree.bind("<Double-1>", self.edit_stock_in_item)
+
+    def show_add_stock_in_dialog(self):
+        """显示添加入库记录的模态对话框"""
+        fields = [
+            ("物品", "item_name", "str"),
+            ("数量", "quantity", "int"),
+            ("花费", "cost", "float"),
+            ("备注", "note", "str")
+        ]
+        
+        ModalInputDialog(
+            self.main_gui.root,
+            "添加入库记录",
+            fields,
+            self.process_add_stock_in
+        )
+    
+    def process_add_stock_in(self, values):
+        """处理添加入库记录的回调"""
+        try:
+            item = values["item_name"]
+            quantity = values["quantity"]
+            cost = values["cost"]
+            note = values["note"]
+            
+            avg_cost = cost / quantity if quantity > 0 else 0
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            self.db_manager.save_stock_in({
+                'item_name': item,
+                'transaction_time': now,
+                'quantity': quantity,
+                'cost': cost,
+                'avg_cost': avg_cost,
+                'deposit': 0.00,
+                'note': note if note is not None else ''
+            })
+            
+            self.db_manager.increase_inventory(item, quantity, avg_cost)
+            self.refresh_stock_in()
+            
+            # 确保库存页面也更新
+            if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
+                self.main_gui.inventory_tab.refresh_inventory()
+            self.main_gui.refresh_inventory()
+            
+            self.main_gui.log_operation('修改', '入库管理')
+            messagebox.showinfo("成功", "入库记录添加成功！")
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
 
     def refresh_stock_in(self):
         for item in self.stock_in_tree.get_children():
@@ -106,38 +162,6 @@ class StockInTab:
             self.stock_in_tree.insert('', 'end', values=(
                 '合计', '', total[0], total[1], total[2]//len(filtered), ''
             ), tags=('total',))
-
-    def add_stock_in(self):
-        try:
-            item = self.stock_in_item.get()
-            quantity = int(self.stock_in_quantity.get())
-            cost = float(self.stock_in_cost.get())
-            note = self.stock_in_note.get()
-            avg_cost = cost / quantity
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.db_manager.save_stock_in({
-                'item_name': item,
-                'transaction_time': now,
-                'quantity': quantity,
-                'cost': cost,
-                'avg_cost': avg_cost,
-                'deposit': 0.00,
-                'note': note if note is not None else ''
-            })
-            self.db_manager.increase_inventory(item, quantity, avg_cost)
-            self.refresh_stock_in()
-            # 确保库存页面也更新
-            if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
-                self.main_gui.inventory_tab.refresh_inventory()
-            self.main_gui.refresh_inventory()
-            self.stock_in_item.delete(0, 'end')
-            self.stock_in_quantity.delete(0, 'end')
-            self.stock_in_cost.delete(0, 'end')
-            self.stock_in_note.delete(0, 'end')
-            self.main_gui.log_operation('修改', '入库管理')
-            messagebox.showinfo("成功", "入库记录添加成功！")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
 
     def edit_stock_in_item(self, event):
         item_id = self.stock_in_tree.identify_row(event.y)
@@ -238,44 +262,40 @@ class StockInTab:
             messagebox.showinfo("成功", "已删除所选入库记录！")
 
     def refresh_ocr_image_preview(self):
-        for widget in self.ocr_image_preview_frame.winfo_children():
-            widget.destroy()
-        for idx, img in enumerate(self._pending_ocr_images):
-            thumb = img.copy()
-            thumb.thumbnail((80, 80))
-            photo = ImageTk.PhotoImage(thumb)
-            lbl = ttk.Label(self.ocr_image_preview_frame, image=photo)
-            lbl.image = photo
-            lbl.grid(row=0, column=idx*2, padx=4, pady=2)
-            btn = ttk.Button(self.ocr_image_preview_frame, text='删除', width=5, command=lambda i=idx: self.delete_ocr_image(i))
-            btn.grid(row=1, column=idx*2, padx=4, pady=2)
+        """刷新OCR图片预览"""
+        # 使用新组件的刷新方法
+        self.ocr_preview.refresh()
 
     def delete_ocr_image(self, idx):
-        del self._pending_ocr_images[idx]
-        self.refresh_ocr_image_preview()
+        """删除待识别的图片"""
+        if 0 <= idx < len(self._pending_ocr_images):
+            self._pending_ocr_images.pop(idx)
 
     def upload_ocr_import_stock_in(self):
-        file_paths = filedialog.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
+        """上传图片进行OCR识别导入"""
+        file_path = filedialog.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
+        if not file_path:
             return
         try:
             from PIL import Image
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images.append(img)
-                count += 1
-            self.refresh_ocr_image_preview()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
+            img = Image.open(file_path)
+            self._pending_ocr_images.append(img)
+            # 使用新组件添加图片
+            self.ocr_preview.add_image(img)
+            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def batch_ocr_import_stock_in(self):
-        if not self._pending_ocr_images:
-            messagebox.showwarning("无图片", "请先粘贴图片")
+        """批量OCR识别处理"""
+        # 从新组件获取图片列表
+        ocr_images = self.ocr_preview.get_images()
+        if not ocr_images:
+            messagebox.showinfo("提示", "请先添加图片")
             return
-        all_preview_data = []
-        for img in self._pending_ocr_images:
+        
+        all_data = []
+        for img in ocr_images:
             try:
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
@@ -294,81 +314,85 @@ class StockInTab:
                 text = ocr_result.get('data')
                 if not text:
                     continue
-                parsed_data = self.parse_stock_in_ocr_text(text)
-                if parsed_data:
-                    if isinstance(parsed_data, list):
-                        all_preview_data.extend(parsed_data)
-                    else:
-                        all_preview_data.append(parsed_data)
+                data = self.parse_stock_in_ocr_text(text)
+                if data:
+                    all_data.append(data)
             except Exception as e:
-                print(f"OCR识别失败: {e}")
-        if all_preview_data:
-            self.main_gui.show_preview(
-                all_preview_data,
-                columns=('物品', '入库数量', '入库花费', '入库均价', '备注'),
-                field_map={
-                    '物品': 'item_name',
-                    '入库数量': 'quantity',
-                    '入库花费': 'cost',
-                    '入库均价': 'avg_cost',
-                    '备注': 'note'
-                }
-            )
-            self.main_gui.log_operation('添加', '入库管理', all_preview_data)
+                messagebox.showerror("错误", f"OCR识别失败: {e}")
+        
+        if all_data:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for data in all_data:
+                item_name = data.get('item_name')
+                quantity = data.get('quantity')
+                cost = data.get('cost')
+                avg_cost = cost / quantity if quantity > 0 else 0
+                self.db_manager.save_stock_in({
+                    'item_name': item_name,
+                    'transaction_time': now,
+                    'quantity': quantity,
+                    'cost': cost,
+                    'avg_cost': avg_cost,
+                    'deposit': 0.0,
+                    'note': ''
+                })
+                self.db_manager.increase_inventory(item_name, quantity, avg_cost)
+            self.refresh_stock_in()
+            self.main_gui.refresh_inventory()
+            # 清空图片列表并刷新预览
+            self._pending_ocr_images.clear()
+            self.ocr_preview.clear_images()
+            self.main_gui.log_operation('批量修改', '入库管理', all_data)
+            messagebox.showinfo("成功", f"已成功导入{len(all_data)}条入库记录！")
         else:
-            messagebox.showwarning("无有效数据", "未识别到有效的入库数据！")
-        self._pending_ocr_images.clear()
-        self.refresh_ocr_image_preview()
+            messagebox.showwarning("警告", "未能识别有效的入库记录！")
 
     def parse_stock_in_ocr_text(self, text):
+        """解析OCR识别后的文本，提取入库相关信息"""
         import re
-        try:
-            total_cost = 0
-            for cost_match in re.finditer(r'失去了银两[×xX*＊ ]*(\d+)', text):
-                total_cost += int(cost_match.group(1))
-            item_dict = {}
-            for m in re.finditer(r'([\u4e00-\u9fa5a-zA-Z0-9]+)[×xX*＊ ]*(\d+)', text):
-                item_name = m.group(1).strip()
-                quantity = int(m.group(2))
-                if item_name == "银两" or item_name.startswith("失去了银两"):
-                    continue
-                item_dict[item_name] = item_dict.get(item_name, 0) + quantity
-            if not item_dict or total_cost == 0:
-                return None
-            if len(item_dict) == 1:
-                item_name, quantity = list(item_dict.items())[0]
-            else:
-                item_name = '+'.join(item_dict.keys())
-                quantity = sum(item_dict.values())
-            avg_cost = int(round(total_cost / quantity)) if quantity else 0
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = text.strip().split('\n')
+        item_name = None
+        quantity = None
+        cost = None
+        for line in lines:
+            if '品名' in line or '物品' in line:
+                match = re.search(r'[：:]\s*(.+)$', line)
+                if match:
+                    item_name = match.group(1).strip()
+            elif '数量' in line:
+                match = re.search(r'[：:]\s*(\d+)', line)
+                if match:
+                    quantity = int(match.group(1))
+            elif '价格' in line or '金额' in line or '花费' in line:
+                match = re.search(r'[：:]\s*(\d+)', line)
+                if match:
+                    cost = float(match.group(1))
+        if item_name and quantity and cost:
             return {
-                'item_name': str(item_name),
-                'transaction_time': now,
-                'quantity': int(quantity),
-                'cost': int(total_cost),
-                'avg_cost': int(avg_cost),
-                'note': 'OCR导入'
+                'item_name': item_name,
+                'quantity': quantity,
+                'cost': cost
             }
-        except Exception as e:
-            print(f"解析入库OCR文本失败: {e}")
-            return None
+        return None
 
     def show_stock_in_menu(self, event):
-        item = self.stock_in_tree.identify_row(event.y)
-        if item:
-            if item not in self.stock_in_tree.selection():
-                self.stock_in_tree.selection_set(item)
+        """显示右键菜单"""
+        iid = self.stock_in_tree.identify_row(event.y)
+        if iid:
+            self.stock_in_tree.selection_set(iid)
             self.stock_in_menu.post(event.x_root, event.y_root)
 
     def paste_ocr_import_stock_in(self, event=None):
-        img = ImageGrab.grabclipboard()
-        if isinstance(img, list):
-            img = img[0] if img else None
-        if img is None or not hasattr(img, 'save'):
-            messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
-            return
-        self._pending_ocr_images.append(img)
-        self.refresh_ocr_image_preview()
-        messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images)}张图片，点击批量识别可统一导入。")
+        """从剪贴板粘贴图片进行OCR识别"""
+        try:
+            img = ImageGrab.grabclipboard()
+            if isinstance(img, Image.Image):
+                self._pending_ocr_images.append(img)
+                # 使用新组件添加图片
+                self.ocr_preview.add_image(img)
+                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
+            else:
+                messagebox.showinfo("提示", "剪贴板中没有图片")
+        except Exception as e:
+            messagebox.showerror("错误", f"粘贴图片失败: {e}")
     # ...后续补全所有入库管理相关方法... 

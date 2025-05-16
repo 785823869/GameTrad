@@ -6,6 +6,8 @@ import io, base64, requests
 from datetime import datetime
 import tkinter as tk
 import re
+from src.gui.dialogs import ModalInputDialog
+from src.gui.components import OCRPreview
 
 class StockOutTab:
     def __init__(self, notebook, main_gui):
@@ -45,38 +47,91 @@ class StockOutTab:
         filter_entry = ttk.Entry(filter_row, textvariable=self.stock_out_filter_var, width=12)
         filter_entry.pack(side='left', padx=2)
         ttk.Button(filter_row, text="筛选", command=self.refresh_stock_out).pack(side='left', padx=2)
-        add_frame = ttk.LabelFrame(right_panel, text="添加出库", padding=10)
-        add_frame.pack(fill='x', pady=8)
-        ttk.Label(add_frame, text="物品:").grid(row=0, column=0, padx=5, pady=5)
-        self.stock_out_item = ttk.Entry(add_frame)
-        self.stock_out_item.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="数量:").grid(row=1, column=0, padx=5, pady=5)
-        self.stock_out_quantity = ttk.Entry(add_frame)
-        self.stock_out_quantity.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="单价:").grid(row=2, column=0, padx=5, pady=5)
-        self.stock_out_price = ttk.Entry(add_frame)
-        self.stock_out_price.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="手续费:").grid(row=3, column=0, padx=5, pady=5)
-        self.stock_out_fee = ttk.Entry(add_frame)
-        self.stock_out_fee.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="总金额:").grid(row=4, column=0, padx=5, pady=5)
-        self.stock_out_total = ttk.Entry(add_frame)
-        self.stock_out_total.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="备注:").grid(row=5, column=0, padx=5, pady=5)
-        self.stock_out_note = ttk.Entry(add_frame)
-        self.stock_out_note.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
-        add_frame.columnconfigure(1, weight=1)
-        ttk.Button(add_frame, text="添加出库", command=self.add_stock_out).grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')
+        
+        # 添加记录按钮 - 替换原来的嵌入式表单
+        ttk.Button(
+            right_panel, 
+            text="添加出库记录", 
+            command=self.show_add_stock_out_dialog,
+            style="primary.TButton"
+        ).pack(fill='x', pady=10, ipady=8)
+        
         ttk.Button(right_panel, text="刷新出库记录", command=self.refresh_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
-        self.ocr_image_preview_frame_out = ttk.Frame(right_panel)
-        self.ocr_image_preview_frame_out.pack(fill='x', pady=5)
+
+        # 使用新的OCRPreview组件替换原来的预览区
+        ocr_frame = ttk.LabelFrame(right_panel, text="OCR图片预览")
+        ocr_frame.pack(fill='x', pady=5, padx=2)
+        
+        # 创建OCR预览组件
+        self.ocr_preview = OCRPreview(ocr_frame, height=120)
+        self.ocr_preview.pack(fill='both', expand=True, padx=2, pady=5)
+        self.ocr_preview.set_callback(self.delete_ocr_image_out)
+        
+        # 绑定Ctrl+V快捷键
+        right_panel.bind_all('<Control-v>', self.paste_ocr_import_stock_out)
+        
         self.stock_out_menu = tb.Menu(self.stock_out_tree, tearoff=0)
         self.stock_out_menu.add_command(label="删除", command=self.delete_stock_out_item)
         self.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
         self.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tree.selection_set(self.stock_out_tree.get_children()), 'break'])
         self.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
+    
+    def show_add_stock_out_dialog(self):
+        """显示添加出库记录的模态对话框"""
+        fields = [
+            ("物品", "item_name", "str"),
+            ("数量", "quantity", "int"),
+            ("单价", "unit_price", "float"),
+            ("手续费", "fee", "float"),
+            ("备注", "note", "str")
+        ]
+        
+        ModalInputDialog(
+            self.main_gui.root,
+            "添加出库记录",
+            fields,
+            self.process_add_stock_out
+        )
+    
+    def process_add_stock_out(self, values):
+        """处理添加出库记录的回调"""
+        try:
+            item = values["item_name"]
+            quantity = values["quantity"]
+            price = values["unit_price"]
+            fee = values["fee"]
+            note = values["note"]
+            
+            total_amount = quantity * price - fee
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 自动减少库存
+            success = self.db_manager.decrease_inventory(item, quantity)
+            if not success:
+                messagebox.showerror("错误", f"库存不足，无法出库 {item} 数量 {quantity}")
+                return
+                
+            self.db_manager.save_stock_out({
+                'item_name': item,
+                'transaction_time': now,
+                'quantity': quantity,
+                'unit_price': price,
+                'fee': fee,
+                'deposit': 0.0,
+                'total_amount': total_amount,
+                'note': note if note is not None else ''
+            })
+            
+            self.refresh_stock_out()
+            self.main_gui.refresh_inventory()
+            
+            # 记录操作日志
+            self.main_gui.log_operation('修改', '出库管理')
+            messagebox.showinfo("成功", "出库记录添加成功！")
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
 
     def add_stock_out(self):
         try:
@@ -238,39 +293,39 @@ class StockOutTab:
         ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
 
     def refresh_ocr_image_preview_out(self):
-        for widget in self.ocr_image_preview_frame_out.winfo_children():
-            widget.destroy()
-        for idx, img in enumerate(self._pending_ocr_images_out):
-            thumb = img.copy()
-            thumb.thumbnail((80, 80))
-            photo = ImageTk.PhotoImage(thumb)
-            lbl = ttk.Label(self.ocr_image_preview_frame_out, image=photo)
-            lbl.image = photo
-            lbl.grid(row=0, column=idx*2, padx=4, pady=2)
-            btn = ttk.Button(self.ocr_image_preview_frame_out, text='删除', width=5, command=lambda i=idx: self.delete_ocr_image_out(i))
-            btn.grid(row=1, column=idx*2, padx=4, pady=2)
+        """刷新OCR图片预览"""
+        # 使用新组件的刷新方法
+        self.ocr_preview.refresh()
 
     def delete_ocr_image_out(self, idx):
-        del self._pending_ocr_images_out[idx]
-        self.refresh_ocr_image_preview_out()
+        """删除待识别的图片"""
+        if 0 <= idx < len(self._pending_ocr_images_out):
+            self._pending_ocr_images_out.pop(idx)
 
     def paste_ocr_import_stock_out(self, event=None):
-        img = ImageGrab.grabclipboard()
-        if isinstance(img, list):
-            img = img[0] if img else None
-        if img is None or not hasattr(img, 'save'):
-            messagebox.showwarning("粘贴失败", "剪贴板中没有图片")
-            return
-        self._pending_ocr_images_out.append(img)
-        self.refresh_ocr_image_preview_out()
-        messagebox.showinfo("已添加", f"已添加{len(self._pending_ocr_images_out)}张图片，点击批量识别可统一导入。")
+        """从剪贴板粘贴图片进行OCR识别"""
+        try:
+            img = ImageGrab.grabclipboard()
+            if isinstance(img, Image.Image):
+                self._pending_ocr_images_out.append(img)
+                # 使用新组件添加图片
+                self.ocr_preview.add_image(img)
+                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
+            else:
+                messagebox.showinfo("提示", "剪贴板中没有图片")
+        except Exception as e:
+            messagebox.showerror("错误", f"粘贴图片失败: {e}")
 
     def batch_ocr_import_stock_out(self):
-        if not self._pending_ocr_images_out:
-            messagebox.showwarning("无图片", "请先粘贴图片")
+        """批量OCR识别处理出库数据"""
+        # 从新组件获取图片列表
+        ocr_images = self.ocr_preview.get_images()
+        if not ocr_images:
+            messagebox.showinfo("提示", "请先添加图片")
             return
-        all_preview_data = []
-        for img in self._pending_ocr_images_out:
+            
+        all_data = []
+        for img in ocr_images:
             try:
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
@@ -289,36 +344,54 @@ class StockOutTab:
                 text = ocr_result.get('data')
                 if not text:
                     continue
-                parsed_data = self.parse_stock_out_ocr_text(text)
-                if parsed_data:
-                    all_preview_data.append(parsed_data)
+                data = self.parse_stock_out_ocr_text(text)
+                if data:
+                    all_data.append(data)
             except Exception as e:
-                print(f"OCR识别失败: {e}")
-        if all_preview_data:
-            self.main_gui.show_preview(
-                all_preview_data,
-                columns=('物品', '数量', '单价', '手续费', '总金额', '备注'),
-                field_map={
-                    '物品': 'item_name',
-                    '数量': 'quantity',
-                    '单价': 'unit_price',
-                    '手续费': 'fee',
-                    '总金额': 'total_amount',
-                    '备注': 'note'
-                }
-            )
-            # 新增：记录添加日志
-            self.main_gui.log_operation('添加', '出库管理', all_preview_data)
+                messagebox.showerror("错误", f"OCR识别失败: {e}")
+                
+        if all_data:
+            # 批量导入数据
+            for data in all_data:
+                item_name = data.get('item_name')
+                quantity = data.get('quantity')
+                unit_price = data.get('unit_price')
+                fee = data.get('fee', 0)
+                total_amount = quantity * unit_price - fee
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 自动减少库存
+                success = self.db_manager.decrease_inventory(item_name, quantity)
+                if not success:
+                    messagebox.showerror("错误", f"库存不足，无法出库 {item_name} 数量 {quantity}")
+                    continue
+                    
+                self.db_manager.save_stock_out({
+                    'item_name': item_name,
+                    'transaction_time': now,
+                    'quantity': quantity,
+                    'unit_price': unit_price,
+                    'fee': fee,
+                    'deposit': 0.0,
+                    'total_amount': total_amount,
+                    'note': ''
+                })
+            
+            self.refresh_stock_out()
+            self.main_gui.refresh_inventory()
+            # 清空图片列表并刷新预览
+            self._pending_ocr_images_out.clear()
+            self.ocr_preview.clear_images()
+            self.main_gui.log_operation('批量修改', '出库管理', all_data)
+            messagebox.showinfo("成功", f"已成功导入{len(all_data)}条出库记录！")
         else:
-            messagebox.showwarning("无有效数据", "未识别到有效的出库数据！")
-        self._pending_ocr_images_out.clear()
-        self.refresh_ocr_image_preview_out()
+            messagebox.showwarning("警告", "未能识别有效的出库记录！")
 
     def show_stock_out_menu(self, event):
-        item = self.stock_out_tree.identify_row(event.y)
-        if item:
-            if item not in self.stock_out_tree.selection():
-                self.stock_out_tree.selection_set(item)
+        """显示右键菜单"""
+        iid = self.stock_out_tree.identify_row(event.y)
+        if iid:
+            self.stock_out_tree.selection_set(iid)
             self.stock_out_menu.post(event.x_root, event.y_root)
 
     def delete_stock_out_item(self):
@@ -326,84 +399,67 @@ class StockOutTab:
         if not selected_items:
             return
         names = [self.stock_out_tree.item(item)['values'][0] for item in selected_items]
+        times = [self.stock_out_tree.item(item)['values'][1] for item in selected_items]
         msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
         deleted_data = []
         if messagebox.askyesno("确认", msg):
-            for item in selected_items:
+            for item, name, t in zip(selected_items, names, times):
                 values = self.stock_out_tree.item(item)['values']
-                self.db_manager.delete_stock_out(values[0], values[1])
                 deleted_data.append(values)
+                self.db_manager.delete_stock_out(name, t)
             self.refresh_stock_out()
             self.main_gui.log_operation('删除', '出库管理', deleted_data)
+            messagebox.showinfo("成功", "已删除所选出库记录！")
 
     def upload_ocr_import_stock_out(self):
-        file_paths = fd.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
+        """上传图片进行OCR识别导入"""
+        file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
+        if not file_path:
             return
         try:
             from PIL import Image
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images_out.append(img)
-                count += 1
-            self.refresh_ocr_image_preview_out()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
+            img = Image.open(file_path)
+            self._pending_ocr_images_out.append(img)
+            # 使用新组件添加图片
+            self.ocr_preview.add_image(img)
+            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def parse_stock_out_ocr_text(self, text):
-        """解析出库OCR文本，所有金额字段转为整数，正则兼容多种格式。"""
-        try:
-            # 特殊处理古玉
-            if "古玉" in text:
-                # 提取数量（在古玉前面的数字）
-                quantity_match = re.search(r'(\d+)[^0-9]*古玉', text)
-                if not quantity_match:
-                    return None
-                quantity = int(quantity_match.group(1))
-                # 提取总金额（在收益后面的数字）
-                total_match = re.search(r'收益[^0-9]*(\d+)', text)
-                if not total_match:
-                    return None
-                total_amount = int(total_match.group(1))
-                # 计算单价
-                unit_price = total_amount // quantity
-                return {
-                    'item_name': '古玉',  # 只保留"古玉"
-                    'quantity': quantity,
-                    'unit_price': unit_price,
-                    'fee': 0,  # 古玉不需要手续费
-                    'deposit': 0.0,
-                    'total_amount': total_amount,
-                    'note': 'OCR导入'
-                }
-            # 原有的通用处理逻辑
-            item_match = re.search(r'已成功售出([^（(]+)[（(](\d+)[）)]', text)
-            if not item_match:
-                return None
-            item_name = item_match.group(1).strip()
-            quantity = int(item_match.group(2))
-            # 优化正则，兼容多种格式
-            price_match = re.search(r'售出单价[:： ]*([0-9]+)银两', text)
-            price = int(price_match.group(1)) if price_match else 0
-            fee_match = re.search(r'手续费[:： ]*([0-9]+)银两', text)
-            fee = int(fee_match.group(1)) if fee_match else 0
-            deposit_match = re.search(r'退还押金[:： ]*([0-9]+)银两', text)
-            deposit = int(deposit_match.group(1)) if deposit_match else 0
-            total_amount = quantity * price - fee + deposit
+        """解析OCR识别后的文本，提取出库相关信息"""
+        lines = text.strip().split('\n')
+        item_name = None
+        quantity = None
+        unit_price = None
+        fee = 0
+        
+        for line in lines:
+            if '品名' in line or '物品' in line:
+                match = re.search(r'[：:]\s*(.+)$', line)
+                if match:
+                    item_name = match.group(1).strip()
+            elif '数量' in line:
+                match = re.search(r'[：:]\s*(\d+)', line)
+                if match:
+                    quantity = int(match.group(1))
+            elif '单价' in line or '价格' in line:
+                match = re.search(r'[：:]\s*(\d+)', line)
+                if match:
+                    unit_price = float(match.group(1))
+            elif '手续费' in line or '费用' in line:
+                match = re.search(r'[：:]\s*(\d+)', line)
+                if match:
+                    fee = float(match.group(1))
+        
+        if item_name and quantity and unit_price:
             return {
                 'item_name': item_name,
                 'quantity': quantity,
-                'unit_price': int(price),
-                'fee': int(fee),
-                'deposit': float(deposit),
-                'total_amount': int(total_amount),
-                'note': 'OCR导入'
+                'unit_price': unit_price,
+                'fee': fee
             }
-        except Exception as e:
-            print(f"解析出库OCR文本失败: {e}")
-            return None
+        return None
 
     # 其余方法：add_stock_out, refresh_stock_out, edit_stock_out_item, delete_stock_out_item, OCR相关等
     # ...（后续补全所有出库管理相关方法）... 

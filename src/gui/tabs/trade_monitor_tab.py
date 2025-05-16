@@ -5,6 +5,8 @@ import threading
 from datetime import datetime
 from PIL import Image
 import json
+from src.gui.dialogs import ModalInputDialog
+from src.gui.components import OCRPreview
 
 class TradeMonitorTab:
     def __init__(self, notebook, main_gui):
@@ -36,63 +38,116 @@ class TradeMonitorTab:
         right_panel = ttk.Frame(monitor_frame, width=260)
         right_panel.pack(side='right', fill='y', padx=8, pady=5)
         right_panel.pack_propagate(False)
-        add_frame = ttk.LabelFrame(right_panel, text="添加监控", padding=10)
-        add_frame.pack(fill='x', pady=8)
-        ttk.Label(add_frame, text="物品:").grid(row=0, column=0, padx=5, pady=5)
-        self.monitor_item = ttk.Entry(add_frame)
-        self.monitor_item.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="数量:").grid(row=1, column=0, padx=5, pady=5)
-        self.monitor_quantity = ttk.Entry(add_frame)
-        self.monitor_quantity.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="一口价:").grid(row=2, column=0, padx=5, pady=5)
-        self.monitor_price = ttk.Entry(add_frame)
-        self.monitor_price.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="目标买入价:").grid(row=3, column=0, padx=5, pady=5)
-        self.monitor_target_price = ttk.Entry(add_frame)
-        self.monitor_target_price.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="计划卖出价:").grid(row=4, column=0, padx=5, pady=5)
-        self.monitor_planned_price = ttk.Entry(add_frame)
-        self.monitor_planned_price.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
-        ttk.Label(add_frame, text="入库策略:").grid(row=5, column=0, padx=5, pady=5)
-        self.monitor_strategy = ttk.Entry(add_frame)
-        self.monitor_strategy.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
-        add_frame.columnconfigure(1, weight=1)
-        ttk.Button(add_frame, text="添加监控", command=self.add_monitor).grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')
+        
+        # 添加记录按钮 - 替换原来的嵌入式表单
+        ttk.Button(
+            right_panel, 
+            text="添加监控记录", 
+            command=self.show_add_monitor_dialog,
+            style="primary.TButton"
+        ).pack(fill='x', pady=10, ipady=8)
+        
         ttk.Button(right_panel, text="刷新监控", command=self.refresh_monitor).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_monitor).pack(fill='x', pady=(0, 10), ipady=4)
         ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_monitor).pack(fill='x', pady=(0, 10), ipady=4)
-        self.ocr_image_preview_frame = ttk.Frame(right_panel)
-        self.ocr_image_preview_frame.pack(fill='x', pady=5)
+        
+        # 使用新的OCRPreview组件替换原来的预览区
+        ocr_frame = ttk.LabelFrame(right_panel, text="OCR图片预览")
+        ocr_frame.pack(fill='x', pady=5, padx=2)
+        
+        # 创建OCR预览组件
+        self.ocr_preview = OCRPreview(ocr_frame, height=120)
+        self.ocr_preview.pack(fill='both', expand=True, padx=2, pady=5)
+        self.ocr_preview.set_callback(self.delete_ocr_image)
+        
+        # 绑定Ctrl+V快捷键
         right_panel.bind_all('<Control-v>', self.paste_ocr_import_monitor)
+        
         self.monitor_tree.bind("<Double-1>", self.edit_monitor_item)
         self.monitor_menu = tb.Menu(self.monitor_tree, tearoff=0)
         self.monitor_menu.add_command(label="删除", command=self.delete_monitor_item)
         self.monitor_tree.bind("<Button-3>", self.show_monitor_menu)
+    
+    def show_add_monitor_dialog(self):
+        """显示添加监控记录的模态对话框"""
+        fields = [
+            ("物品", "item_name", "str"),
+            ("数量", "quantity", "int"),
+            ("一口价", "market_price", "float"),
+            ("目标买入价", "target_price", "float"),
+            ("计划卖出价", "planned_price", "float"),
+            ("出库策略", "strategy", "str")
+        ]
+        
+        ModalInputDialog(
+            self.main_gui.root,
+            "添加监控记录",
+            fields,
+            self.process_add_monitor
+        )
+    
+    def process_add_monitor(self, values):
+        """处理添加监控记录的回调"""
+        try:
+            item = values["item_name"]
+            quantity = values["quantity"]
+            market_price = values["market_price"]
+            target_price = values["target_price"]
+            planned_price = values["planned_price"]
+            strategy = values["strategy"]
+            
+            # 计算保本价、利润和利润率
+            break_even_price = round(target_price * 1.03) if target_price else 0
+            profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+            profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
+            
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 保存数据
+            self.db_manager.save_trade_monitor({
+                'item_name': item,
+                'monitor_time': now,
+                'quantity': quantity,
+                'market_price': market_price,
+                'target_price': target_price,
+                'planned_price': planned_price,
+                'break_even_price': break_even_price,
+                'profit': profit,
+                'profit_rate': profit_rate,
+                'strategy': strategy
+            })
+            
+            self.refresh_monitor()
+            self.main_gui.log_operation('修改', '交易监控')
+            messagebox.showinfo("成功", "监控记录添加成功！")
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
 
     def upload_ocr_import_monitor(self):
         """上传图片进行OCR识别导入"""
-        file_paths = fd.askopenfilenames(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if not file_paths:
+        file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
+        if not file_path:
             return
         try:
-            count = 0
-            for file_path in file_paths:
-                img = Image.open(file_path)
-                self._pending_ocr_images.append(img)
-                count += 1
-            self.refresh_ocr_image_preview()
-            messagebox.showinfo("已添加", f"已添加{count}张图片，点击批量识别可统一导入。")
+            img = Image.open(file_path)
+            self._pending_ocr_images.append(img)
+            # 使用新组件添加图片
+            self.ocr_preview.add_image(img)
+            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def batch_ocr_import_monitor(self):
         """批量识别已添加的图片，弹出预览窗口，确认后批量导入（远程API识别）"""
-        if not self._pending_ocr_images:
+        # 从新组件获取图片列表
+        ocr_images = self.ocr_preview.get_images()
+        if not ocr_images:
             messagebox.showinfo("提示", "请先添加图片")
             return
+            
         import io, base64, requests
         all_data = []
-        for img in self._pending_ocr_images:
+        for img in ocr_images:
             try:
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
@@ -117,57 +172,45 @@ class TradeMonitorTab:
                 elif data:
                     all_data.append(data)
             except Exception as e:
-                print(f"OCR识别失败: {e}")
+                messagebox.showerror("错误", f"OCR识别失败: {e}")
+                
         if all_data:
-            # 预览窗口确认导入时，自动合并/更新物品
-            def on_confirm(selected_data):
-                # 先查已有监控表，构建物品名到记录的映射
-                existing = {row[1]: row for row in self.db_manager.get_trade_monitor()}
-                for row in selected_data:
-                    item = row.get('item_name')
-                    quantity = row.get('quantity')
-                    price = row.get('market_price')
-                    if not item:
-                        continue
-                    # 构造完整数据
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    data = {
-                        'item_name': item,
-                        'monitor_time': now,
-                        'quantity': quantity or 0,
-                        'market_price': price or 0,
-                        'target_price': 0,
-                        'planned_price': 0,
-                        'break_even_price': 0,
-                        'profit': 0,
-                        'profit_rate': 0,
-                        'strategy': ''
-                    }
-                    # 已有则更新数量和一口价，否则新增
-                    self.db_manager.save_trade_monitor(data)
-                self.refresh_monitor()
-                self.main_gui.log_operation('添加', '交易监控', selected_data)
-            # 弹出预览窗口，columns和field_map适配交易监控
-            self.main_gui.show_preview(
-                all_data,
-                columns=("物品", "数量", "一口价", "目标买入价", "计划卖出价", "保本卖出价", "利润", "利润率", "出库策略"),
-                field_map={
-                    "物品": "item_name",
-                    "数量": "quantity",
-                    "一口价": "market_price",
-                    "目标买入价": "target_price",
-                    "计划卖出价": "planned_price",
-                    "保本卖出价": "break_even_price",
-                    "利润": "profit",
-                    "利润率": "profit_rate",
-                    "出库策略": "strategy"
-                },
-                on_confirm=on_confirm
-            )
+            # 批量导入监控数据
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for data in all_data:
+                item_name = data.get('item_name')
+                quantity = data.get('quantity', 0)
+                market_price = data.get('market_price', 0)
+                target_price = data.get('target_price', 0)
+                planned_price = data.get('planned_price', 0)
+                
+                # 计算保本价、利润和利润率
+                break_even_price = round(target_price * 1.03) if target_price else 0
+                profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+                profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
+                
+                # 保存数据
+                self.db_manager.save_trade_monitor({
+                    'item_name': item_name,
+                    'monitor_time': now,
+                    'quantity': quantity,
+                    'market_price': market_price,
+                    'target_price': target_price,
+                    'planned_price': planned_price,
+                    'break_even_price': break_even_price,
+                    'profit': profit,
+                    'profit_rate': profit_rate,
+                    'strategy': ''
+                })
+            
+            self.refresh_monitor()
+            # 清空图片列表并刷新预览
+            self._pending_ocr_images.clear()
+            self.ocr_preview.clear_images()
+            self.main_gui.log_operation('批量修改', '交易监控', all_data)
+            messagebox.showinfo("成功", f"已成功导入{len(all_data)}条监控记录！")
         else:
-            messagebox.showwarning("无有效数据", "未识别到有效的监控数据！")
-        self._pending_ocr_images.clear()
-        self.refresh_ocr_image_preview()
+            messagebox.showwarning("警告", "未能识别有效的监控数据！")
 
     def paste_ocr_import_monitor(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
@@ -176,33 +219,23 @@ class TradeMonitorTab:
             img = ImageGrab.grabclipboard()
             if isinstance(img, Image.Image):
                 self._pending_ocr_images.append(img)
-                self.refresh_ocr_image_preview()
-                messagebox.showinfo("已添加", "已添加剪贴板图片，点击批量识别可统一导入。")
+                # 使用新组件添加图片
+                self.ocr_preview.add_image(img)
+                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
             else:
                 messagebox.showinfo("提示", "剪贴板中没有图片")
         except Exception as e:
             messagebox.showerror("错误", f"粘贴图片失败: {e}")
 
     def refresh_ocr_image_preview(self):
-        """刷新OCR图片预览，风格与入库/出库一致"""
-        for widget in self.ocr_image_preview_frame.winfo_children():
-            widget.destroy()
-        for idx, img in enumerate(self._pending_ocr_images):
-            thumb = img.copy()
-            thumb.thumbnail((80, 80))
-            from PIL import ImageTk
-            photo = ImageTk.PhotoImage(thumb)
-            lbl = ttk.Label(self.ocr_image_preview_frame, image=photo)
-            lbl.image = photo
-            lbl.grid(row=0, column=idx*2, padx=4, pady=2)
-            btn = ttk.Button(self.ocr_image_preview_frame, text='删除', width=5, command=lambda i=idx: self.delete_ocr_image(i))
-            btn.grid(row=1, column=idx*2, padx=4, pady=2)
+        """刷新OCR图片预览"""
+        # 使用新组件的刷新方法
+        self.ocr_preview.refresh()
 
     def delete_ocr_image(self, idx):
         """删除待识别的图片"""
         if 0 <= idx < len(self._pending_ocr_images):
             self._pending_ocr_images.pop(idx)
-            self.refresh_ocr_image_preview()
 
     def parse_monitor_ocr_text(self, text):
         """
@@ -248,83 +281,75 @@ class TradeMonitorTab:
             for idx, line in enumerate(lines):
                 if line.startswith('数量'):
                     qty_block = []
-                    qty_block.append(line.replace('数量', '').strip())
                     for j in range(idx+1, len(lines)):
-                        if any(lines[j].startswith(x) for x in ['一口价', '物品', '品质', '等级']):
+                        if any(lines[j].startswith(x) for x in ['一口价', '等级', '品质']):
                             break
                         qty_block.append(lines[j])
-                    quantities = [int(x.replace(',', '')) for x in re.findall(r'[\d,]+', ' '.join(qty_block))]
-                    break
+                    qty_line = ''.join(qty_block)
+                    # 提取数字
+                    qty_digits = re.findall(r'\d+', qty_line)
+                    quantities.extend([int(q) for q in qty_digits])
             # 4. 提取所有一口价
             prices = []
             for idx, line in enumerate(lines):
                 if line.startswith('一口价'):
                     price_block = []
-                    price_block.append(line.replace('一口价', '').strip())
                     for j in range(idx+1, len(lines)):
-                        if any(lines[j].startswith(x) for x in ['数量', '物品', '品质', '等级']):
+                        if any(lines[j].startswith(x) for x in ['数量', '等级', '品质', '物品']):
                             break
                         price_block.append(lines[j])
-                    prices = [int(x.replace(',', '')) for x in re.findall(r'[\d,]+', ' '.join(price_block))]
-                    break
-            n = len(item_names)
+                    price_line = ''.join(price_block)
+                    # 提取数字
+                    price_digits = re.findall(r'\d+', price_line)
+                    prices.extend([int(p) for p in price_digits])
+            # 5. 组装数据
             result = []
-            for i in range(n):
+            min_len = min(len(item_names), len(quantities), len(prices)) if item_names and quantities and prices else 0
+            for i in range(min_len):
                 result.append({
                     'item_name': item_names[i],
-                    'quantity': quantities[i] if i < len(quantities) else '',
-                    'market_price': prices[i] if i < len(prices) else '',
-                    'note': 'OCR导入' if (i < len(quantities) and i < len(prices)) else '数据缺失'
+                    'quantity': quantities[i],
+                    'market_price': prices[i]
                 })
-            if n == 0:
-                messagebox.showwarning(
-                    "数据不完整",
-                    f"物品数：0，数量：{len(quantities)}，一口价：{len(prices)}。请检查OCR识别结果，部分数据可能丢失。"
-                )
-            elif not (n == len(quantities) == len(prices)):
-                messagebox.showwarning(
-                    "数据不完整",
-                    f"物品数：{n}，数量：{len(quantities)}，一口价：{len(prices)}。请检查OCR识别结果，部分数据可能丢失。"
-                )
             return result
         except Exception as e:
-            print(f"解析交易监控OCR文本失败: {e}")
+            messagebox.showerror("解析错误", f"监控数据解析失败: {e}")
             return []
 
     def show_monitor_menu(self, event):
         """显示右键菜单"""
-        item = self.monitor_tree.identify_row(event.y)
-        if not item:
-            return
-        if item not in self.monitor_tree.selection():
-            self.monitor_tree.selection_set(item)
-        self.monitor_menu.post(event.x_root, event.y_root)
+        iid = self.monitor_tree.identify_row(event.y)
+        if iid:
+            self.monitor_tree.selection_set(iid)
+            self.monitor_menu.post(event.x_root, event.y_root)
 
     def delete_monitor_item(self):
-        """删除选中的监控记录"""
+        """删除所选监控项"""
         selected_items = self.monitor_tree.selection()
         if not selected_items:
             return
         names = [self.monitor_tree.item(item)['values'][0] for item in selected_items]
+        times = [self.monitor_tree.item(item)['values'][1] for item in selected_items]
         msg = "确定要删除以下监控记录吗？\n" + "，".join(str(n) for n in names)
         deleted_data = []
         if messagebox.askyesno("确认", msg):
-            for item in selected_items:
+            for item, name, t in zip(selected_items, names, times):
                 values = self.monitor_tree.item(item)['values']
-                self.db_manager.delete_trade_monitor(values[0], values[1])
                 deleted_data.append(values)
+                self.db_manager.delete_trade_monitor(name, t)
             self.refresh_monitor()
             self.main_gui.log_operation('删除', '交易监控', deleted_data)
+            messagebox.showinfo("成功", "已删除所选监控记录！")
 
     def edit_monitor_item(self, event):
-        """编辑监控记录"""
+        """双击编辑监控项"""
         item_id = self.monitor_tree.identify_row(event.y)
         if not item_id:
             return
         values = self.monitor_tree.item(item_id)['values']
         edit_win = tb.Toplevel(self.main_gui.root)
         edit_win.title("编辑监控记录")
-        edit_win.minsize(480, 400)
+        edit_win.minsize(440, 440)
         edit_win.configure(bg='#f4f8fb')
         style = ttk.Style()
         style.configure('Edit.TLabel', font=('微软雅黑', 11), background='#f4f8fb')
@@ -333,12 +358,11 @@ class TradeMonitorTab:
         style.map('Edit.TButton', background=[('active', '#66c2ff')], foreground=[('active', '#003366')])
         content_frame = ttk.Frame(edit_win, style='Edit.TFrame')
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
-        labels = ["物品", "数量", "一口价", "目标买入价", "计划卖出价", "出库策略"]
-        types = [str, int, float, float, float, str]
+        labels = ["物品", "时间", "数量", "一口价", "目标买入价", "计划卖出价", "保本卖出价", "利润", "利润率", "出库策略"]
+        types = [str, str, int, float, float, float, float, float, float, str]
         entries = []
         error_labels = []
-        edit_indices = [0, 2, 3, 4, 5, 9]  # 对应表格字段索引
-        for i, (label, idx, typ) in enumerate(zip(labels, edit_indices, types)):
+        for i, (label, val, typ) in enumerate(zip(labels, values, types)):
             ttk.Label(content_frame, text=label+":", style='Edit.TLabel').grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
             vcmd = None
             if typ is int:
@@ -346,162 +370,137 @@ class TradeMonitorTab:
             elif typ is float:
                 vcmd = (edit_win.register(lambda s: s.replace('.','',1).isdigit() or s==''), '%P')
             entry = ttk.Entry(content_frame, validate='key', validatecommand=vcmd, style='Edit.TEntry') if vcmd else ttk.Entry(content_frame, style='Edit.TEntry')
-            entry.insert(0, values[idx])
+            entry.insert(0, val)
             entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='w')
             entries.append(entry)
             err = ttk.Label(content_frame, text="", foreground="red", background='#f4f8fb', font=('微软雅黑', 10))
             err.grid(row=i*2+1, column=0, columnspan=2, sticky='w', padx=12)
             error_labels.append(err)
-
+            
         def save():
             new_vals = [e.get() for e in entries]
             valid = True
             for idx, (val, typ, err_lbl) in enumerate(zip(new_vals, types, error_labels)):
                 err_lbl.config(text="")
-                if typ is int:
-                    if not val.isdigit():
+                if idx in [2, 3, 4, 5]:  # 只检查重要数值字段
+                    if typ is int and not val.isdigit():
                         err_lbl.config(text="请输入正整数")
                         entries[idx].focus_set()
                         valid = False
                         break
-                elif typ is float:
-                    try:
-                        float(val)
-                    except Exception:
-                        err_lbl.config(text="请输入数字")
-                        entries[idx].focus_set()
-                        valid = False
-                        break
+                    elif typ is float:
+                        try:
+                            float(val)
+                        except Exception:
+                            err_lbl.config(text="请输入数字")
+                            entries[idx].focus_set()
+                            valid = False
+                            break
             if not valid:
                 return
+            
             try:
+                item_name = new_vals[0]
+                quantity = int(new_vals[2])
+                market_price = float(new_vals[3])
+                target_price = float(new_vals[4])
+                planned_price = float(new_vals[5])
+                strategy = new_vals[9]
+                
+                # 计算保本价、利润和利润率
+                break_even_price = round(target_price * 1.03)
+                profit = (planned_price - target_price) * quantity
+                profit_rate = round((planned_price - target_price) / target_price * 100, 2) if target_price != 0 else 0
+                
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 删除旧记录
                 self.db_manager.delete_trade_monitor(values[0], values[1])
+                
+                # 保存新记录
                 self.db_manager.save_trade_monitor({
-                    'item_name': new_vals[0],
-                    'monitor_time': values[1],  # 时间不变
-                    'quantity': int(new_vals[1]),
-                    'market_price': float(new_vals[2]),
-                    'target_price': float(new_vals[3]),
-                    'planned_price': float(new_vals[4]),
-                    'break_even_price': float(values[6]),  # 保本卖出价公式自动算
-                    'profit': float(values[7]),            # 利润公式自动算
-                    'profit_rate': float(str(values[8]).replace('%','')), # 利润率公式自动算
-                    'strategy': new_vals[5]
+                    'item_name': item_name,
+                    'monitor_time': current_time,
+                    'quantity': quantity,
+                    'market_price': market_price,
+                    'target_price': target_price,
+                    'planned_price': planned_price,
+                    'break_even_price': break_even_price,
+                    'profit': profit,
+                    'profit_rate': profit_rate,
+                    'strategy': strategy
                 })
+                
                 self.refresh_monitor()
                 edit_win.destroy()
+                self.main_gui.log_operation('修改', '交易监控', {'old': values, 'new': new_vals})
+                
             except Exception as e:
-                error_labels[0].config(text=f"保存失败: {e}")
-
+                messagebox.showerror("保存失败", f"更新监控记录失败: {e}")
+                
         button_frame = ttk.Frame(edit_win, style='Edit.TFrame')
         button_frame.pack(side='bottom', fill='x', pady=20)
         ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
 
-    def add_monitor(self):
-        """添加监控记录"""
-        try:
-            item = self.monitor_item.get()
-            quantity = int(self.monitor_quantity.get())
-            price = float(self.monitor_price.get())
-            target_price = float(self.monitor_target_price.get())
-            planned_price = float(self.monitor_planned_price.get())
-            strategy = self.monitor_strategy.get()
-            break_even_price = target_price * 1.05
-            profit = price - target_price
-            profit_rate = (profit / target_price) * 100
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.db_manager.save_trade_monitor({
-                'item_name': item,
-                'monitor_time': now,
-                'quantity': quantity,
-                'market_price': price,
-                'target_price': target_price,
-                'planned_price': planned_price,
-                'break_even_price': break_even_price,
-                'profit': profit,
-                'profit_rate': profit_rate,
-                'strategy': strategy
-            })
-            self.refresh_monitor()
-            self.monitor_item.delete(0, 'end')
-            self.monitor_quantity.delete(0, 'end')
-            self.monitor_price.delete(0, 'end')
-            self.monitor_target_price.delete(0, 'end')
-            self.monitor_planned_price.delete(0, 'end')
-            self.monitor_strategy.delete(0, 'end')
-            self.main_gui.log_operation('修改', '交易监控')
-            messagebox.showinfo("成功", "监控记录添加成功！")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
-
     def refresh_monitor(self):
-        """刷新监控数据"""
-        threading.Thread(target=self._fetch_and_draw_monitor, daemon=True).start()
+        """刷新监控表格数据"""
+        threading.Thread(target=self._fetch_and_draw_monitor).start()
 
     def _fetch_and_draw_monitor(self):
-        """获取并绘制监控数据"""
-        monitor_data = self.db_manager.get_trade_monitor()
-        table_data = []
-        formula_dict = {}
+        """后台线程获取并显示监控数据"""
         try:
-            import json
-            import os
-            if os.path.exists("field_formulas.json"):
-                with open("field_formulas.json", "r", encoding="utf-8") as f:
-                    formula_json = json.load(f)
-                    formula_dict = formula_json.get("交易监控", {})
+            records = self.db_manager.get_trade_monitor()
+            table_data = []
+            for record in records:
+                try:
+                    # 解包数据
+                    _, item_name, monitor_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = record
+                    
+                    # 格式化时间
+                    if hasattr(monitor_time, 'strftime'):
+                        time_str = monitor_time.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        time_str = str(monitor_time)
+                    
+                    # 创建数据行
+                    row = (
+                        item_name,
+                        time_str,
+                        self._calc_field(quantity, 0, int),
+                        self._calc_field(market_price, 0, int),
+                        self._calc_field(target_price, 0, int),
+                        self._calc_field(planned_price, 0, int),
+                        self._calc_field(break_even_price, 0, int),
+                        self._calc_field(profit, 0, int),
+                        self._calc_field(profit_rate, 0, float),
+                        strategy or ''
+                    )
+                    table_data.append(row)
+                except Exception as e:
+                    print(f"处理监控记录错误: {e}, record={record}")
+            
+            # 在主线程中更新UI
+            self.main_gui.root.after(0, lambda: self._draw_monitor(table_data))
         except Exception as e:
-            formula_dict = {}
-        for item in monitor_data:
-            try:
-                _, item_name, monitor_time, quantity, market_price, target_price, planned_price, break_even_price, profit, profit_rate, strategy, *_ = item
-                ctx = {
-                    '物品': item_name,
-                    '当前时间': monitor_time,
-                    '数量': quantity,
-                    '一口价': float(market_price),
-                    '目标买入价': float(target_price),
-                    '计划卖出价': float(planned_price),
-                    '保本卖出价': float(break_even_price),
-                    '利润': float(profit),
-                    '利润率': float(profit_rate),
-                    '出库策略': strategy
-                }
-                def calc_field(field, default_value):
-                    formula = None
-                    if field in formula_dict:
-                        formulas = formula_dict[field]
-                        if formulas:
-                            formula = list(formulas.values())[0]
-                    if not formula:
-                        return default_value
-                    try:
-                        return eval(formula, {}, ctx)
-                    except Exception:
-                        return default_value
-                break_even_price_val = calc_field('保本卖出价', float(break_even_price))
-                profit_val = calc_field('利润', float(profit))
-                profit_rate_val = calc_field('利润率', float(profit_rate))
-                table_data.append((
-                    item_name,
-                    monitor_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(monitor_time, 'strftime') else str(monitor_time),
-                    int(quantity),
-                    str(int(round(float(market_price)))),
-                    str(int(round(float(target_price)))),
-                    str(int(round(float(planned_price)))),
-                    str(int(round(float(break_even_price_val)))),
-                    f"{profit_val:.2f}",
-                    f"{profit_rate_val:.2f}%",
-                    strategy
-                ))
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"监控数据结构异常: {e}\n请检查表结构与代码字段一致性。\nitem={item}")
-                continue
-        self.main_gui.root.after(0, lambda: self._draw_monitor(table_data))
-
+            print(f"获取监控数据错误: {e}")
+    
+    def _calc_field(self, value, default_value, convert_func=None):
+        """安全地计算字段值，避免None和转换错误"""
+        if value is None:
+            return default_value
+        try:
+            if convert_func:
+                return convert_func(value)
+            return value
+        except Exception:
+            return default_value
+    
     def _draw_monitor(self, table_data):
-        """绘制监控数据到表格"""
+        """在主线程中绘制监控表格"""
+        # 清空现有数据
         for item in self.monitor_tree.get_children():
             self.monitor_tree.delete(item)
+        
+        # 插入新数据
         for row in table_data:
             self.monitor_tree.insert('', 'end', values=row) 

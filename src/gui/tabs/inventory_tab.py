@@ -75,7 +75,7 @@ class InventoryTab:
         self.inventory_menu = tb.Menu(self.inventory_tree, tearoff=0)
         self.inventory_menu.add_command(label="删除", command=self.delete_inventory_item)
         self.inventory_tree.bind("<Button-3>", self.show_inventory_menu)
-        
+
         self.inventory_tree.bind('<Control-a>', lambda e: [self.inventory_tree.selection_set(self.inventory_tree.get_children()), 'break'])
         
         # 添加状态栏

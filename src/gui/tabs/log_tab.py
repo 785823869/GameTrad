@@ -3,6 +3,8 @@ from ttkbootstrap.constants import *
 from tkinter import ttk, messagebox, StringVar
 import tkinter as tk
 import json
+import threading
+import time
 
 class LogTab:
     def __init__(self, notebook, main_gui):
@@ -28,6 +30,14 @@ class LogTab:
         self.row_height = 25  # 每行预估高度(像素)
         self.header_footer_height = 180  # 表头和底部控件的预估高度(像素)
         self.last_window_height = 0  # 记录上次窗口高度
+        
+        # 防抖动控制变量
+        self.resize_timer_id = None  # 窗口大小调整的计时器ID
+        self.debounce_delay = 300  # 防抖动延迟毫秒数
+        
+        # 加载状态控制
+        self.is_loading = False
+        self.status_var = tk.StringVar(value="就绪")
         
         self._init_ui()
         
@@ -65,6 +75,22 @@ class LogTab:
         ttk.Button(button_frame, text="导出CSV", 
                   command=self.export_log_csv, 
                   bootstyle="info-outline").pack(side='left', padx=5)
+        
+        # 状态栏和加载指示器
+        status_frame = ttk.Frame(log_frame)
+        status_frame.pack(fill='x', pady=(0, 10))
+        
+        # 加载进度条
+        self.progress_bar = ttk.Progressbar(
+            status_frame, 
+            mode='indeterminate', 
+            bootstyle="success-striped",
+            length=200
+        )
+        self.progress_bar.pack(side='left', padx=(0, 10))
+        
+        # 状态文本
+        ttk.Label(status_frame, textvariable=self.status_var).pack(side='left')
         
         # 日志表
         columns = ("操作类型", "标签页", "操作时间", "数据")
@@ -116,6 +142,9 @@ class LogTab:
         self.log_tree.tag_configure('modify', foreground='#27ae60')  # 深绿色
         self.log_tree.tag_configure('reverted', foreground='#7f8c8d')  # 灰色
         
+        # 初始隐藏进度条
+        self.progress_bar.pack_forget()
+        
         # 绑定双击事件
         self.log_tree.bind("<Double-1>", self.show_log_detail)
         
@@ -165,19 +194,35 @@ class LogTab:
             return 20  # 默认值
     
     def on_window_resize(self, event=None):
-        """窗口大小变化时的处理函数"""
+        """窗口大小变化时的处理函数，使用防抖动方式延迟处理"""
         # 仅当来自根窗口且窗口高度变化明显时才处理
         if (event and event.widget == self.main_gui.root and 
             abs(self.last_window_height - self.main_gui.root.winfo_height()) > 20):
             
             self.last_window_height = self.main_gui.root.winfo_height()
-            # 重新计算页面大小并刷新界面
-            new_page_size = self.calculate_page_size()
             
-            # 如果页面大小变化明显，则刷新表格
-            if abs(new_page_size - self.log_page_size) >= 2:
-                self.refresh_log_tab()
+            # 取消之前的计时器（如果存在）
+            if self.resize_timer_id:
+                self.log_frame.after_cancel(self.resize_timer_id)
+            
+            # 设置新的计时器
+            self.resize_timer_id = self.log_frame.after(
+                self.debounce_delay, 
+                self.delayed_resize_handler
+            )
+    
+    def delayed_resize_handler(self):
+        """延迟处理窗口大小变化的回调函数"""
+        # 重置计时器ID
+        self.resize_timer_id = None
         
+        # 重新计算页面大小
+        new_page_size = self.calculate_page_size()
+        
+        # 如果页面大小变化明显，则刷新表格
+        if abs(new_page_size - self.log_page_size) >= 2:
+            self.refresh_log_tab()
+    
     def _log_search(self):
         self.log_page = 1
         self.refresh_log_tab()
@@ -201,16 +246,36 @@ class LogTab:
                 messagebox.showwarning("提示", f"页码范围：1~{self.log_total_pages}")
         except Exception:
             messagebox.showwarning("提示", "请输入有效的页码")
-
+    
+    def show_loading(self, is_loading=True, status="正在加载数据..."):
+        """显示或隐藏加载指示器"""
+        self.is_loading = is_loading
+        if is_loading:
+            self.status_var.set(status)
+            self.progress_bar.pack(side='left', padx=(0, 10))
+            self.progress_bar.start(10)  # 启动进度条动画
+        else:
+            self.progress_bar.stop()  # 停止进度条动画
+            self.progress_bar.pack_forget()
+            self.status_var.set("就绪")
+    
     def refresh_log_tab(self):
         """刷新日志表格"""
+        # 显示加载指示器
+        self.show_loading(True)
+        
         # 清空表格
         for item in self.log_tree.get_children():
             self.log_tree.delete(item)
-            
+        
+        # 启动后台线程加载数据
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+    
+    def _load_data_thread(self):
+        """在后台线程中加载数据"""
         try:
             # 动态计算页面大小
-            self.calculate_page_size()
+            page_size = self.calculate_page_size()
             
             # 获取过滤条件
             tab_name = self.filter_tab.get() if hasattr(self, 'filter_tab') else None
@@ -227,7 +292,7 @@ class LogTab:
             keyword = self.log_search_var.get() if self.log_search_var.get() else None
             
             # 单独获取总记录数
-            total = self.main_gui.db_manager.count_operation_logs(
+            total = self.db_manager.count_operation_logs(
                 tab_name=tab_name,
                 op_type=op_type,
                 keyword=keyword,
@@ -235,22 +300,24 @@ class LogTab:
             )
             
             # 特殊情况处理：如果总记录数较少，自动调整页面大小以避免过多空白
-            if total > 0 and total < self.log_page_size:
+            if total > 0 and total < page_size:
                 # 如果总记录数小于计算出的页面大小，则使用总记录数作为页面大小
                 adjusted_page_size = max(total, self.min_records_per_page)
-                if adjusted_page_size != self.log_page_size:
-                    self.log_page_size = adjusted_page_size
-                    self.log_tree.configure(height=adjusted_page_size)
+                if adjusted_page_size != page_size:
+                    page_size = adjusted_page_size
             
             # 查询数据
-            logs = self.main_gui.db_manager.get_operation_logs(
+            logs = self.db_manager.get_operation_logs(
                 tab_name=tab_name,
                 op_type=op_type,
                 keyword=keyword,
                 reverted=reverted,
                 page=self.log_page,
-                page_size=self.log_page_size
+                page_size=page_size
             )
+            
+            # 记录当前使用的页面大小
+            self.log_page_size = page_size
             
             # 更新分页信息
             self.log_total_records = total
@@ -260,7 +327,7 @@ class LogTab:
             if self.log_page > self.log_total_pages:
                 self.log_page = 1
                 # 重新查询第一页数据
-                logs = self.main_gui.db_manager.get_operation_logs(
+                logs = self.db_manager.get_operation_logs(
                     tab_name=tab_name,
                     op_type=op_type,
                     keyword=keyword,
@@ -268,6 +335,21 @@ class LogTab:
                     page=self.log_page,
                     page_size=self.log_page_size
                 )
+            
+            # 在UI线程中更新界面
+            self.log_frame.after(0, lambda: self._update_ui(logs, total))
+        except Exception as e:
+            import traceback
+            print(f"加载日志数据失败: {e}")
+            traceback.print_exc()
+            # 在UI线程中更新错误状态
+            self.log_frame.after(0, lambda: self.show_loading(False, f"加载失败: {str(e)}"))
+    
+    def _update_ui(self, logs, total):
+        """在主线程中更新UI元素"""
+        try:
+            # 更新Treeview高度
+            self.log_tree.configure(height=self.log_page_size)
             
             # 更新页码显示
             if hasattr(self, 'log_page_info'):
@@ -310,10 +392,15 @@ class LogTab:
                     data_text
                 ), tags=row_tags)
                 
+            # 隐藏加载指示器
+            self.show_loading(False)
+            
         except Exception as e:
             import traceback
-            print(f"刷新日志失败: {e}")
+            print(f"更新日志UI失败: {e}")
             traceback.print_exc()
+            # 显示错误状态
+            self.show_loading(False, f"更新失败: {str(e)}")
 
     def export_log_csv(self):
         import pandas as pd

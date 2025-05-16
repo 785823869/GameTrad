@@ -15,8 +15,15 @@ class TradeMonitorTab:
         self.create_tab()
 
     def create_tab(self):
-        monitor_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(monitor_frame, text="交易监控")
+        # 检查是否在新UI结构中运行
+        if isinstance(self.notebook, tb.Frame):
+            # 新UI结构，notebook实际上是框架
+            monitor_frame = self.notebook
+        else:
+            # 旧UI结构，notebook是Notebook
+            monitor_frame = ttk.Frame(self.notebook, padding=10)
+            self.notebook.add(monitor_frame, text="交易监控")
+        
         columns = ('物品', '当前时间', '数量', '一口价', '目标买入价', '计划卖出价', '保本卖出价', '利润', '利润率', '出库策略')
         self.monitor_tree = ttk.Treeview(monitor_frame, columns=columns, show='headings', height=16)
         for col in columns:

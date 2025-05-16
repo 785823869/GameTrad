@@ -15,8 +15,15 @@ class StockInTab:
         self.create_tab()
 
     def create_tab(self):
-        stock_in_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(stock_in_frame, text="入库管理")
+        # 检查是否在新UI结构中运行
+        if isinstance(self.notebook, tk.Frame) or isinstance(self.notebook, tb.Frame):
+            # 新UI结构，notebook实际上是框架
+            stock_in_frame = self.notebook
+        else:
+            # 旧UI结构，notebook是Notebook
+            stock_in_frame = ttk.Frame(self.notebook, padding=10)
+            self.notebook.add(stock_in_frame, text="入库管理")
+        
         columns = ('物品', '当前时间', '入库数量', '入库花费', '入库均价', '备注')
         self.stock_in_tree = ttk.Treeview(stock_in_frame, columns=columns, show='headings', height=16)
         for col in columns:
@@ -119,6 +126,9 @@ class StockInTab:
             })
             self.db_manager.increase_inventory(item, quantity, avg_cost)
             self.refresh_stock_in()
+            # 确保库存页面也更新
+            if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
+                self.main_gui.inventory_tab.refresh_inventory()
             self.main_gui.refresh_inventory()
             self.stock_in_item.delete(0, 'end')
             self.stock_in_quantity.delete(0, 'end')

@@ -5,83 +5,163 @@ import tkinter as tk
 from datetime import datetime
 
 class InventoryTab:
-    def __init__(self, notebook, main_gui):
+    def __init__(self, parent_frame, main_gui):
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
-        self.notebook = notebook
+        self.parent_frame = parent_frame
+        
+        # 初始化状态变量
+        self.status_var = tk.StringVar(value="就绪")
+        
         self.create_tab()
 
     def create_tab(self):
-        inventory_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(inventory_frame, text="库存管理")
+        main_frame = ttk.Frame(self.parent_frame, padding=10)
+        main_frame.pack(fill='both', expand=True)
+        
+        # 顶部控制区
+        control_frame = ttk.Frame(main_frame)
+        control_frame.pack(fill='x', pady=(0, 10))
+        
+        # 创建搜索区域
+        search_frame = ttk.Frame(control_frame)
+        search_frame.pack(side='left')
+        
+        ttk.Label(search_frame, text="搜索:").pack(side='left', padx=(0, 5))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=20)
+        search_entry.pack(side='left', padx=(0, 5))
+        search_entry.bind("<Return>", lambda e: self.filter_inventory())
+        
+        ttk.Button(search_frame, text="搜索", 
+                 command=self.filter_inventory,
+                 bootstyle="primary-outline").pack(side='left')
+        
+        ttk.Button(search_frame, text="清除", 
+                 command=lambda: [self.search_var.set(""), self.filter_inventory()],
+                 bootstyle="secondary-outline").pack(side='left', padx=5)
+        
+        # 创建刷新按钮
+        refresh_btn = ttk.Button(control_frame, 
+                               text="刷新数据", 
+                               command=self.refresh_inventory,
+                               bootstyle="info")
+        refresh_btn.pack(side='right', padx=5)
+        
+        # 表格区域
+        table_frame = ttk.Frame(main_frame)
+        table_frame.pack(fill='both', expand=True)
+        
         columns = ('物品', '库存数', '总入库均价', '保本均价', '总出库均价', '利润', '利润率', '成交利润额', '库存价值')
-        self.inventory_tree = ttk.Treeview(inventory_frame, columns=columns, show='headings', height=18)
+        
+        self.inventory_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=18, style="Modern.Treeview")
+        
         for col in columns:
             self.inventory_tree.heading(col, text=col, anchor='center')
             self.inventory_tree.column(col, width=120, anchor='center')
-        scrollbar = ttk.Scrollbar(inventory_frame, orient="vertical", command=self.inventory_tree.yview)
+        
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.inventory_tree.yview, bootstyle="primary-round")
         self.inventory_tree.configure(yscrollcommand=scrollbar.set)
-        self.inventory_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-        scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        right_panel = ttk.Frame(inventory_frame, width=260)
-        right_panel.pack(side='right', fill='y', padx=8, pady=5)
-        right_panel.pack_propagate(False)
-        ttk.Button(right_panel, text="刷新库存", command=self.refresh_inventory).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="导出库存", command=self.export_inventory).pack(fill='x', pady=(0, 10), ipady=4)
+        
+        self.inventory_tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # 配置交替行颜色和悬停高亮
+        self.inventory_tree.tag_configure('evenrow', background='#f9f9f9')
+        self.inventory_tree.tag_configure('oddrow', background='#ffffff')
+        self.inventory_tree.tag_configure('profit_positive', foreground='#27ae60')  # 深绿色
+        self.inventory_tree.tag_configure('profit_negative', foreground='#c0392b')  # 深红色
+        
         self.inventory_menu = tb.Menu(self.inventory_tree, tearoff=0)
         self.inventory_menu.add_command(label="删除", command=self.delete_inventory_item)
         self.inventory_tree.bind("<Button-3>", self.show_inventory_menu)
+        
+        self.inventory_tree.bind('<Control-a>', lambda e: [self.inventory_tree.selection_set(self.inventory_tree.get_children()), 'break'])
+        
+        # 添加状态栏
+        status_frame = ttk.Frame(main_frame)
+        status_frame.pack(fill='x', side='bottom', pady=(5, 0))
+        ttk.Label(status_frame, textvariable=self.status_var).pack(side='left')
+        
+        self.refresh_inventory()
 
-    def refresh_inventory(self):
+    def filter_inventory(self):
+        search_text = self.search_var.get().lower()
         for item in self.inventory_tree.get_children():
             self.inventory_tree.delete(item)
-        stock_in_data = self.db_manager.get_stock_in()
-        stock_out_data = self.db_manager.get_stock_out()
-        inventory_dict = {}
-        for row in stock_in_data:
-            try:
-                _, item_name, _, qty, cost, *_ = row
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"入库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
-                continue
-            if item_name not in inventory_dict:
-                inventory_dict[item_name] = {
-                    'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
-                }
-            inventory_dict[item_name]['in_qty'] += qty
-            inventory_dict[item_name]['in_amount'] += cost
-        for row in stock_out_data:
-            try:
-                _, item_name, _, qty, unit_price, fee, deposit, total_amount, note, *_ = row
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
-                continue
-            amount = unit_price * qty - fee
-            if item_name not in inventory_dict:
-                inventory_dict[item_name] = {
-                    'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
-                }
-            inventory_dict[item_name]['out_qty'] += qty
-            inventory_dict[item_name]['out_amount'] += amount
-        for item, data in inventory_dict.items():
-            remain_qty = data['in_qty'] - data['out_qty']
-            in_avg = data['in_amount'] / data['in_qty'] if data['in_qty'] else 0
-            out_avg = data['out_amount'] / data['out_qty'] if data['out_qty'] else 0
-            profit = (out_avg - in_avg) * data['out_qty'] if data['out_qty'] else 0
-            profit_rate = ((out_avg - in_avg) / in_avg * 100) if in_avg else 0
-            total_profit = (out_avg - in_avg) * data['out_qty'] if data['out_qty'] else 0
-            value = remain_qty * in_avg
-            self.inventory_tree.insert('', 'end', values=(
-                item,
-                int(remain_qty),
-                str(int(round(in_avg))),
-                str(int(round(in_avg))),
-                str(int(round(out_avg))),
-                f"{int(profit/10000)}万",
-                f"{int(round(profit_rate))}%",
-                f"{int(total_profit/10000)}万",
-                f"{value/10000:.2f}万"
-            ))
+            
+        self.refresh_inventory(search_text)
+
+    def refresh_inventory(self, search_text=""):
+        """刷新库存数据，支持搜索过滤"""
+        # 清空现有数据
+        for item in self.inventory_tree.get_children():
+            self.inventory_tree.delete(item)
+            
+        try:
+            # 确保从数据库获取最新数据
+            inventory_data = self.db_manager.get_inventory()
+            
+            # 过滤数据
+            filtered_data = []
+            search_text = search_text.lower()
+            for item in inventory_data:
+                try:
+                    # 使用星号解包处理前面的几个必要字段
+                    item_id, item_name, quantity, avg_price, *other_fields = item
+                    if search_text and search_text not in item_name.lower():
+                        continue
+                    filtered_data.append(item)
+                except Exception as e:
+                    print(f"过滤库存数据错误: {e}")
+                    continue
+            
+            # 添加数据到表格
+            for item in filtered_data:
+                try:
+                    # 只提取前10个字段，忽略多余的字段
+                    item_id, item_name, quantity, avg_price, break_even_price, selling_price, profit, profit_rate, total_profit, inventory_value, *_ = item
+                    
+                    # 格式化数据
+                    quantity_str = f"{int(quantity):,}" if quantity else "0"
+                    avg_price_str = f"{float(avg_price):,.2f}" if avg_price else "0.00"
+                    break_even_str = f"{float(break_even_price):,.2f}" if break_even_price else "0.00"
+                    selling_price_str = f"{float(selling_price):,.2f}" if selling_price else "0.00"
+                    profit_str = f"{float(profit):,.2f}" if profit else "0.00"
+                    profit_rate_str = f"{float(profit_rate):,.2f}%" if profit_rate else "0.00%"
+                    total_profit_str = f"{float(total_profit):,.2f}" if total_profit else "0.00"
+                    inventory_value_str = f"{float(inventory_value):,.2f}" if inventory_value else "0.00"
+                    
+                    # 添加到表格，并根据库存和利润添加标签
+                    if int(quantity) <= 0:
+                        tag = "no_stock"
+                    elif float(profit) < 0:
+                        tag = "negative"
+                    elif float(profit) > 0:
+                        tag = "positive"
+                    else:
+                        tag = ""
+                        
+                    self.inventory_tree.insert("", "end", values=(
+                        item_name, quantity_str, avg_price_str, break_even_str, 
+                        selling_price_str, profit_str, profit_rate_str, total_profit_str, inventory_value_str
+                    ), tags=(tag,))
+                    
+                except Exception as e:
+                    print(f"添加库存数据到表格错误: {e}")
+                    continue
+            
+            # 设置行标签样式
+            self.inventory_tree.tag_configure("positive", foreground="#28a745")  # 绿色代表盈利
+            self.inventory_tree.tag_configure("negative", foreground="#dc3545")  # 红色代表亏损
+            self.inventory_tree.tag_configure("no_stock", foreground="#ff6000", background="#fff3e0")  # 橙色背景代表无库存/负库存
+            
+            # 更新状态栏
+            self.status_var.set(f"共 {len(filtered_data)} 条记录")
+        except Exception as e:
+            self.status_var.set(f"刷新库存数据错误: {e}")
+            import traceback
+            traceback.print_exc()
 
     def export_inventory(self):
         import pandas as pd

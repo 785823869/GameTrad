@@ -75,14 +75,9 @@ def clear_stock_data():
         cursor.close()
         conn.close()
 
-def import_stock_in(csv_path):
+def import_stock_in(df, progress_callback=None):
     """导入入库数据"""
-    if not os.path.exists(csv_path):
-        print(f"文件不存在: {csv_path}")
-        return False
-    
     try:
-        df = read_csv_auto_encoding(csv_path)
         db_manager = DatabaseManager()
         
         # 检查必要的列是否存在
@@ -96,8 +91,12 @@ def import_stock_in(csv_path):
         success_count = 0
         error_count = 0
         
-        for _, row in df.iterrows():
+        for idx, (_, row) in enumerate(df.iterrows()):
             try:
+                # 如果提供了回调函数，调用它更新进度
+                if progress_callback:
+                    progress_callback(idx + 1)
+                    
                 note = row['备注'] if '备注' in row and pd.notna(row['备注']) else ''
                 transaction_time = row.get('当前时间', row.get('时间', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                 
@@ -129,14 +128,9 @@ def import_stock_in(csv_path):
         print(f"导入入库数据失败: {e}")
         return False
 
-def import_stock_out(csv_path):
+def import_stock_out(df, progress_callback=None):
     """导入出库数据"""
-    if not os.path.exists(csv_path):
-        print(f"文件不存在: {csv_path}")
-        return False
-    
     try:
-        df = read_csv_auto_encoding(csv_path)
         db_manager = DatabaseManager()
         
         # 检查必要的列是否存在
@@ -156,8 +150,12 @@ def import_stock_out(csv_path):
             except Exception:
                 return 0
         
-        for _, row in df.iterrows():
+        for idx, (_, row) in enumerate(df.iterrows()):
             try:
+                # 如果提供了回调函数，调用它更新进度
+                if progress_callback:
+                    progress_callback(idx + 1)
+                
                 note = row['备注'] if '备注' in row and pd.notna(row['备注']) else ''
                 transaction_time = row.get('时间', row.get('当前时间', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                 
@@ -249,13 +247,23 @@ def main():
     success = True
     if os.path.exists(stock_in_path):
         print(f"正在导入入库数据: {stock_in_path}")
-        if not import_stock_in(stock_in_path):
+        df = read_csv_auto_encoding(stock_in_path)
+        if df is None or df.empty:
+            print(f"无法读取入库文件或文件为空: {stock_in_path}")
             success = False
+        else:
+            if not import_stock_in(df):
+                success = False
     
     if os.path.exists(stock_out_path):
         print(f"正在导入出库数据: {stock_out_path}")
-        if not import_stock_out(stock_out_path):
+        df = read_csv_auto_encoding(stock_out_path)
+        if df is None or df.empty:
+            print(f"无法读取出库文件或文件为空: {stock_out_path}")
             success = False
+        else:
+            if not import_stock_out(df):
+                success = False
     
     if success:
         print("数据导入完成！")

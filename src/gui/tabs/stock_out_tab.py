@@ -16,8 +16,15 @@ class StockOutTab:
         self.create_tab()
 
     def create_tab(self):
-        stock_out_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(stock_out_frame, text="出库管理")
+        # 检查是否在新UI结构中运行
+        if isinstance(self.notebook, tk.Frame) or isinstance(self.notebook, tb.Frame):
+            # 新UI结构，notebook实际上是框架
+            stock_out_frame = self.notebook
+        else:
+            # 旧UI结构，notebook是Notebook
+            stock_out_frame = ttk.Frame(self.notebook, padding=10)
+            self.notebook.add(stock_out_frame, text="出库管理")
+        
         columns = ('物品', '当前时间', '数量', '单价', '手续费', '总金额', '备注')
         self.stock_out_tree = ttk.Treeview(stock_out_frame, columns=columns, show='headings', height=16)
         for col in columns:

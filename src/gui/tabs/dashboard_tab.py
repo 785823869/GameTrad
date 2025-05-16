@@ -12,13 +12,27 @@ import platform
 import os
 
 class DashboardTab(Frame):
-    def __init__(self, master=None, main_gui=None, **kwargs):
-        super().__init__(master, **kwargs)
+    def __init__(self, parent_frame, main_gui=None, **kwargs):
+        super().__init__(parent_frame, **kwargs)
         self.main_gui = main_gui
+        self.db_manager = main_gui.db_manager
+        
+        self.chinese_font = main_gui.chinese_font
+        
+        # 创建变量
+        self.total_items_var = tk.StringVar(value="0")
+        self.total_quantity_var = tk.StringVar(value="0")
+        self.total_value_var = tk.StringVar(value="¥0.00")
+        self.low_stock_var = tk.StringVar(value="0项")
+        self.total_profit_var = tk.StringVar(value="¥0.00")
+        
         # 设置中文字体
         self.setup_fonts()
         # 创建自定义样式
         self.setup_styles()
+        # 填充整个父容器
+        self.pack(fill='both', expand=True)
+        # 创建界面
         self.create_widgets()
         
     def setup_fonts(self):
@@ -105,20 +119,29 @@ class DashboardTab(Frame):
         style = Style()
         # 卡片标题样式
         style.configure("Card.TLabelframe", borderwidth=0, relief="flat")
-        style.configure("Card.TLabelframe.Label", font=(self.chinese_font, 12, "bold"), foreground="#555555")
+        style.configure("Card.TLabelframe.Label", font=(self.chinese_font, 12, "bold"), foreground="#2c3e50")
         
-        # 卡片值样式
+        # 卡片值样式 - 加深文字颜色
         style.configure("CardValue.TLabel", font=(self.chinese_font, 24, "bold"), foreground="#2c3e50")
-        # 卡片描述样式
-        style.configure("CardDesc.TLabel", font=(self.chinese_font, 10), foreground="#7f8c8d")
+        # 卡片描述样式 - 提高对比度
+        style.configure("CardDesc.TLabel", font=(self.chinese_font, 10), foreground="#34495e")
         
-        # 正值和负值的不同颜色
-        style.configure("Positive.TLabel", foreground="#27ae60")
-        style.configure("Negative.TLabel", foreground="#e74c3c")
+        # 正值和负值的不同颜色 - 增强对比度
+        style.configure("Positive.TLabel", foreground="#27ae60")  # 深绿色
+        style.configure("Negative.TLabel", foreground="#c0392b")  # 深红色
         
-        # 表格样式
-        style.configure("Dashboard.Treeview", rowheight=28, font=(self.chinese_font, 10))
-        style.configure("Dashboard.Treeview.Heading", font=(self.chinese_font, 10, "bold"))
+        # 表格样式 - 提高可读性
+        style.configure("Dashboard.Treeview", 
+                       rowheight=28, 
+                       font=(self.chinese_font, 10),
+                       background="#ffffff",
+                       fieldbackground="#ffffff",
+                       foreground="#2c3e50")
+                       
+        style.configure("Dashboard.Treeview.Heading", 
+                       font=(self.chinese_font, 10, "bold"),
+                       background="#e0e6ed",
+                       foreground="#2c3e50")
         
         # 配置所有标签使用中文字体
         style.configure("TLabel", font=(self.chinese_font, 10))
@@ -388,7 +411,7 @@ class DashboardTab(Frame):
             refresh_frame, 
             text="刷新数据 ⟳", 
             bootstyle="success",
-            command=self.refresh_dashboard_data,
+            command=self.refresh_dashboard,
             width=12
         )
         refresh_button.pack(side='right')
@@ -668,25 +691,73 @@ class DashboardTab(Frame):
         fig2.tight_layout(pad=2)
         canvas2 = FigureCanvasTkAgg(fig2, master=chart_frame2)
         canvas2.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-        plt.close(fig2)
+        plt.close(fig2) 
     
     def change_period(self, period_var, period, chart_frame):
         """切换周期并重绘图表"""
         period_var.set(period)
         self.draw_trend_chart(chart_frame, period)
 
-    def refresh_dashboard_data(self):
+    def refresh_dashboard(self):
         """刷新仪表盘数据"""
-        # 清空所有子部件
-        for widget in self.winfo_children():
-            widget.destroy()
-        
-        # 重新创建所有部件
-        self.create_widgets()
-        
-        # 显示刷新成功消息
-        from tkinter import messagebox
-        messagebox.showinfo("成功", "仪表盘数据已刷新完成")
+        try:
+            # 获取库存统计
+            inventory_stats = self.db_manager.get_inventory_stats()
+            if inventory_stats:
+                total_items, total_quantity, total_value = inventory_stats
+                self.total_items_var.set(f"{total_items}")
+                self.total_quantity_var.set(f"{total_quantity:,}")
+                self.total_value_var.set(f"¥{total_value:,.2f}")
+            
+            # 获取零库存物品
+            zero_inventory = self.db_manager.get_zero_inventory_items()
+            
+            # 清空零库存列表
+            for item in self.low_stock_tree.get_children():
+                self.low_stock_tree.delete(item)
+            
+            # 添加零库存物品
+            if zero_inventory:
+                self.low_stock_var.set(f"{len(zero_inventory)}项")
+                
+                for item in zero_inventory:
+                    item_id, item_name, quantity = item
+                    self.low_stock_tree.insert("", "end", values=(item_name, quantity), tags=("warning",))
+                
+                # 设置警告标签样式
+                self.low_stock_tree.tag_configure("warning", foreground="#ff6000")
+            else:
+                self.low_stock_var.set("0项")
+                
+            # 获取最近交易记录
+            recent_transactions = self.db_manager.get_recent_transactions(5)
+            
+            # 清空最近交易列表
+            for item in self.recent_trades_tree.get_children():
+                self.recent_trades_tree.delete(item)
+            
+            # 添加最近交易
+            if recent_transactions:
+                for transaction in recent_transactions:
+                    _, item_name, _, quantity, price, _, _, _, transaction_time, *_ = transaction
+                    
+                    # 格式化日期时间
+                    if isinstance(transaction_time, str):
+                        transaction_time = transaction_time
+                    else:
+                        transaction_time = transaction_time.strftime("%Y-%m-%d %H:%M")
+                        
+                    self.recent_trades_tree.insert("", "end", values=(
+                        item_name, 
+                        f"{int(quantity):,}", 
+                        f"¥{float(price):,.2f}", 
+                        transaction_time
+                    ))
+            
+        except Exception as e:
+            print(f"刷新仪表盘失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     def get_inventory_data(self):
         """从数据库获取库存管理数据，计算库存数量和利润率"""

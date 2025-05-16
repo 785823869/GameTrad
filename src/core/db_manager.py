@@ -327,10 +327,53 @@ class DatabaseManager:
 
     # 库存数量增减
     def increase_inventory(self, item_name, quantity, avg_price):
-        query = """
-            UPDATE inventory SET quantity=quantity+%s, avg_price=%s WHERE item_name=%s
-        """
-        return self.execute_query(query, (quantity, avg_price, item_name))
+        """增加库存，如果物品不存在则创建新记录"""
+        # 首先检查库存中是否存在该物品
+        check_query = "SELECT COUNT(*) FROM inventory WHERE item_name=%s"
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(check_query, (item_name,))
+            exists = cursor.fetchone()[0] > 0
+            
+            if exists:
+                # 物品存在，更新库存
+                update_query = """
+                    UPDATE inventory SET 
+                    quantity=quantity+%s, 
+                    avg_price=%s,
+                    break_even_price=%s,
+                    inventory_value=quantity*avg_price
+                    WHERE item_name=%s
+                """
+                cursor.execute(update_query, (quantity, avg_price, avg_price, item_name))
+            else:
+                # 物品不存在，创建新记录
+                insert_query = """
+                    INSERT INTO inventory (
+                        item_name, quantity, avg_price, break_even_price, 
+                        selling_price, profit, profit_rate, total_profit, inventory_value
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                inventory_value = quantity * avg_price
+                # 初始情况下，销售价格=保本价=平均成本，未有利润
+                cursor.execute(insert_query, (
+                    item_name, quantity, avg_price, avg_price, 
+                    avg_price, 0, 0, 0, inventory_value
+                ))
+            
+            conn.commit()
+            # 记录操作日志
+            self.log_operation("库存管理", "增加库存", f"物品:{item_name},数量:{quantity},均价:{avg_price}")
+            return True
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"增加库存失败: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
 
     def decrease_inventory(self, item_name, quantity):
         query = """
@@ -575,4 +618,41 @@ class DatabaseManager:
             cursor.close()
             return logs
         except Exception:
-            return [] 
+            return []
+
+    def log_operation(self, tab_name, op_type, data=None, reverted=False):
+        """记录操作日志"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO operation_logs (operation_type, tab_name, operation_data, reverted) VALUES (%s, %s, %s, %s)",
+                    (op_type, tab_name, json.dumps(data, ensure_ascii=False) if data else None, int(bool(reverted)))
+                )
+                conn.commit()
+                log_id = cursor.lastrowid
+                return log_id
+            except Exception as e:
+                print(f"记录操作日志失败: {e}")
+                return None
+            finally:
+                cursor.close()
+                conn.close()
+        except Exception as e:
+            print(f"创建数据库连接失败: {e}")
+            return None
+
+    def get_inventory_stats(self):
+        """获取库存统计数据：总物品数、总数量、总价值"""
+        query = "SELECT COUNT(*), SUM(quantity), SUM(inventory_value) FROM inventory"
+        return self._fetch_one(query)
+        
+    def get_zero_inventory_items(self):
+        """获取零库存或负库存的物品"""
+        query = "SELECT id, item_name, quantity FROM inventory WHERE quantity <= 0 ORDER BY quantity ASC"
+        return self._fetch_all(query)
+    
+    def get_recent_transactions(self, limit=5):
+        query = "SELECT * FROM stock_out ORDER BY transaction_time DESC LIMIT %s"
+        return self._fetch_all(query, (limit,)) 

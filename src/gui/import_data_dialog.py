@@ -12,123 +12,82 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from src.core.db_manager import DatabaseManager
 from src.scripts.import_data_overwrite import read_csv_auto_encoding, backup_database, clear_stock_data, import_stock_in, import_stock_out
+from src.utils.ui_manager import ModernDialog
 
-class ImportDataDialog:
+class ImportDataDialog(ModernDialog):
     def __init__(self, parent):
-        self.parent = parent
-        self.dialog = tb.Toplevel(parent)
-        self.dialog.title("导入数据")
-        self.dialog.geometry("600x550")  # 进一步增加窗口高度
-        self.dialog.minsize(600, 550)    # 设置最小大小
-        self.dialog.resizable(True, True) # 允许调整大小
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # 设置窗口图标和居中
-        self.dialog.iconbitmap(default='')  # 可以设置图标
-        self.center_window()
+        super().__init__(parent, "数据导入", 650, 600)
         
         # 创建变量
         self.stock_in_path = tk.StringVar()
         self.stock_out_path = tk.StringVar()
         self.progress_var = tk.DoubleVar(value=0.0)
         self.status_text = tk.StringVar(value="准备导入数据...")
-        self.log_text = tk.StringVar()
         
-        # 创建界面
-        self.create_widgets()
+        # 创建界面组件
+        self.create_dialog_content()
+        
+        # 添加底部按钮
+        self.add_buttons([
+            {'text': '开始导入', 'command': self.start_import, 'style': 'success'},
+            {'text': '取消', 'command': self.dialog.destroy, 'style': 'secondary'}
+        ])
         
         # 设置关闭窗口的处理
-        self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.dialog.protocol("WM_DELETE_WINDOW", self.dialog.destroy)
         
-    def center_window(self):
-        """将窗口居中显示"""
-        self.dialog.update_idletasks()
-        width = self.dialog.winfo_width()
-        height = self.dialog.winfo_height()
-        x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
-        self.dialog.geometry('{}x{}+{}+{}'.format(width, height, x, y))
-        
-    def create_widgets(self):
-        """创建界面组件"""
-        # 创建主框架，使用pack而不是grid，确保自动调整大小
-        main_frame = ttk.Frame(self.dialog, padding=20)
-        main_frame.pack(fill='both', expand=True)
-        
-        # 标题
-        title_label = ttk.Label(main_frame, text="数据导入工具", font=("微软雅黑", 16, "bold"))
-        title_label.pack(pady=(0, 20))
+    def create_dialog_content(self):
+        """创建对话框内容"""
+        # 添加标题
+        self.add_title("数据导入工具")
         
         # 说明文本
-        desc_frame = ttk.LabelFrame(main_frame, text="说明", padding=10)
+        desc_frame = tb.LabelFrame(self.content_frame, text="说明", padding=10, bootstyle="info")
         desc_frame.pack(fill='x', pady=(0, 15))
         
-        ttk.Label(desc_frame, text="此工具将清空当前所有库存数据，并从CSV文件导入新数据。\n"
+        tb.Label(desc_frame, text="此工具将清空当前所有库存数据，并从CSV文件导入新数据。\n"
                  "操作前会自动备份数据库，以便在需要时恢复。", 
                  wraplength=550, justify='left').pack()
         
         # 文件选择区域
-        file_frame = ttk.LabelFrame(main_frame, text="文件选择", padding=10)
+        file_frame = tb.LabelFrame(self.content_frame, text="文件选择", padding=10, bootstyle="primary")
         file_frame.pack(fill='x', pady=(0, 15))
         
         # 入库文件
-        in_frame = ttk.Frame(file_frame)
+        in_frame = tb.Frame(file_frame)
         in_frame.pack(fill='x', pady=5)
         
-        ttk.Label(in_frame, text="入库文件:", width=10).pack(side='left')
-        ttk.Entry(in_frame, textvariable=self.stock_in_path, width=50).pack(side='left', padx=5, fill='x', expand=True)
-        ttk.Button(in_frame, text="浏览...", command=self.browse_stock_in).pack(side='left')
+        tb.Label(in_frame, text="入库文件:", width=10).pack(side='left')
+        tb.Entry(in_frame, textvariable=self.stock_in_path, width=50, bootstyle="primary").pack(side='left', padx=5, fill='x', expand=True)
+        tb.Button(in_frame, text="浏览...", command=self.browse_stock_in, bootstyle="outline").pack(side='left')
         
         # 出库文件
-        out_frame = ttk.Frame(file_frame)
+        out_frame = tb.Frame(file_frame)
         out_frame.pack(fill='x', pady=5)
         
-        ttk.Label(out_frame, text="出库文件:", width=10).pack(side='left')
-        ttk.Entry(out_frame, textvariable=self.stock_out_path, width=50).pack(side='left', padx=5, fill='x', expand=True)
-        ttk.Button(out_frame, text="浏览...", command=self.browse_stock_out).pack(side='left')
+        tb.Label(out_frame, text="出库文件:", width=10).pack(side='left')
+        tb.Entry(out_frame, textvariable=self.stock_out_path, width=50, bootstyle="primary").pack(side='left', padx=5, fill='x', expand=True)
+        tb.Button(out_frame, text="浏览...", command=self.browse_stock_out, bootstyle="outline").pack(side='left')
         
-        # 日志区域 - 减小高度以确保底部按钮可见
-        log_frame = ttk.LabelFrame(main_frame, text="导入日志", padding=10)
+        # 日志区域
+        log_frame = tb.LabelFrame(self.content_frame, text="导入日志", padding=10, bootstyle="secondary")
         log_frame.pack(fill='both', expand=True, pady=(0, 15))
         
-        self.log_area = tk.Text(log_frame, height=5, wrap='word')
+        self.log_area = tk.Text(log_frame, height=10, wrap='word')
         self.log_area.pack(side='left', fill='both', expand=True)
         
-        scrollbar = ttk.Scrollbar(log_frame, command=self.log_area.yview)
+        scrollbar = tb.Scrollbar(log_frame, command=self.log_area.yview, bootstyle="primary-round")
         scrollbar.pack(side='right', fill='y')
         self.log_area.config(yscrollcommand=scrollbar.set)
         
         # 进度条
-        progress_frame = ttk.Frame(main_frame)
-        progress_frame.pack(fill='x', pady=(0, 15))
+        progress_frame = tb.Frame(self.content_frame)
+        progress_frame.pack(fill='x', pady=(0, 10))
         
-        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, length=100, mode='determinate')
+        self.progress_bar = tb.Progressbar(progress_frame, variable=self.progress_var, length=100, mode='determinate', bootstyle="success-striped")
         self.progress_bar.pack(fill='x', side='top', pady=(0, 5))
         
-        ttk.Label(progress_frame, textvariable=self.status_text).pack(side='left')
-        
-        # 按钮区域 - 确保按钮可见，专门使用固定高度的Frame
-        button_frame = ttk.Frame(main_frame, height=50)
-        button_frame.pack(fill='x', pady=(10, 0))
-        button_frame.pack_propagate(False)  # 防止子组件影响框架大小
-        
-        # 按钮放在底部，使用大按钮和明显的样式
-        self.import_button = ttk.Button(
-            button_frame, 
-            text="开始导入", 
-            command=self.start_import, 
-            style='primary.TButton', 
-            width=20
-        )
-        self.import_button.pack(side='right', padx=5, pady=10)
-        
-        ttk.Button(
-            button_frame, 
-            text="取消", 
-            command=self.on_close, 
-            width=15
-        ).pack(side='right', padx=5, pady=10)
+        tb.Label(progress_frame, textvariable=self.status_text).pack(side='left')
         
     def browse_stock_in(self):
         """浏览选择入库文件"""
@@ -177,7 +136,10 @@ class ImportDataDialog:
             return
             
         # 禁用按钮，防止重复操作
-        self.import_button.config(state='disabled')
+        for button in self.button_frame.winfo_children():
+            if '开始导入' in button['text']:
+                button.config(state='disabled')
+                break
         
         # 在后台线程中执行导入操作
         threading.Thread(target=self.import_data_thread, daemon=True).start()
@@ -196,76 +158,104 @@ class ImportDataDialog:
             if not backup_database():
                 self.log("数据库备份失败，操作已取消")
                 self.status_text.set("操作已取消")
-                self.import_button.config(state='normal')
+                # 恢复按钮状态
+                for button in self.button_frame.winfo_children():
+                    if '开始导入' in button['text']:
+                        button.config(state='normal')
+                        break
                 return
                 
-            self.log("数据库备份成功")
+            # 清空数据库
+            self.progress_var.set(20)
+            self.status_text.set("正在清空库存数据...")
+            self.log("正在清空库存数据...")
+            clear_stock_data()
             
-            # 清空库存数据
-            self.progress_var.set(30)
-            self.status_text.set("正在清空原有库存数据...")
-            self.log("正在清空原有库存数据...")
-            
-            if not clear_stock_data():
-                self.log("清空数据失败，操作已取消")
-                self.status_text.set("操作已取消")
-                self.import_button.config(state='normal')
-                return
-                
-            self.log("原有库存数据已清空")
+            total_steps = 30  # 已完成20%，剩余80%分配给导入操作
+            current_step = 20
+            progress_increment = 80 / (2 if stock_in_path and stock_out_path else 1)
             
             # 导入入库数据
-            success = True
             if stock_in_path:
-                self.progress_var.set(50)
-                self.status_text.set("正在导入入库数据...")
-                self.log(f"正在导入入库数据: {stock_in_path}")
+                self.status_text.set(f"正在导入入库数据: {os.path.basename(stock_in_path)}...")
+                self.log(f"正在导入入库数据: {os.path.basename(stock_in_path)}...")
                 
-                if not import_stock_in(stock_in_path):
-                    self.log("入库数据导入失败")
-                    success = False
+                # 读取CSV
+                stock_in_df = read_csv_auto_encoding(stock_in_path)
+                if stock_in_df is None or stock_in_df.empty:
+                    self.log(f"无法读取入库文件或文件为空: {stock_in_path}")
                 else:
-                    self.log("入库数据导入成功")
+                    # 处理每行，更新进度
+                    total_rows = len(stock_in_df)
+                    step_increment = progress_increment / total_rows
+                    
+                    self.log(f"共 {total_rows} 条入库记录")
+                    
+                    # 导入入库数据
+                    import_stock_in(stock_in_df, 
+                               progress_callback=lambda i: self.update_progress(
+                                   current_step + step_increment * i,
+                                   f"正在导入入库数据... ({i}/{total_rows})"
+                               ))
+                    
+                    current_step += progress_increment
+                    self.log("入库数据导入完成")
             
             # 导入出库数据
             if stock_out_path:
-                self.progress_var.set(70)
-                self.status_text.set("正在导入出库数据...")
-                self.log(f"正在导入出库数据: {stock_out_path}")
+                self.status_text.set(f"正在导入出库数据: {os.path.basename(stock_out_path)}...")
+                self.log(f"正在导入出库数据: {os.path.basename(stock_out_path)}...")
                 
-                if not import_stock_out(stock_out_path):
-                    self.log("出库数据导入失败")
-                    success = False
+                # 读取CSV
+                stock_out_df = read_csv_auto_encoding(stock_out_path)
+                if stock_out_df is None or stock_out_df.empty:
+                    self.log(f"无法读取出库文件或文件为空: {stock_out_path}")
                 else:
-                    self.log("出库数据导入成功")
+                    # 处理每行，更新进度
+                    total_rows = len(stock_out_df)
+                    step_increment = progress_increment / total_rows
+                    
+                    self.log(f"共 {total_rows} 条出库记录")
+                    
+                    # 导入出库数据
+                    import_stock_out(stock_out_df, 
+                                progress_callback=lambda i: self.update_progress(
+                                    current_step + step_increment * i,
+                                    f"正在导入出库数据... ({i}/{total_rows})"
+                                ))
+                    
+                    current_step += progress_increment
+                    self.log("出库数据导入完成")
             
-            # 完成
+            # 完成导入
             self.progress_var.set(100)
+            self.status_text.set("导入完成")
+            self.log("数据导入完成！")
+            messagebox.showinfo("成功", "数据导入成功！")
             
-            if success:
-                self.status_text.set("导入完成")
-                self.log("数据导入完成！")
-                messagebox.showinfo("成功", "数据导入完成！")
-                
-                # 刷新主窗口数据
-                if hasattr(self.parent, 'refresh_after_import'):
-                    self.parent.refresh_after_import()
-            else:
-                self.status_text.set("导入过程中出现错误")
-                self.log("导入过程中出现错误，请检查日志。")
-                messagebox.showwarning("警告", "导入过程中出现错误，请检查日志。")
+            # 自动刷新主界面数据
+            self.parent.refresh_after_import()
+            
+            # 延迟关闭窗口
+            self.dialog.after(2000, self.dialog.destroy)
             
         except Exception as e:
-            self.log(f"导入过程中出现异常: {e}")
+            self.log(f"导入过程中发生错误: {str(e)}")
             self.status_text.set("导入失败")
-            messagebox.showerror("错误", f"导入过程中出现异常: {e}")
-        finally:
-            # 恢复按钮状态
-            self.import_button.config(state='normal')
+            messagebox.showerror("错误", f"导入失败: {str(e)}")
             
-    def on_close(self):
-        """关闭窗口"""
-        self.dialog.destroy()
+            # 恢复按钮状态
+            for button in self.button_frame.winfo_children():
+                if '开始导入' in button['text']:
+                    button.config(state='normal')
+                    break
+    
+    def update_progress(self, value, status=None):
+        """更新进度条和状态文本"""
+        self.progress_var.set(value)
+        if status:
+            self.status_text.set(status)
+        self.dialog.update()
 
 if __name__ == "__main__":
     root = tb.Window(themename="cosmo")
@@ -275,6 +265,6 @@ if __name__ == "__main__":
     def open_dialog():
         ImportDataDialog(root)
     
-    ttk.Button(root, text="打开导入对话框", command=open_dialog).pack(pady=20)
+    tb.Button(root, text="打开导入对话框", command=open_dialog).pack(pady=20)
     
     root.mainloop() 

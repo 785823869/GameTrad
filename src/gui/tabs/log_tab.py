@@ -9,56 +9,107 @@ class LogTab:
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
         self.notebook = notebook
+        
+        # 初始化筛选变量
+        self.log_search_var = tk.StringVar()
+        self.log_jump_var = tk.StringVar()
+        self.filter_tab = tk.StringVar(value="全部")
+        self.filter_type = tk.StringVar(value="全部")
+        self.filter_reverted = tk.StringVar(value="全部")
+        
+        # 初始化分页变量
         self.log_page = 1
         self.log_page_size = 20
         self.log_total_pages = 1
-        self.filter_type = StringVar(value="全部")
-        self.filter_tab = StringVar(value="全部")
-        self.filter_reverted = StringVar(value="全部")
-        self.log_search_var = StringVar()
-        self.log_jump_var = StringVar()
+        self.log_total_records = 0
+        
         self._init_ui()
         
     def _init_ui(self):
-        log_frame = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(log_frame, text="操作日志")
+        # 检查是否在新UI结构中运行
+        if isinstance(self.notebook, tk.Frame) or isinstance(self.notebook, tb.Frame):
+            # 新UI结构，notebook实际上是框架
+            log_frame = self.notebook
+        else:
+            # 旧UI结构，notebook是Notebook
+            log_frame = ttk.Frame(self.notebook, padding=10)
+            self.notebook.add(log_frame, text="操作日志")
+        
+        # 顶部工具栏
+        toolbar_frame = ttk.Frame(log_frame)
+        toolbar_frame.pack(fill='x', pady=(0, 10))
+        
+        # 搜索区域
+        search_frame = ttk.Frame(toolbar_frame)
+        search_frame.pack(side='left')
+        
+        ttk.Label(search_frame, text="关键词:").pack(side='left', padx=(0, 5))
+        ttk.Entry(search_frame, textvariable=self.log_search_var, width=20).pack(side='left', padx=(0, 5))
+        ttk.Button(search_frame, text="搜索", command=self._log_search, bootstyle="primary-outline").pack(side='left')
+        
+        # 操作按钮
+        button_frame = ttk.Frame(toolbar_frame)
+        button_frame.pack(side='right')
+        
+        ttk.Button(button_frame, text="删除选中", 
+                  command=self.delete_log_items, 
+                  bootstyle="danger-outline").pack(side='left', padx=5)
+        ttk.Button(button_frame, text="导出CSV", 
+                  command=self.export_log_csv, 
+                  bootstyle="info-outline").pack(side='left', padx=5)
+        
+        # 日志表
         columns = ("操作类型", "标签页", "操作时间", "数据")
         self.log_tree = ttk.Treeview(log_frame, columns=columns, show='headings', height=18)
         for col in columns:
             self.log_tree.heading(col, text=col, anchor='center')
-            self.log_tree.column(col, width=160, anchor='center')
-        self.log_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+            # 设置列宽
+            if col == "数据":
+                self.log_tree.column(col, width=400, anchor='w')
+            else:
+                self.log_tree.column(col, width=120, anchor='center')
+        
+        # 创建垂直滚动条
         scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_tree.yview)
         self.log_tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side='right', fill='y', padx=2, pady=5)
         
-        filter_frame = ttk.Frame(log_frame, padding=4)
-        filter_frame.pack(side='top', fill='x')
-        ttk.Label(filter_frame, text="操作类型:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_type, values=["全部", "添加", "修改", "删除", "推送"], width=8, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="标签页:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_tab, values=["全部", "入库管理", "出库管理", "交易监控"], width=10, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="已回退:").pack(side='left')
-        ttk.Combobox(filter_frame, textvariable=self.filter_reverted, values=["全部", "是", "否"], width=6, state='readonly').pack(side='left', padx=2)
-        ttk.Label(filter_frame, text="关键字:").pack(side='left')
-        ttk.Entry(filter_frame, textvariable=self.log_search_var, width=12).pack(side='left', padx=2)
+        # 分页控件
+        pagination_frame = ttk.Frame(log_frame)
+        pagination_frame.pack(side='bottom', fill='x', pady=10)
         
-        btn_frame = ttk.Frame(log_frame, padding=8)
-        btn_frame.pack(side='bottom', fill='x', pady=8)
-        ttk.Button(btn_frame, text="搜索", command=self._log_search).pack(side='left', padx=4)
-        ttk.Button(btn_frame, text="上一页", command=self.log_prev_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="下一页", command=self.log_next_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="导出日志", command=self.export_log_csv).pack(side='left', padx=2)
-        self.log_page_label = ttk.Label(btn_frame, text="第1/1页")
-        self.log_page_label.pack(side='left', padx=4)
-        ttk.Entry(btn_frame, textvariable=self.log_jump_var, width=4).pack(side='left')
-        ttk.Button(btn_frame, text="跳转", command=self.log_jump_page).pack(side='left', padx=2)
-        ttk.Button(btn_frame, text="回退当前操作", command=self.main_gui.undo_last_operation).pack(side='right', padx=8)
-        ttk.Button(btn_frame, text="前进(撤销回退)", command=self.main_gui.redo_last_operation).pack(side='right', padx=8)
-        ttk.Button(btn_frame, text="批量删除", command=self.delete_log_items).pack(side='left', padx=2)
+        ttk.Button(pagination_frame, text="上一页", 
+                  command=self.log_prev_page, 
+                  bootstyle="secondary-outline").pack(side='left', padx=5)
         
-        self.log_tree.bind('<Double-1>', self.show_log_detail)
-        self.log_tree.bind('<Control-a>', lambda e: [self.log_tree.selection_set(self.log_tree.get_children()), 'break'])
+        ttk.Label(pagination_frame, text="跳转到:").pack(side='left', padx=5)
+        ttk.Entry(pagination_frame, textvariable=self.log_jump_var, width=5).pack(side='left')
+        ttk.Button(pagination_frame, text="GO", command=self.log_jump_page, bootstyle="secondary").pack(side='left', padx=5)
+        
+        self.log_page_info = ttk.Label(pagination_frame, text="页码: 1 / 1  总记录: 0")
+        self.log_page_info.pack(side='left', padx=15)
+        
+        ttk.Button(pagination_frame, text="下一页", 
+                  command=self.log_next_page, 
+                  bootstyle="secondary-outline").pack(side='left', padx=5)
+        
+        # 打包表格和滚动条
+        self.log_tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # 设置交替行背景色
+        self.log_tree.tag_configure('evenrow', background='#f9f9f9')
+        self.log_tree.tag_configure('oddrow', background='#ffffff')
+        
+        # 设置不同类型操作的颜色
+        self.log_tree.tag_configure('add', foreground='#2980b9')  # 深蓝色
+        self.log_tree.tag_configure('delete', foreground='#c0392b')  # 深红色
+        self.log_tree.tag_configure('modify', foreground='#27ae60')  # 深绿色
+        self.log_tree.tag_configure('reverted', foreground='#7f8c8d')  # 灰色
+        
+        # 绑定双击事件
+        self.log_tree.bind("<Double-1>", self.show_log_detail)
+        
+        # 加载日志数据
         self.refresh_log_tab()
         
     def _log_search(self):
@@ -86,24 +137,93 @@ class LogTab:
             messagebox.showwarning("提示", "请输入有效的页码")
 
     def refresh_log_tab(self):
+        """刷新日志表格"""
+        # 清空表格
         for item in self.log_tree.get_children():
             self.log_tree.delete(item)
-        logs = self.db_manager.get_operation_logs(
-            tab_name=None,
-            op_type=None,
-            keyword=None,
-            reverted=None,
-            page=1,
-            page_size=100
-        )
-        for log in logs:
-            is_reverted = bool(log['已回退'])
-            self.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if is_reverted else ""),
-                log['标签页'],
-                log['操作时间'],
-                json.dumps(log['数据'], ensure_ascii=False)
-            ))
+            
+        try:
+            # 获取过滤条件
+            tab_name = self.filter_tab.get() if hasattr(self, 'filter_tab') else None
+            if tab_name == "全部": tab_name = None
+                
+            op_type = self.filter_type.get() if hasattr(self, 'filter_type') else None
+            if op_type == "全部": op_type = None
+                
+            reverted = None
+            if hasattr(self, 'filter_reverted'):
+                if self.filter_reverted.get() == "是": reverted = True
+                elif self.filter_reverted.get() == "否": reverted = False
+                
+            keyword = self.log_search_var.get() if self.log_search_var.get() else None
+            
+            # 查询数据
+            logs = self.main_gui.db_manager.get_operation_logs(
+                tab_name=tab_name,
+                op_type=op_type,
+                keyword=keyword,
+                reverted=reverted,
+                page=self.log_page,
+                page_size=self.log_page_size
+            )
+            
+            # 单独获取总记录数
+            total = self.main_gui.db_manager.count_operation_logs(
+                tab_name=tab_name,
+                op_type=op_type,
+                keyword=keyword,
+                reverted=reverted
+            )
+            
+            # 更新分页信息
+            self.log_total_records = total
+            self.log_total_pages = max(1, (total + self.log_page_size - 1) // self.log_page_size)
+            
+            # 更新页码显示
+            if hasattr(self, 'log_page_info'):
+                self.log_page_info.config(text=f"页码: {self.log_page} / {self.log_total_pages}  总记录: {total}")
+            elif hasattr(self, 'log_page_label'):
+                self.log_page_label.config(text=f"第{self.log_page}/{self.log_total_pages}页")
+            
+            # 插入数据
+            for idx, log in enumerate(logs):
+                # 使用交替行颜色
+                row_tags = ('evenrow',) if idx % 2 == 0 else ('oddrow',)
+                
+                # 根据操作类型添加颜色标签
+                if '添加' in log['操作类型']:
+                    op_tag = 'add'
+                elif '删除' in log['操作类型']:
+                    op_tag = 'delete'
+                elif '修改' in log['操作类型']:
+                    op_tag = 'modify'
+                else:
+                    op_tag = None
+                    
+                # 如果已回退，使用灰色
+                if log.get('已回退'):
+                    op_tag = 'reverted'
+                    
+                # 组合标签
+                if op_tag:
+                    row_tags = row_tags + (op_tag,)
+                
+                # 转换数据为字符串，简化显示
+                data_text = str(log['数据'])
+                if len(data_text) > 100:
+                    data_text = data_text[:100] + "..."
+                
+                self.log_tree.insert('', 'end', values=(
+                    log['操作类型'] + ("（已回退）" if log.get('已回退') else ""),
+                    log['标签页'],
+                    log['操作时间'],
+                    data_text
+                ), tags=row_tags)
+                
+        except Exception as e:
+            import traceback
+            print(f"刷新日志失败: {e}")
+            traceback.print_exc()
 
     def export_log_csv(self):
         import pandas as pd

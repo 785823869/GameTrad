@@ -13,11 +13,20 @@ import numpy as np
 import platform
 import os
 import time
+import pandas as pd
 
 class SilverPriceTab:
-    def __init__(self, notebook):
-        self.silver_tab = ttk.Frame(notebook)
-        notebook.add(self.silver_tab, text="银两价格")
+    def __init__(self, notebook, main_gui=None):
+        # 检查是否在新UI结构中运行
+        if isinstance(notebook, ttk.Frame) or isinstance(notebook, tk.Frame):
+            # 新UI结构，notebook实际上是框架
+            self.silver_tab = notebook
+        else:
+            # 旧UI结构，notebook是Notebook
+            self.silver_tab = ttk.Frame(notebook)
+            notebook.add(self.silver_tab, text="银两价格")
+            
+        self.main_gui = main_gui
         self._max_points = 1000
         self._dragging = False
         self._drag_start = None
@@ -88,7 +97,7 @@ class SilverPriceTab:
         control_frame.columnconfigure(4, weight=0)
         control_frame.columnconfigure(5, weight=0)
         control_frame.columnconfigure(6, weight=1)  # 弹性空间
-        
+
         # 平台选择
         ttk.Label(control_frame, text="平台:", font=(self.chinese_font, 10)).grid(row=0, column=0, padx=(5, 2), pady=5, sticky="e")
         self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=8, font=(self.chinese_font, 10))
@@ -139,7 +148,7 @@ class SilverPriceTab:
             value_label.pack(anchor="w", pady=(2, 0))
             
             return value_label
-        
+
         self.current_price_label = create_info_card(info_frame, "当前价格")
         self.avg_price_label = create_info_card(info_frame, "7日均价")
         self.amplitude_label = create_info_card(info_frame, "振幅", highlight=True)
@@ -178,60 +187,45 @@ class SilverPriceTab:
             print(f"Error fetching silver price data: {e}")
 
     def _draw_silver_price(self, data, platform, days):
+        """绘制银两价格走势图"""
         try:
             self.silver_ax1.clear()
             
-            # 使用中文字体设置标题和标签
-            self.silver_ax1.set_title(f"银两价格走势 ({days}天)", 
-                                    fontproperties=self.chinese_font, 
-                                    fontsize=14, 
-                                    color='#2c3e50',
-                                    pad=15)
-            self.silver_ax1.set_xlabel("时间", fontproperties=self.chinese_font, fontsize=11, color='#7f8c8d')
-            self.silver_ax1.set_ylabel("价格 (元/万两)", fontproperties=self.chinese_font, fontsize=11, color='#7f8c8d')
+            # 设置图表风格 - 纯白背景提高对比度
+            self.silver_ax1.set_facecolor('#ffffff')
+            self.silver_ax1.grid(True, linestyle='--', alpha=0.7, color='#cccccc')
+            self.silver_ax1.set_title("银两价格走势", fontsize=14, fontweight='bold', fontproperties=self.chinese_font, color='#2c3e50')
+            self.silver_ax1.set_xlabel("日期", fontsize=12, fontproperties=self.chinese_font, color='#2c3e50')
+            self.silver_ax1.set_ylabel("价格 (元/万两)", fontsize=12, fontproperties=self.chinese_font, color='#2c3e50')
             
-            # 设置网格线样式
-            self.silver_ax1.grid(True, linestyle='--', alpha=0.3, color='#bdc3c7')
+            # 修改整个图表背景色
+            self.silver_fig.patch.set_facecolor('#ffffff')
             
-            # 美化坐标轴
-            self.silver_ax1.spines['top'].set_visible(False)
-            self.silver_ax1.spines['right'].set_visible(False)
-            self.silver_ax1.spines['left'].set_color('#bdc3c7')
-            self.silver_ax1.spines['bottom'].set_color('#bdc3c7')
-
-            allowed_platforms = ["7881", "DD373"]
+            # 过滤平台
             filtered_series = {}
             filtered_dates = {}
-
-            # 重置信息栏
-            self.current_price_label.config(text="--")
-            self.avg_price_label.config(text="--")
-            self.amplitude_label.config(text="--")
-
+            
             for series, series_data in data['series'].items():
-                if series not in allowed_platforms:
-                    continue
-                if platform != "全部" and str(series) != str(platform):
+                # 过滤掉UU898平台
+                if series == 'UU898' or (platform != '全部' and series != platform):
                     continue
                 time_list = data['dates'].get(series, [])
-                if time_list and isinstance(time_list[0], str):
-                    try:
-                        time_list = [datetime.strptime(t, "%Y-%m-%d") for t in time_list]
-                    except Exception:
-                        import pandas as pd
-                        time_list = [pd.to_datetime(t) for t in time_list]
+                if not series_data or not time_list or len(series_data) != len(time_list):
+                    continue
+                
+                # 限制点数，防止图表过于拥挤
                 if len(series_data) > self._max_points:
                     step = max(1, len(series_data) // self._max_points)
                     series_data = series_data[::step]
                     time_list = time_list[::step]
                 filtered_series[series] = series_data
                 filtered_dates[series] = time_list
-
-            # 使用更美观的颜色方案
-            colors = ['#3498db', '#e74c3c']  # 蓝色和红色
+            
+            # 使用更高对比度的颜色方案
+            colors = ['#2980b9', '#c0392b']  # 深蓝和深红，更高对比度
             info_updated = False
             first_valid_series_data = None
-
+            
             for idx, (series, series_data) in enumerate(filtered_series.items()):
                 time_list = filtered_dates.get(series)
                 if not time_list or len(series_data) != len(time_list):
@@ -240,24 +234,23 @@ class SilverPriceTab:
                     try:
                         time_list = [datetime.strptime(t, "%Y-%m-%d") for t in time_list]
                     except Exception:
-                        import pandas as pd
                         time_list = [pd.to_datetime(t) for t in time_list]
-
-                # 绘制更美观的线条
+                
+                # 绘制更高对比度的线条
                 self.silver_ax1.plot(time_list, series_data,
-                                   label=series,
-                                   color=colors[idx % len(colors)],
-                                   linewidth=2,
-                                   marker='o',
-                                   markersize=4,
-                                   markerfacecolor='white',
-                                   markeredgecolor=colors[idx % len(colors)],
-                                   markeredgewidth=1.5,
-                                   alpha=0.9)
-
+                                  label=series,
+                                  color=colors[idx % len(colors)],
+                                  linewidth=2.5,  # 增加线宽
+                                  marker='o',
+                                  markersize=5,  # 增大标记点
+                                  markerfacecolor='white',
+                                  markeredgecolor=colors[idx % len(colors)],
+                                  markeredgewidth=1.5,
+                                  alpha=1.0)  # 提高不透明度
+                
                 if first_valid_series_data is None and series_data:
                     first_valid_series_data = (series, series_data)
-
+                
                 if not info_updated and (str(platform) == str(series) or (platform == '全部' and idx == 0)):
                     if series_data:
                         current_price = series_data[-1]
@@ -270,10 +263,10 @@ class SilverPriceTab:
                         amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
                         self.amplitude_label.config(
                             text=f"{amplitude:.2f}%",
-                            foreground='#e74c3c' if amplitude > 5 else '#2980b9'
+                            foreground='#c0392b' if amplitude > 5 else '#2980b9'  # 使用更高对比度的颜色
                         )
                         info_updated = True
-
+            
             if not info_updated and first_valid_series_data:
                 _, series_data = first_valid_series_data
                 current_price = series_data[-1]
@@ -286,33 +279,34 @@ class SilverPriceTab:
                 amplitude = ((max_price - min_price) / min_price) * 100 if min_price else 0
                 self.amplitude_label.config(
                     text=f"{amplitude:.2f}%",
-                    foreground='#e74c3c' if amplitude > 5 else '#2980b9'
+                    foreground='#c0392b' if amplitude > 5 else '#2980b9'  # 使用更高对比度的颜色
                 )
-
-            # 设置图例样式
+            
+            # 设置图例样式 - 提高对比度
             legend = self.silver_ax1.legend(loc='upper left', frameon=True, fancybox=True, 
-                                         framealpha=0.8, edgecolor='#bdc3c7')
+                                        framealpha=0.9, edgecolor='#2c3e50')
             for text in legend.get_texts():
                 text.set_fontproperties(self.chinese_font)
-                
+                text.set_color('#2c3e50')  # 设置图例文字颜色
+            
             # 设置x轴日期格式
-            self.silver_ax1.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(10))
+            import matplotlib.ticker as ticker
+            self.silver_ax1.xaxis.set_major_locator(ticker.MaxNLocator(10))
             self.silver_ax1.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%Y-%m-%d'))
             
-            # 设置刻度标签字体
+            # 设置刻度标签字体和颜色 - 提高可读性
             for label in self.silver_ax1.get_xticklabels():
                 label.set_fontproperties(self.chinese_font)
                 label.set_fontsize(9)
-                label.set_color('#7f8c8d')
+                label.set_color('#2c3e50')  # 深色文字
                 
             for label in self.silver_ax1.get_yticklabels():
                 label.set_fontproperties(self.chinese_font)
                 label.set_fontsize(9)
-                label.set_color('#7f8c8d')
-                
+                label.set_color('#2c3e50')  # 深色文字
+            
             self.silver_fig.autofmt_xdate(rotation=30)
             self.silver_canvas.draw_idle()
-
         except Exception as e:
             print(f"Error drawing silver price chart: {e}")
 

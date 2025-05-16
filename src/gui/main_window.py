@@ -40,6 +40,7 @@ from src.gui.tabs.trade_monitor_tab import TradeMonitorTab
 from src.gui.tabs.inventory_tab import InventoryTab
 from src.gui.tabs.stock_out_tab import StockOutTab
 from src.gui.tabs.stock_in_tab import StockInTab
+from src.gui.tabs.dashboard_tab import DashboardTab
 
 def safe_float(val, default=0.0):
     try:
@@ -296,6 +297,10 @@ class GameTradingSystemGUI:
         # 创建主界面
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
+        
+        # 仪表盘Tab
+        self.dashboard_tab = DashboardTab(self.notebook, self)
+        self.notebook.add(self.dashboard_tab, text="仪表盘")
         
         # 创建各个功能页面
         self.inventory_tab = InventoryTab(self.notebook, self)

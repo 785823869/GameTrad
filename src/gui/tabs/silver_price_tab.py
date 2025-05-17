@@ -14,6 +14,11 @@ import platform
 import os
 import time
 import pandas as pd
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
+
+# 禁用SSL警告
+warnings.simplefilter('ignore', InsecureRequestWarning)
 
 class SilverPriceTab:
     def __init__(self, notebook, main_gui=None):

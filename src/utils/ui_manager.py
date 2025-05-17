@@ -258,6 +258,17 @@ class ModernDialog:
         self.dialog.title(title)
         self.dialog.geometry(f"{width}x{height}")
         
+        # 设置对话框图标
+        icon_path = os.path.join("data", "icon.ico")
+        if os.path.exists(icon_path):
+            self.dialog.iconbitmap(icon_path)
+        # 如果父窗口有图标，也可以从父窗口继承
+        elif hasattr(parent, 'iconbitmap') and callable(getattr(parent, 'iconbitmap', None)):
+            try:
+                self.dialog.iconbitmap(parent.iconbitmap())
+            except:
+                pass  # 如果继承失败，忽略错误
+        
         # 设置对话框样式
         self.style = tb.Style()
         

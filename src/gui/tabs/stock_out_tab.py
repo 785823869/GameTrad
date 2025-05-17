@@ -15,7 +15,54 @@ class StockOutTab:
         self.db_manager = main_gui.db_manager
         self.notebook = notebook
         self._pending_ocr_images_out = []
+        
+        # 设置中文字体
+        self.chinese_font = main_gui.chinese_font
+        
+        # 创建样式
+        self.setup_styles()
+        
         self.create_tab()
+
+    def setup_styles(self):
+        """设置自定义样式"""
+        style = tb.Style()
+        
+        # 表格样式
+        style.configure("StockOut.Treeview", 
+                      rowheight=32,  # 增加行高
+                      font=(self.chinese_font, 10),
+                      background="#ffffff",
+                      fieldbackground="#ffffff",
+                      foreground="#2c3e50")
+                      
+        style.configure("StockOut.Treeview.Heading", 
+                      font=(self.chinese_font, 10, "bold"),
+                      background="#e0e6ed",
+                      foreground="#2c3e50")
+        
+        # 移除表格行鼠标悬停效果的style.map设置，改为使用标签和事件处理
+        style.map('StockOut.Treeview', 
+                background=[('selected', '#e69c57')])  # 只保留选中效果
+        
+        # 按钮样式
+        style.configure("StockOut.TButton", 
+                      font=(self.chinese_font, 11),
+                      foreground="#ffffff")
+        
+        # 标签样式
+        style.configure("StockOut.TLabel", 
+                      font=(self.chinese_font, 10),
+                      foreground="#2c3e50")
+                      
+        # 过滤器样式
+        style.configure("Filter.TLabel", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#3a506b")
+                      
+        style.configure("Filter.TEntry", 
+                      font=(self.chinese_font, 10),
+                      foreground="#2c3e50")
 
     def create_tab(self):
         # 检查是否在新UI结构中运行
@@ -24,60 +71,165 @@ class StockOutTab:
             stock_out_frame = self.notebook
         else:
             # 旧UI结构，notebook是Notebook
-            stock_out_frame = ttk.Frame(self.notebook, padding=10)
+            stock_out_frame = tb.Frame(self.notebook, padding=10, bootstyle="light")
             self.notebook.add(stock_out_frame, text="出库管理")
         
-        columns = ('物品', '当前时间', '数量', '单价', '手续费', '总金额', '备注')
-        self.stock_out_tree = ttk.Treeview(stock_out_frame, columns=columns, show='headings', height=16)
+        # 创建上方的工具栏
+        toolbar = tb.Frame(stock_out_frame, bootstyle="light")
+        toolbar.pack(fill='x', pady=(0, 5))
+        
+        # 过滤器区域
+        filter_frame = tb.LabelFrame(toolbar, text="筛选", bootstyle="warning", padding=5)
+        filter_frame.pack(side='left', fill='y', padx=(0, 10))
+        
+        tb.Label(filter_frame, text="物品:", bootstyle="warning").pack(side='left', padx=2)
+        
+        self.stock_out_filter_var = tb.StringVar()
+        filter_entry = tb.Entry(filter_frame, textvariable=self.stock_out_filter_var, width=12, bootstyle="warning")
+        filter_entry.pack(side='left', padx=2)
+        filter_entry.bind("<Return>", lambda e: self.refresh_stock_out())
+        
+        tb.Button(filter_frame, text="筛选", command=self.refresh_stock_out, bootstyle="warning-outline").pack(side='left', padx=2)
+        tb.Button(filter_frame, text="清除", command=lambda: [self.stock_out_filter_var.set(""), self.refresh_stock_out()], bootstyle="secondary-outline").pack(side='left', padx=2)
+        
+        # 主区域分割
+        main_area = tb.Frame(stock_out_frame, bootstyle="light")
+        main_area.pack(fill='both', expand=True)
+        
+        # 表格区域
+        table_frame = tb.Frame(main_area, bootstyle="light")
+        table_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        
+        # 表格和滚动条
+        columns = ('物品', '当前时间', '出库数量', '出库单价', '手续费', '押金', '总金额', '备注')
+        
+        # 设置表头和列宽
+        column_widths = {
+            '物品': 180,     # 加宽物品名称列
+            '当前时间': 160,
+            '出库数量': 90,
+            '出库单价': 95,
+            '手续费': 85,
+            '押金': 85,
+            '总金额': 95,
+            '备注': 170      # 加宽备注列
+        }
+        
+        # 设置列对齐方式
+        column_aligns = {
+            '物品': 'w',     # 文本左对齐
+            '当前时间': 'center',
+            '出库数量': 'e',  # 数字右对齐
+            '出库单价': 'e',
+            '手续费': 'e',
+            '押金': 'e',
+            '总金额': 'e',
+            '备注': 'w'      # 文本左对齐
+        }
+        
+        # 创建表格
+        self.stock_out_tree = tb.Treeview(table_frame, columns=columns, show='headings', 
+                                         height=16, bootstyle="warning", style="StockOut.Treeview")
+        
         for col in columns:
             self.stock_out_tree.heading(col, text=col, anchor='center')
-            self.stock_out_tree.column(col, width=120, anchor='center')
-        scrollbar = ttk.Scrollbar(stock_out_frame, orient="vertical", command=self.stock_out_tree.yview)
+            width = column_widths.get(col, 120)
+            align = column_aligns.get(col, 'center')
+            self.stock_out_tree.column(col, width=width, anchor=align)
+            
+        # 滚动条
+        scrollbar = tb.Scrollbar(table_frame, orient="vertical", command=self.stock_out_tree.yview, bootstyle="warning-round")
         self.stock_out_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # 放置表格和滚动条
         self.stock_out_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y', padx=2, pady=5)
-        self.stock_out_tree.tag_configure('total', background='#ffe066', font=('微软雅黑', 11, 'bold'))
-        right_panel = ttk.Frame(stock_out_frame, width=260)
+        
+        # 配置表格样式
+        self.stock_out_tree.tag_configure('evenrow', background='#fdf7f0')  # 柔和的橙色背景
+        self.stock_out_tree.tag_configure('oddrow', background='#ffffff')
+        self.stock_out_tree.tag_configure('total', background='#fff8dc', font=(self.chinese_font, 11, 'bold'))
+        # 添加悬停高亮标签
+        self.stock_out_tree.tag_configure('hovering', background='#fff8ed')  # 鼠标悬停效果
+        
+        # 绑定鼠标移动事件
+        self.stock_out_tree.bind("<Motion>", self.on_treeview_motion)
+        # 记录上一个高亮的行
+        self.last_hover_row = None
+        
+        # 右侧面板
+        right_panel = tb.Frame(main_area, width=260, bootstyle="light")
         right_panel.pack(side='right', fill='y', padx=8, pady=5)
         right_panel.pack_propagate(False)
-        self.stock_out_filter_var = tb.StringVar()
-        filter_row = ttk.Frame(right_panel)
-        filter_row.pack(fill='x', pady=2)
-        ttk.Label(filter_row, text="物品筛选:").pack(side='left')
-        filter_entry = ttk.Entry(filter_row, textvariable=self.stock_out_filter_var, width=12)
-        filter_entry.pack(side='left', padx=2)
-        ttk.Button(filter_row, text="筛选", command=self.refresh_stock_out).pack(side='left', padx=2)
         
-        # 添加记录按钮 - 替换原来的嵌入式表单
-        ttk.Button(
-            right_panel, 
+        # 操作按钮区
+        actions_frame = tb.LabelFrame(right_panel, text="操作", bootstyle="warning", padding=5)
+        actions_frame.pack(fill='x', pady=(0, 10))
+        
+        # 添加记录按钮 - 使用明显的颜色
+        tb.Button(
+            actions_frame, 
             text="添加出库记录", 
             command=self.show_add_stock_out_dialog,
-            style="primary.TButton"
-        ).pack(fill='x', pady=10, ipady=8)
+            bootstyle="warning"
+        ).pack(fill='x', pady=5, ipady=5)
         
-        ttk.Button(right_panel, text="刷新出库记录", command=self.refresh_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="上传图片自动识别导入", command=self.upload_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
-        ttk.Button(right_panel, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out).pack(fill='x', pady=(0, 10), ipady=4)
-
-        # 使用新的OCRPreview组件替换原来的预览区
-        ocr_frame = ttk.LabelFrame(right_panel, text="OCR图片预览")
+        tb.Button(actions_frame, text="刷新出库记录", command=self.refresh_stock_out, 
+                bootstyle="warning-outline").pack(fill='x', pady=2, ipady=2)
+        
+        # OCR工具区域
+        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", bootstyle="warning", padding=5)
+        ocr_tools_frame.pack(fill='x', pady=(0, 10))
+        
+        tb.Button(ocr_tools_frame, text="上传图片自动出库", command=self.upload_ocr_import_stock_out,
+                bootstyle="warning").pack(fill='x', pady=2, ipady=2)
+                
+        tb.Button(ocr_tools_frame, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out,
+                bootstyle="warning-outline").pack(fill='x', pady=2, ipady=2)
+        
+        # 使用键盘快捷键提示
+        shortcut_frame = tb.Frame(right_panel, bootstyle="light")
+        shortcut_frame.pack(fill='x', pady=(0, 5))
+        
+        tb.Label(shortcut_frame, text="快捷键: Ctrl+V 粘贴图片", bootstyle="secondary").pack(anchor='w')
+        
+        # OCR预览区域
+        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", bootstyle="secondary", padding=5)
         ocr_frame.pack(fill='x', pady=5, padx=2)
         
         # 创建OCR预览组件
-        self.ocr_preview = OCRPreview(ocr_frame, height=120)
+        self.ocr_preview = OCRPreview(ocr_frame, height=150)
         self.ocr_preview.pack(fill='both', expand=True, padx=2, pady=5)
         self.ocr_preview.set_callback(self.delete_ocr_image_out)
         
         # 绑定Ctrl+V快捷键
         right_panel.bind_all('<Control-v>', self.paste_ocr_import_stock_out)
         
+        # 右键菜单
         self.stock_out_menu = tb.Menu(self.stock_out_tree, tearoff=0)
+        self.stock_out_menu.add_command(label="编辑", command=lambda: self.edit_stock_out_item(None))
         self.stock_out_menu.add_command(label="删除", command=self.delete_stock_out_item)
+        self.stock_out_menu.add_separator()
+        self.stock_out_menu.add_command(label="复制物品名", command=lambda: self.copy_item_name())
+        
+        # 绑定右键菜单
         self.stock_out_tree.bind("<Button-3>", self.show_stock_out_menu)
+        
+        # 支持Ctrl+A全选和双击编辑
         self.stock_out_tree.bind('<Control-a>', lambda e: [self.stock_out_tree.selection_set(self.stock_out_tree.get_children()), 'break'])
         self.stock_out_tree.bind("<Double-1>", self.edit_stock_out_item)
-    
+        
+        # 底部状态栏
+        status_frame = tb.Frame(stock_out_frame, bootstyle="light")
+        status_frame.pack(fill='x', side='bottom', pady=(5, 0))
+        
+        self.status_var = tb.StringVar(value="就绪")
+        status_label = tb.Label(status_frame, textvariable=self.status_var, bootstyle="secondary")
+        status_label.pack(side='left')
+        
+        # 初始加载数据
+        self.refresh_stock_out()
+                
     def show_add_stock_out_dialog(self):
         """显示添加出库记录的模态对话框"""
         fields = [
@@ -85,6 +237,7 @@ class StockOutTab:
             ("数量", "quantity", "int"),
             ("单价", "unit_price", "float"),
             ("手续费", "fee", "float"),
+            ("押金", "deposit", "float"),
             ("备注", "note", "str")
         ]
         
@@ -100,147 +253,179 @@ class StockOutTab:
         try:
             item = values["item_name"]
             quantity = values["quantity"]
-            price = values["unit_price"]
+            unit_price = values["unit_price"]
             fee = values["fee"]
+            deposit = values["deposit"]
             note = values["note"]
             
-            total_amount = quantity * price - fee
+            total_amount = quantity * unit_price - fee
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # 自动减少库存
-            success = self.db_manager.decrease_inventory(item, quantity)
-            if not success:
-                messagebox.showerror("错误", f"库存不足，无法出库 {item} 数量 {quantity}")
-                return
+            # 检查库存
+            inventory = self.db_manager.get_item_inventory(item)
+            if inventory is not None and inventory[0] < quantity:
+                if not messagebox.askyesno("库存不足", f"物品 {item} 库存不足，当前库存: {inventory[0]}，出库数量: {quantity}。确定继续出库吗？"):
+                    return
+            
+            self.db_manager.save_stock_out({
+                'item_name': item,
+                'transaction_time': now,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'fee': fee,
+                'deposit': deposit,
+                'total_amount': total_amount,
+                'note': note if note is not None else ''
+            })
+            
+            if inventory is not None:
+                self.db_manager.decrease_inventory(item, quantity)
+            
+            self.refresh_stock_out()
+            
+            # 确保库存页面也更新
+            if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
+                self.main_gui.inventory_tab.refresh_inventory()
                 
-            self.db_manager.save_stock_out({
-                'item_name': item,
-                'transaction_time': now,
-                'quantity': quantity,
-                'unit_price': price,
-                'fee': fee,
-                'deposit': 0.0,
-                'total_amount': total_amount,
-                'note': note if note is not None else ''
-            })
-            
-            self.refresh_stock_out()
             self.main_gui.refresh_inventory()
-            
-            # 记录操作日志
             self.main_gui.log_operation('修改', '出库管理')
+            
             messagebox.showinfo("成功", "出库记录添加成功！")
+            self.status_var.set(f"已添加: {item} x {quantity}")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
-
-    def add_stock_out(self):
-        try:
-            item = self.stock_out_item.get()
-            quantity = int(self.stock_out_quantity.get())
-            price = float(self.stock_out_price.get())
-            fee = float(self.stock_out_fee.get())
-            note = self.stock_out_note.get()
-            total_amount = quantity * price - fee
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # 自动减少库存
-            success = self.db_manager.decrease_inventory(item, quantity)
-            if not success:
-                messagebox.showerror("错误", f"库存不足，无法出库 {item} 数量 {quantity}")
-                return
-            self.db_manager.save_stock_out({
-                'item_name': item,
-                'transaction_time': now,
-                'quantity': quantity,
-                'unit_price': price,
-                'fee': fee,
-                'deposit': 0.0,
-                'total_amount': total_amount,
-                'note': note if note is not None else ''
-            })
-            self.refresh_stock_out()
-            self.main_gui.refresh_inventory()
-            # 清空输入框
-            self.stock_out_item.delete(0, 'end')
-            self.stock_out_quantity.delete(0, 'end')
-            self.stock_out_price.delete(0, 'end')
-            self.stock_out_fee.delete(0, 'end')
-            self.stock_out_note.delete(0, 'end')
-            # 记录操作日志
-            self.main_gui.log_operation('修改', '出库管理')
-            messagebox.showinfo("成功", "出库记录添加成功！")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
+            self.status_var.set(f"添加记录失败: {str(e)}")
 
     def refresh_stock_out(self):
+        """刷新出库记录表格"""
         for item in self.stock_out_tree.get_children():
             self.stock_out_tree.delete(item)
-        records = self.db_manager.get_stock_out()
-        filter_text = self.stock_out_filter_var.get().strip().lower() if hasattr(self, 'stock_out_filter_var') else ''
-        keywords = filter_text.split()
+            
+        self.status_var.set("正在加载数据...")
+        stock_out_data = self.db_manager.get_stock_out()
+        filter_text = self.stock_out_filter_var.get().strip()
         filtered = []
-        for record in records:
+        
+        for item in stock_out_data:
             try:
-                _, item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note, *_ = record
-                name_lc = str(item_name).lower()
-                if keywords and not all(k in name_lc for k in keywords):
-                    continue
-                values = (
-                    item_name,
-                    transaction_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(transaction_time, 'strftime') else str(transaction_time),
-                    int(quantity),
-                    int(float(unit_price)),
-                    int(float(fee)),
-                    int(float(total_amount)),
-                    note if note is not None else ''
-                )
-                filtered.append(values)
-                self.stock_out_tree.insert('', 'end', values=values)
+                _, item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note, *_ = item
             except Exception as e:
-                messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\nrecord={record}")
+                messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nitem={item}")
                 continue
+                
+            if not filter_text or filter_text in str(item_name):
+                filtered.append((item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note))
+                
+        # 添加数据到表格
+        total = [0, 0, 0, 0, 0]  # 数量、单价和、手续费和、押金和、总额
+        
+        for i, (item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note) in enumerate(filtered):
+            # 设置交替行颜色
+            row_tags = ('evenrow',) if i % 2 == 0 else ('oddrow',)
+            
+            # 格式化数字显示
+            quantity_display = f"{int(quantity):,}" if quantity else "0"
+            unit_price_display = f"{int(round(unit_price)):,}" if unit_price else "0"
+            fee_display = f"{int(round(fee)):,}" if fee else "0"
+            deposit_display = f"{int(round(deposit)):,}" if deposit else "0"
+            total_amount_display = f"{int(round(total_amount)):,}" if total_amount else "0"
+            
+            self.stock_out_tree.insert('', 'end', values=(
+                item_name,
+                transaction_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(transaction_time, 'strftime') else str(transaction_time),
+                quantity_display,
+                unit_price_display,
+                fee_display,
+                deposit_display,
+                total_amount_display,
+                note if note is not None else ''
+            ), tags=row_tags)
+            
+            try:
+                total[0] += int(quantity)
+                total[1] += int(round(unit_price))
+                total[2] += int(round(fee))
+                total[3] += int(round(deposit))
+                total[4] += int(round(total_amount))
+            except:
+                pass
+                
         # 合计行
         if filter_text and filtered:
-            total_qty = sum(int(row[2]) for row in filtered)
-            total_fee = sum(int(row[4]) for row in filtered)
-            total_amount = sum(int(row[5]) for row in filtered)
             self.stock_out_tree.insert('', 'end', values=(
-                '合计', '', total_qty, '', total_fee, total_amount, ''
+                '合计', '', 
+                f"{total[0]:,}", 
+                f"{total[1]:,}", 
+                f"{total[2]:,}", 
+                f"{total[3]:,}", 
+                f"{total[4]:,}", 
+                ''
             ), tags=('total',))
+            
+        self.status_var.set(f"共 {len(filtered)} 条记录  |  上次更新: {datetime.now().strftime('%H:%M:%S')}")
 
     def edit_stock_out_item(self, event):
-        item_id = self.stock_out_tree.identify_row(event.y)
+        """编辑出库记录"""
+        if event:  # 如果是通过双击事件触发
+            item_id = self.stock_out_tree.identify_row(event.y)
+        else:  # 如果是通过右键菜单触发
+            selected = self.stock_out_tree.selection()
+            if not selected:
+                return
+            item_id = selected[0]
+            
         if not item_id:
             return
+            
         values = self.stock_out_tree.item(item_id)['values']
+        
+        # 使用ttkbootstrap创建更美观的编辑窗口
         edit_win = tb.Toplevel(self.main_gui.root)
         edit_win.title("编辑出库记录")
-        edit_win.minsize(440, 440)
+        edit_win.minsize(420, 500)
         edit_win.configure(bg='#f4f8fb')
-        style = ttk.Style()
-        style.configure('Edit.TLabel', font=('微软雅黑', 11), background='#f4f8fb')
-        style.configure('Edit.TEntry', font=('微软雅黑', 11))
-        style.configure('Edit.TButton', font=('微软雅黑', 12, 'bold'), background='#3399ff', foreground='#fff', padding=10)
-        style.map('Edit.TButton', background=[('active', '#66c2ff')], foreground=[('active', '#003366')])
-        content_frame = ttk.Frame(edit_win, style='Edit.TFrame')
+        
+        # 设置窗口图标和样式
+        edit_win.iconbitmap(self.main_gui.root.iconbitmap()) if hasattr(self.main_gui.root, 'iconbitmap') and callable(self.main_gui.root.iconbitmap) else None
+        
+        style = tb.Style()
+        style.configure('Edit.TLabel', font=(self.chinese_font, 11), background='#f4f8fb')
+        style.configure('Edit.TEntry', font=(self.chinese_font, 11))
+        style.configure('Edit.TButton', font=(self.chinese_font, 12, 'bold'), background='#ff9800', foreground='#fff', padding=10)
+        style.map('Edit.TButton', background=[('active', '#ffb74d')], foreground=[('active', '#3e2723')])
+        
+        # 创建内容框架
+        content_frame = tb.Frame(edit_win, bootstyle="light")
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
-        labels = ["物品", "时间", "数量", "单价", "手续费", "总金额", "备注"]
-        types = [str, str, int, float, float, float, str]
+        
+        # 字段标题和数据类型
+        labels = ["物品", "时间", "数量", "单价", "手续费", "押金", "总额", "备注"]
+        types = [str, str, int, float, float, float, float, str]
         entries = []
         error_labels = []
+        
+        # 创建字段
         for i, (label, val, typ) in enumerate(zip(labels, values, types)):
-            ttk.Label(content_frame, text=label+":", style='Edit.TLabel').grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
+            tb.Label(content_frame, text=label+":", bootstyle="warning").grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
+            
             vcmd = None
             if typ is int:
                 vcmd = (edit_win.register(lambda s: s.isdigit() or s==''), '%P')
             elif typ is float:
                 vcmd = (edit_win.register(lambda s: s.replace('.','',1).isdigit() or s==''), '%P')
-            entry = ttk.Entry(content_frame, validate='key', validatecommand=vcmd, style='Edit.TEntry') if vcmd else ttk.Entry(content_frame, style='Edit.TEntry')
+                
+            entry = tb.Entry(content_frame, validate='key', validatecommand=vcmd, bootstyle="warning") if vcmd else tb.Entry(content_frame, bootstyle="warning")
             entry.insert(0, val)
-            entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='w')
+            entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='ew')
             entries.append(entry)
-            err = ttk.Label(content_frame, text="", foreground="red", background='#f4f8fb', font=('微软雅黑', 10))
+            
+            err = tb.Label(content_frame, text="", foreground="red", bootstyle="danger")
             err.grid(row=i*2+1, column=0, columnspan=2, sticky='w', padx=12)
             error_labels.append(err)
+            
+        # 配置网格布局，使第二列可以扩展
+        content_frame.columnconfigure(1, weight=1)
+        
         def save():
             new_vals = [e.get() for e in entries]
             valid = True
@@ -262,59 +447,105 @@ class StockOutTab:
                         break
             if not valid:
                 return
+                
             try:
                 new_vals[2] = int(new_vals[2])
                 new_vals[3] = float(new_vals[3])
                 new_vals[4] = float(new_vals[4])
                 new_vals[5] = float(new_vals[5])
+                new_vals[6] = float(new_vals[6])
             except Exception:
-                error_labels[2].config(text="数量/单价/手续费/总金额必须为数字")
+                error_labels[2].config(text="数字字段必须为有效数字")
                 entries[2].focus_set()
                 return
+                
             if not messagebox.askyesno("确认", "确定要保存修改吗？"):
                 return
+                
             self.db_manager.delete_stock_out(values[0], values[1])
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.db_manager.save_stock_out({
                 'item_name': new_vals[0],
-                'transaction_time': current_time,
+                'transaction_time': new_vals[1],
                 'quantity': new_vals[2],
                 'unit_price': new_vals[3],
                 'fee': new_vals[4],
-                'deposit': 0.0,
-                'total_amount': new_vals[5],
-                'note': new_vals[6]
+                'deposit': new_vals[5],
+                'total_amount': new_vals[6],
+                'note': new_vals[7]
             })
+            
             self.refresh_stock_out()
             edit_win.destroy()
             self.main_gui.log_operation('修改', '出库管理', {'old': values, 'new': new_vals})
-        button_frame = ttk.Frame(edit_win, style='Edit.TFrame')
+            self.status_var.set(f"已编辑: {new_vals[0]} 记录")
+            
+        # 按钮区域
+        button_frame = tb.Frame(edit_win, bootstyle="light")
         button_frame.pack(side='bottom', fill='x', pady=20)
-        ttk.Button(button_frame, text="保存", command=save, style='Edit.TButton').pack(pady=6, ipadx=40)
+        
+        # 创建按钮
+        cancel_btn = tb.Button(button_frame, text="取消", command=edit_win.destroy, bootstyle="secondary")
+        cancel_btn.pack(side='left', padx=20, ipadx=20)
+        
+        save_btn = tb.Button(button_frame, text="保存", command=save, bootstyle="warning")
+        save_btn.pack(side='right', padx=20, ipadx=20)
+
+    def delete_stock_out_item(self):
+        """删除出库记录"""
+        selected_items = self.stock_out_tree.selection()
+        if not selected_items:
+            return
+            
+        names = [self.stock_out_tree.item(item)['values'][0] for item in selected_items]
+        msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
+        
+        if messagebox.askyesno("确认删除", msg):
+            for item in selected_items:
+                values = self.stock_out_tree.item(item)['values']
+                if len(values) >= 2:
+                    try:
+                        self.db_manager.delete_stock_out(values[0], values[1])
+                    except Exception as e:
+                        messagebox.showerror("删除失败", f"删除记录时发生错误: {str(e)}")
+            
+            self.refresh_stock_out()
+            self.status_var.set(f"已删除 {len(selected_items)} 条记录")
+            
+    def copy_item_name(self):
+        """复制选中的物品名称到剪贴板"""
+        selected_items = self.stock_out_tree.selection()
+        if not selected_items:
+            return
+        
+        item_name = self.stock_out_tree.item(selected_items[0])['values'][0]
+        self.notebook.clipboard_clear()
+        self.notebook.clipboard_append(item_name)
+        self.status_var.set(f"已复制: {item_name}")
 
     def refresh_ocr_image_preview_out(self):
-        """刷新OCR图片预览"""
-        # 使用新组件的刷新方法
-        self.ocr_preview.refresh()
+        self.ocr_preview.clear_images()
+        for i, img in enumerate(self._pending_ocr_images_out):
+            self.ocr_preview.add_image(img, index=i)
 
     def delete_ocr_image_out(self, idx):
-        """删除待识别的图片"""
         if 0 <= idx < len(self._pending_ocr_images_out):
             self._pending_ocr_images_out.pop(idx)
+            self.refresh_ocr_image_preview_out()
 
-    def paste_ocr_import_stock_out(self, event=None):
-        """从剪贴板粘贴图片进行OCR识别"""
+    def upload_ocr_import_stock_out(self):
+        """上传图片进行OCR识别导入"""
+        file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
+        if not file_path:
+            return
         try:
-            img = ImageGrab.grabclipboard()
-            if isinstance(img, Image.Image):
-                self._pending_ocr_images_out.append(img)
-                # 使用新组件添加图片
-                self.ocr_preview.add_image(img)
-                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
-            else:
-                messagebox.showinfo("提示", "剪贴板中没有图片")
+            from PIL import Image
+            img = Image.open(file_path)
+            self._pending_ocr_images_out.append(img)
+            # 使用新组件添加图片
+            self.ocr_preview.add_image(img)
+            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
-            messagebox.showerror("错误", f"粘贴图片失败: {e}")
+            messagebox.showerror("错误", f"图片加载失败: {e}")
 
     def batch_ocr_import_stock_out(self):
         """批量OCR识别处理出库数据"""
@@ -387,45 +618,6 @@ class StockOutTab:
         else:
             messagebox.showwarning("警告", "未能识别有效的出库记录！")
 
-    def show_stock_out_menu(self, event):
-        """显示右键菜单"""
-        iid = self.stock_out_tree.identify_row(event.y)
-        if iid:
-            self.stock_out_tree.selection_set(iid)
-            self.stock_out_menu.post(event.x_root, event.y_root)
-
-    def delete_stock_out_item(self):
-        selected_items = self.stock_out_tree.selection()
-        if not selected_items:
-            return
-        names = [self.stock_out_tree.item(item)['values'][0] for item in selected_items]
-        times = [self.stock_out_tree.item(item)['values'][1] for item in selected_items]
-        msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
-        deleted_data = []
-        if messagebox.askyesno("确认", msg):
-            for item, name, t in zip(selected_items, names, times):
-                values = self.stock_out_tree.item(item)['values']
-                deleted_data.append(values)
-                self.db_manager.delete_stock_out(name, t)
-            self.refresh_stock_out()
-            self.main_gui.log_operation('删除', '出库管理', deleted_data)
-            messagebox.showinfo("成功", "已删除所选出库记录！")
-
-    def upload_ocr_import_stock_out(self):
-        """上传图片进行OCR识别导入"""
-        file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
-        if not file_path:
-            return
-        try:
-            from PIL import Image
-            img = Image.open(file_path)
-            self._pending_ocr_images_out.append(img)
-            # 使用新组件添加图片
-            self.ocr_preview.add_image(img)
-            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
-        except Exception as e:
-            messagebox.showerror("错误", f"图片加载失败: {e}")
-
     def parse_stock_out_ocr_text(self, text):
         """解析OCR识别后的文本，提取出库相关信息"""
         lines = text.strip().split('\n')
@@ -460,6 +652,53 @@ class StockOutTab:
                 'fee': fee
             }
         return None
+
+    def show_stock_out_menu(self, event):
+        item = self.stock_out_tree.identify_row(event.y)
+        if item:
+            if item not in self.stock_out_tree.selection():
+                self.stock_out_tree.selection_set(item)
+            self.stock_out_menu.post(event.x_root, event.y_root)
+
+    def paste_ocr_import_stock_out(self, event=None):
+        """从剪贴板粘贴图片进行OCR识别"""
+        try:
+            img = ImageGrab.grabclipboard()
+            if isinstance(img, Image.Image):
+                self._pending_ocr_images_out.append(img)
+                # 使用新组件添加图片
+                self.ocr_preview.add_image(img)
+                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
+            else:
+                messagebox.showinfo("提示", "剪贴板中没有图片")
+        except Exception as e:
+            messagebox.showerror("错误", f"粘贴图片失败: {e}")
+            
+    def on_treeview_motion(self, event):
+        """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
+        # 识别当前鼠标位置的行
+        row_id = self.stock_out_tree.identify_row(event.y)
+        
+        # 如果鼠标离开了上一个高亮行，恢复其原始样式
+        if self.last_hover_row and self.last_hover_row != row_id:
+            # 获取行的当前标签
+            current_tags = list(self.stock_out_tree.item(self.last_hover_row, 'tags'))
+            # 移除悬停标签
+            if 'hovering' in current_tags:
+                current_tags.remove('hovering')
+                self.stock_out_tree.item(self.last_hover_row, tags=current_tags)
+                
+        # 如果鼠标位于一个有效行上，应用悬停高亮效果
+        if row_id and row_id != self.last_hover_row:
+            # 获取行的当前标签
+            current_tags = list(self.stock_out_tree.item(row_id, 'tags'))
+            # 添加悬停标签
+            if 'hovering' not in current_tags:
+                current_tags.append('hovering')
+                self.stock_out_tree.item(row_id, tags=current_tags)
+                
+        # 更新上一个高亮行的记录
+        self.last_hover_row = row_id if row_id else None
 
     # 其余方法：add_stock_out, refresh_stock_out, edit_stock_out_item, delete_stock_out_item, OCR相关等
     # ...（后续补全所有出库管理相关方法）... 

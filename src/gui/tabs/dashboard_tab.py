@@ -49,6 +49,7 @@ class DashboardTab(Frame):
         
         # 设置中文字体
         self.chinese_font = main_gui.chinese_font
+        self.setup_matplotlib_fonts()  # 设置Matplotlib的中文字体
         
         # 价格数据缓存
         self.silver_price_cache = None
@@ -78,6 +79,46 @@ class DashboardTab(Frame):
         # 绑定销毁事件，确保清理资源
         self.bind("<Destroy>", self.on_destroy)
     
+    def setup_matplotlib_fonts(self):
+        """设置Matplotlib的中文字体支持"""
+        import matplotlib.font_manager as fm
+        import platform
+        
+        # 根据操作系统设置中文字体
+        system = platform.system()
+        if system == "Windows":
+            # Windows常见中文字体
+            font_list = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
+        elif system == "Darwin":  # macOS
+            # macOS常见中文字体
+            font_list = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STSong', 'STKaiti']
+        else:  # Linux和其他系统
+            # Linux常见中文字体
+            font_list = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Droid Sans Fallback']
+        
+        # 添加默认字体
+        font_list.append(self.chinese_font)
+        
+        # 添加系统中已安装的可用中文字体
+        available_fonts = []
+        for font in font_list:
+            try:
+                if fm.findfont(fm.FontProperties(family=font)) != fm.findfont(fm.FontProperties()):
+                    available_fonts.append(font)
+            except:
+                continue
+        
+        if available_fonts:
+            # 设置Matplotlib的字体
+            plt.rcParams['font.family'] = ['sans-serif']
+            plt.rcParams['font.sans-serif'] = available_fonts
+        else:
+            # 如果没有找到合适的中文字体，使用默认字体并打印警告
+            print("警告: 未能找到合适的中文字体，图表中的中文可能无法正确显示")
+            
+        # 确保负号显示正确
+        plt.rcParams['axes.unicode_minus'] = False
+    
     def on_destroy(self, event):
         """处理销毁事件，清理资源"""
         # 如果事件的窗口是当前窗口(非子组件)，则执行清理
@@ -95,14 +136,18 @@ class DashboardTab(Frame):
     def setup_styles(self):
         """设置自定义样式"""
         style = Style()
+        
+        # 确保使用正确的中文字体
+        chinese_font_family = self.get_suitable_chinese_font()
+        
         # 卡片标题样式
         style.configure("Card.TLabelframe", borderwidth=0, relief="flat")
-        style.configure("Card.TLabelframe.Label", font=(self.chinese_font, 12, "bold"), foreground="#2c3e50")
+        style.configure("Card.TLabelframe.Label", font=(chinese_font_family, 12, "bold"), foreground="#2c3e50")
         
         # 卡片值样式 - 加深文字颜色
-        style.configure("CardValue.TLabel", font=(self.chinese_font, 24, "bold"), foreground="#2c3e50")
+        style.configure("CardValue.TLabel", font=(chinese_font_family, 24, "bold"), foreground="#2c3e50")
         # 卡片描述样式 - 提高对比度
-        style.configure("CardDesc.TLabel", font=(self.chinese_font, 10), foreground="#34495e")
+        style.configure("CardDesc.TLabel", font=(chinese_font_family, 10), foreground="#34495e")
         
         # 正值和负值的不同颜色 - 增强对比度
         style.configure("Positive.TLabel", foreground="#27ae60")  # 深绿色
@@ -111,13 +156,13 @@ class DashboardTab(Frame):
         # 表格样式 - 提高可读性
         style.configure("Dashboard.Treeview", 
                        rowheight=28, 
-                       font=(self.chinese_font, 10),
+                       font=(chinese_font_family, 10),
                        background="#ffffff",
                        fieldbackground="#ffffff",
                        foreground="#2c3e50")
                        
         style.configure("Dashboard.Treeview.Heading", 
-                       font=(self.chinese_font, 10, "bold"),
+                       font=(chinese_font_family, 10, "bold"),
                        background="#e0e6ed",
                        foreground="#2c3e50")
         
@@ -130,19 +175,51 @@ class DashboardTab(Frame):
         # 需要在Treeview实例上使用tag_configure进行配置，而不是在Style对象上
         
         # 配置所有标签使用中文字体
-        style.configure("TLabel", font=(self.chinese_font, 10))
-        style.configure("TButton", font=(self.chinese_font, 10))
-        style.configure("TEntry", font=(self.chinese_font, 10))
-        style.configure("TCheckbutton", font=(self.chinese_font, 10))
-        style.configure("TRadiobutton", font=(self.chinese_font, 10))
-        style.configure("TCombobox", font=(self.chinese_font, 10))
+        style.configure("TLabel", font=(chinese_font_family, 10))
+        style.configure("TButton", font=(chinese_font_family, 10))
+        style.configure("TEntry", font=(chinese_font_family, 10))
+        style.configure("TCheckbutton", font=(chinese_font_family, 10))
+        style.configure("TRadiobutton", font=(chinese_font_family, 10))
+        style.configure("TCombobox", font=(chinese_font_family, 10))
         
         # 设置标签框
-        style.configure("TLabelframe", font=(self.chinese_font, 10))
-        style.configure("TLabelframe.Label", font=(self.chinese_font, 10, "bold"))
+        style.configure("TLabelframe", font=(chinese_font_family, 10))
+        style.configure("TLabelframe.Label", font=(chinese_font_family, 10, "bold"))
         
         # 主题级别的默认字体设置
-        style.configure(".", font=(self.chinese_font, 10))
+        style.configure(".", font=(chinese_font_family, 10))
+    
+    def get_suitable_chinese_font(self):
+        """获取适合系统的中文字体"""
+        import platform
+        import tkinter.font as tkfont
+        
+        # 尝试从系统获取所有可用字体
+        root = self.winfo_toplevel()
+        available_fonts = list(tkfont.families(root))
+        
+        # 根据操作系统推荐字体
+        system = platform.system()
+        if system == "Windows":
+            preferred_fonts = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
+        elif system == "Darwin":  # macOS
+            preferred_fonts = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STSong', 'STKaiti']
+        else:  # Linux和其他系统
+            preferred_fonts = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Droid Sans Fallback']
+        
+        # 添加当前使用的中文字体
+        if self.chinese_font not in preferred_fonts:
+            preferred_fonts.insert(0, self.chinese_font)
+        
+        # 找到第一个可用的中文字体
+        for font in preferred_fonts:
+            if font in available_fonts:
+                print(f"使用中文字体: {font}")
+                return font
+        
+        # 如果没有找到合适的字体，使用系统默认字体
+        print("警告: 未找到合适的中文字体，使用系统默认字体")
+        return self.chinese_font
 
     def get_monthly_profit(self, year, month):
         db_manager = getattr(self.main_gui, 'db_manager', None)
@@ -316,10 +393,6 @@ class DashboardTab(Frame):
         for widget in frame.winfo_children():
             widget.destroy()
             
-        # 设置matplotlib中文字体
-        plt.rcParams['font.family'] = [self.chinese_font, 'sans-serif']
-        plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
-            
         now = datetime.now()
         data = self.get_out_amounts_by_period(now.year, now.month, period)
         x = [label for label, _ in data]
@@ -345,9 +418,9 @@ class DashboardTab(Frame):
                       edgecolors='white', linewidth=2)
         
         # 设置标题和标签
-        ax.set_title("出库金额趋势", loc='left', fontsize=14, fontweight='bold', color='#2c3e50', fontfamily=self.chinese_font)
+        ax.set_title("出库金额趋势", loc='left', fontsize=14, fontweight='bold', color='#2c3e50')
         ax.set_xlabel("")
-        ax.set_ylabel("金额", fontsize=11, color='#7f8c8d', fontfamily=self.chinese_font)
+        ax.set_ylabel("金额", fontsize=11, color='#7f8c8d')
         
         # 设置网格和边框
         ax.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7', zorder=0)
@@ -365,16 +438,142 @@ class DashboardTab(Frame):
         ax.tick_params(axis='x', labelsize=9, colors='#7f8c8d')
         ax.tick_params(axis='y', labelsize=9, colors='#7f8c8d')
         
-        # 单独设置刻度标签字体
-        for label in ax.get_xticklabels():
-            label.set_fontfamily(self.chinese_font)
-        for label in ax.get_yticklabels():
-            label.set_fontfamily(self.chinese_font)
-        
         fig.tight_layout(pad=2)
         canvas = FigureCanvasTkAgg(fig, master=frame)
         canvas.get_tk_widget().pack(fill='both', expand=True)
         plt.close(fig)
+        
+    def draw_price_trend_chart(self, frame, item_name, period='day'):
+        """绘制物品价格趋势图"""
+        # 清空frame内容
+        for widget in frame.winfo_children():
+            widget.destroy()
+        
+        if not item_name:
+            # 如果没有选择物品，显示提示信息
+            chinese_font = self.get_suitable_chinese_font()
+            Label(frame, text="请从下拉框选择物品查看价格趋势", font=(chinese_font, 12)).pack(pady=50)
+            return
+            
+        # 获取价格数据
+        in_prices, out_prices = self.get_item_price_history(item_name, period)
+        
+        # 如果没有数据，显示提示信息
+        if not in_prices and not out_prices:
+            chinese_font = self.get_suitable_chinese_font()
+            Label(frame, text=f"未找到 {item_name} 的价格数据", font=(chinese_font, 12)).pack(pady=50)
+            return
+        
+        # 设置图表样式
+        plt.style.use('seaborn-v0_8-whitegrid')
+        fig, ax = plt.subplots(figsize=(5,3), dpi=100)
+        fig.patch.set_facecolor('#f9f9f9')
+        ax.set_facecolor('#f9f9f9')
+        
+        # 记录是否有有效数据
+        has_valid_data = False
+        
+        # 整合所有价格数据（入库均价和出库单价）到一个时间序列中
+        all_price_data = []
+        
+        # 添加入库均价数据
+        for dt, price in in_prices:
+            if dt is not None:
+                all_price_data.append((dt, price, "入库"))
+        
+        # 添加出库单价数据
+        for dt, price in out_prices:
+            if dt is not None:
+                all_price_data.append((dt, price, "出库"))
+        
+        # 按日期排序
+        all_price_data.sort(key=lambda x: x[0])
+        
+        if all_price_data:
+            has_valid_data = True
+            # 提取排序后的数据
+            dates = [data[0] for data in all_price_data]
+            prices = [data[1] for data in all_price_data]
+            
+            # 绘制整合后的价格趋势线
+            ax.plot(dates, prices, color='#3498db', linewidth=2, marker='o', markersize=5,
+                  markerfacecolor='#2980b9', markeredgecolor='white', markeredgewidth=1, zorder=3)
+        
+        # 如果没有有效数据，显示提示信息
+        if not has_valid_data:
+            plt.close(fig)
+            chinese_font = self.get_suitable_chinese_font()
+            Label(frame, text=f"无法绘制 {item_name} 的价格趋势图，数据格式异常", font=(chinese_font, 12)).pack(pady=50)
+            return
+            
+        # 设置标题和标签
+        ax.set_title(f"{item_name}物价趋势", loc='left', fontsize=14, fontweight='bold', color='#2c3e50')
+        ax.set_xlabel("日期", fontsize=10, color='#7f8c8d')
+        ax.set_ylabel("价格", fontsize=11, color='#7f8c8d')
+        
+        # 设置网格和边框
+        ax.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7', zorder=0)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#bdc3c7')
+        ax.spines['bottom'].set_color('#bdc3c7')
+        
+        # y轴价格格式化
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+        
+        # 获取所有有效日期
+        all_dates = [data[0] for data in all_price_data]
+        
+        if all_dates:
+            # 设置合适的日期格式
+            min_date = min(all_dates)
+            max_date = max(all_dates)
+            date_range = (max_date - min_date).days
+            
+            # 根据日期范围选择合适的格式
+            from matplotlib.dates import DateFormatter
+            if date_range <= 2:
+                # 非常短的时间跨度，显示小时
+                date_format = '%H:%M'
+            elif date_range <= 7:
+                # 一周以内，显示日期和小时
+                date_format = '%m-%d %H:%M'
+            elif date_range <= 180:
+                # 半年以内，显示月-日
+                date_format = '%m-%d'
+            else:
+                # 半年以上，显示年-月
+                date_format = '%Y-%m'
+            
+            ax.xaxis.set_major_formatter(DateFormatter(date_format))
+            
+            # 设置适当的刻度数量
+            if len(all_dates) > 7:
+                # 选择合适的间隔，最多显示7个刻度
+                step = max(1, len(all_dates) // 7)
+                ax.set_xticks(all_dates[::step])
+            else:
+                # 如果数据点较少，全部显示
+                ax.set_xticks(all_dates)
+        
+        # 美化x轴和y轴刻度标签
+        ax.tick_params(axis='x', labelsize=9, colors='#7f8c8d', rotation=30)
+        ax.tick_params(axis='y', labelsize=9, colors='#7f8c8d')
+        
+        # 自动调整布局，确保标签完全显示
+        fig.tight_layout(pad=2)
+        canvas = FigureCanvasTkAgg(fig, master=frame)
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+        plt.close(fig)
+
+    def update_price_chart(self, chart_frame, item_name, period):
+        """更新价格趋势图"""
+        # 更新周期变量
+        if hasattr(self, 'period_var'):
+            self.period_var.set(period)
+        
+        # 重新绘制图表
+        self.draw_price_trend_chart(chart_frame, item_name, period)
 
     def create_widgets(self):
         # 顶部搜索和标签栏
@@ -479,8 +678,9 @@ class DashboardTab(Frame):
             card.columnconfigure(1, weight=0)
             
             # 标题行
+            chinese_font = self.get_suitable_chinese_font()
             title_label = tk.Label(card, text=card_info["title"], 
-                               font=(self.chinese_font, 11, "bold"),
+                               font=(chinese_font, 11, "bold"),
                                fg="#555555", bg=bg_color)
             title_label.grid(row=0, column=0, sticky='w', pady=(5, 5))
             
@@ -488,7 +688,7 @@ class DashboardTab(Frame):
             if idx < 2:  # 前两个卡片（总收入，总库存价值）
                 # 数值显示 - 使用透明背景
                 value_label = tk.Label(card, text=card_info["value"], 
-                                   font=(self.chinese_font, 22, "bold"),
+                                   font=(chinese_font, 22, "bold"),
                                    fg="#2c3e50", bg=bg_color)
                 value_label.grid(row=1, column=0, sticky='w')
                 
@@ -537,7 +737,7 @@ class DashboardTab(Frame):
                 percent_label = tk.Label(
                     mom_frame, 
                     text=mom_percent, 
-                    font=(self.chinese_font, 11, "bold"),  # 稍微增大
+                    font=(chinese_font, 11, "bold"),  # 稍微增大
                     fg=text_color, 
                     bg=bg_color
                 )
@@ -547,7 +747,7 @@ class DashboardTab(Frame):
                 label_label = tk.Label(
                     mom_frame, 
                     text=mom_label_text, 
-                    font=(self.chinese_font, 10),  # 普通字体
+                    font=(chinese_font, 10),  # 普通字体
                     fg="#555555",  # 使用灰色
                     bg=bg_color
                 )
@@ -558,11 +758,11 @@ class DashboardTab(Frame):
                 silver_frame.grid(row=1, column=0, sticky='w', pady=(0, 5))
                 
                 tk.Label(silver_frame, text="银两行情:", 
-                     font=(self.chinese_font, 11),
+                     font=(chinese_font, 11),
                      fg="#555555", bg=bg_color).pack(side='left')
                 
                 self.silver_price_label = tk.Label(silver_frame, text="加载中...", 
-                                             font=(self.chinese_font, 11, "bold"),
+                                             font=(chinese_font, 11, "bold"),
                                              fg="#2c3e50", bg=bg_color)
                 self.silver_price_label.pack(side='left', padx=(5, 0))
                 
@@ -571,11 +771,11 @@ class DashboardTab(Frame):
                 nvwa_frame.grid(row=2, column=0, sticky='w')
                 
                 tk.Label(nvwa_frame, text="女娲石行情:", 
-                     font=(self.chinese_font, 11),
+                     font=(chinese_font, 11),
                      fg="#555555", bg=bg_color).pack(side='left')
                 
                 self.nvwa_price_label = tk.Label(nvwa_frame, text="加载中...", 
-                                           font=(self.chinese_font, 11, "bold"),
+                                           font=(chinese_font, 11, "bold"),
                                            fg="#2c3e50", bg=bg_color)
                 self.nvwa_price_label.pack(side='left', padx=(5, 0))
             
@@ -614,25 +814,55 @@ class DashboardTab(Frame):
         main_frame = Frame(self)  # 移除bootstyle="light"
         main_frame.pack(fill='both', expand=True, padx=10)
 
-        # 折线图区域（带周期切换）
-        chart_container = LabelFrame(main_frame, text="销售趋势", bootstyle="primary")
+        # 折线图区域（带物品选择和周期切换）
+        chart_container = LabelFrame(main_frame, text="物价趋势", bootstyle="primary")
         chart_container.pack(side='left', padx=(0, 10), pady=10, fill='both', expand=True)
         
         chart_top_frame = Frame(chart_container, bootstyle="light")
         chart_top_frame.pack(fill='x', padx=5, pady=5)
         
+        # 物品选择下拉框
+        item_frame = Frame(chart_top_frame, bootstyle="light")
+        item_frame.pack(side='left')
+        
+        chinese_font = self.get_suitable_chinese_font()
+        Label(item_frame, text="物品:", font=(chinese_font, 9)).pack(side='left')
+        
+        # 获取所有物品
+        all_items = self.get_all_items()
+        if not all_items:
+            all_items = ["--请先添加物品--"]
+        
+        # 创建StringVar变量并设置默认值
+        self.selected_item = tk.StringVar(value=all_items[0] if all_items else "")
+        
+        # 创建下拉框
+        item_dropdown = ttk.Combobox(
+            item_frame, 
+            textvariable=self.selected_item,
+            values=all_items,
+            state="readonly",
+            width=15
+        )
+        item_dropdown.pack(side='left', padx=5)
+        
+        # 绑定选择事件
+        item_dropdown.bind("<<ComboboxSelected>>", 
+                          lambda e: self.update_price_chart(chart_frame, self.selected_item.get(), period_var.get()) if self.selected_item.get() and self.selected_item.get() != "--请先添加物品--" else None)
+        
         # 周期切换按钮组
         period_var = tk.StringVar(value='day')
+        self.period_var = period_var  # 保存引用以便在其他方法中使用
         period_map = {'day': '日', 'week': '周', 'month': '月'}
         
         period_frame = Frame(chart_top_frame, bootstyle="light")
         period_frame.pack(side='right')
         
-        Label(period_frame, text="周期:", font=(self.chinese_font, 9)).pack(side='left')
+        Label(period_frame, text="周期:", font=(chinese_font, 9)).pack(side='left')
         
         for period, label in period_map.items():
             def make_command(p=period):
-                return lambda: self.change_period(period_var, p, chart_frame)
+                return lambda: self.update_price_chart(chart_frame, self.selected_item.get(), p)
                 
             btn = Button(period_frame, text=label, bootstyle="outline-secondary",
                         width=3, command=make_command())
@@ -642,8 +872,12 @@ class DashboardTab(Frame):
         chart_frame = Frame(chart_container, bootstyle="light")
         chart_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # 初始绘制图表
-        self.draw_trend_chart(chart_frame, 'day')
+        # 初始绘制图表 - 如果有物品则绘制第一个物品的价格图
+        if all_items and all_items[0] != "--请先添加物品--":
+            self.draw_price_trend_chart(chart_frame, all_items[0], 'day')
+        else:
+            # 显示提示信息
+            Label(chart_frame, text="请先添加物品数据", font=(chinese_font, 12)).pack(pady=50)
 
         # 用户库存监控 (之前是最近活跃用户)
         user_frame = LabelFrame(main_frame, text="用户库存监控", bootstyle="primary")
@@ -847,10 +1081,64 @@ class DashboardTab(Frame):
             # 获取库存统计
             inventory_stats = self.db_manager.get_inventory_stats()
             if inventory_stats:
-                total_items, total_quantity, total_value = inventory_stats
-                self.total_items_var.set(f"{total_items}")
-                self.total_quantity_var.set(f"{total_quantity:,}")
+                # 汇总库存
+                total_items, total_quantity, total_value, _ = inventory_stats
+                
+                # 格式化显示
+                self.total_items_var.set(f"{total_items:,}")
+                self.total_quantity_var.set(f"{int(total_quantity):,}")
                 self.total_value_var.set(f"¥{total_value:,.2f}")
+                
+            # 更新统计卡片
+            # 获取利润数据
+            total_profit, profit_mom = self.get_total_profit_and_mom()
+            total_value = self.get_total_inventory_value()
+            inventory_mom = self.get_inventory_value_mom()
+            
+            # 更新物价趋势部分
+            if hasattr(self, 'selected_item') and hasattr(self, 'period_var'):
+                # 重新获取所有物品
+                all_items = self.get_all_items()
+                
+                # 查找下拉框并更新其值
+                for widget in self.winfo_children():
+                    if isinstance(widget, Frame):
+                        for child in widget.winfo_children():
+                            if isinstance(child, LabelFrame) and child.cget("text") == "物价趋势":
+                                for top_frame in child.winfo_children():
+                                    if isinstance(top_frame, Frame):
+                                        for frame in top_frame.winfo_children():
+                                            if isinstance(frame, Frame):
+                                                for w in frame.winfo_children():
+                                                    if isinstance(w, ttk.Combobox):
+                                                        current_item = self.selected_item.get()
+                                                        
+                                                        # 更新下拉框选项
+                                                        if all_items:
+                                                            w['values'] = all_items
+                                                        else:
+                                                            w['values'] = ["--请先添加物品--"]
+                                                        
+                                                        # 如果当前选中的物品不在列表中，则选择第一个物品
+                                                        if current_item not in all_items and all_items:
+                                                            self.selected_item.set(all_items[0])
+                                                        
+                                                        # 获取图表框架并更新图表
+                                                        chart_frame = None
+                                                        for cf in child.winfo_children():
+                                                            if isinstance(cf, Frame) and cf != top_frame:
+                                                                chart_frame = cf
+                                                                break
+                                                                
+                                                        if chart_frame:
+                                                            selected_item = self.selected_item.get()
+                                                            if selected_item and selected_item != "--请先添加物品--":
+                                                                period = self.period_var.get()
+                                                                self.update_price_chart(chart_frame, selected_item, period)
+                                                        break
+            
+            # 刷新库存详情表格
+            # ... 其余部分保持不变
             
             # 获取零库存物品
             zero_inventory = self.db_manager.get_zero_inventory_items()
@@ -969,17 +1257,19 @@ class DashboardTab(Frame):
     
     def update_price_labels(self, silver_price, nvwa_price):
         """更新价格标签"""
+        chinese_font = self.get_suitable_chinese_font()
+        
         if hasattr(self, 'silver_price_label'):
             if silver_price:
-                self.silver_price_label.config(text=silver_price)
+                self.silver_price_label.config(text=silver_price, font=(chinese_font, 11, "bold"))
             elif self.silver_price_cache:
-                self.silver_price_label.config(text=self.silver_price_cache)
+                self.silver_price_label.config(text=self.silver_price_cache, font=(chinese_font, 11, "bold"))
         
         if hasattr(self, 'nvwa_price_label'):
             if nvwa_price:
-                self.nvwa_price_label.config(text=nvwa_price)
+                self.nvwa_price_label.config(text=nvwa_price, font=(chinese_font, 11, "bold"))
             elif self.nvwa_price_cache:
-                self.nvwa_price_label.config(text=self.nvwa_price_cache)
+                self.nvwa_price_label.config(text=self.nvwa_price_cache, font=(chinese_font, 11, "bold"))
 
     def fetch_silver_price(self):
         """直接从API获取银两价格数据"""
@@ -1584,3 +1874,79 @@ class DashboardTab(Frame):
         
         # 设置定时器进行下一次滚动
         self.inventory_auto_scroll_timer_id = self.after(self.inventory_auto_scroll_speed, self.perform_inventory_auto_scroll)
+
+    def get_all_items(self):
+        """获取所有库存物品列表"""
+        db_manager = getattr(self.main_gui, 'db_manager', None)
+        if db_manager is None:
+            return []
+            
+        # 从库存表获取所有物品名称
+        query = "SELECT DISTINCT item_name FROM inventory WHERE quantity > 0 ORDER BY item_name"
+        results = db_manager.fetch_all(query)
+        
+        # 提取物品名称
+        items = [item[0] for item in results]
+        
+        return items
+        
+    def get_item_price_history(self, item_name, period='day'):
+        """获取特定物品的入库均价和出库单价历史"""
+        db_manager = getattr(self.main_gui, 'db_manager', None)
+        if db_manager is None:
+            return [], []
+        
+        # 获取当前日期
+        now = datetime.now()
+        
+        # 获取入库数据
+        stock_in_query = """
+            SELECT transaction_time, avg_cost 
+            FROM stock_in 
+            WHERE item_name = %s 
+            ORDER BY transaction_time
+        """
+        stock_in_data = db_manager.fetch_all(stock_in_query, (item_name,))
+        
+        # 获取出库数据
+        stock_out_query = """
+            SELECT transaction_time, unit_price 
+            FROM stock_out 
+            WHERE item_name = %s 
+            ORDER BY transaction_time
+        """
+        stock_out_data = db_manager.fetch_all(stock_out_query, (item_name,))
+        
+        # 处理入库数据，确保日期是datetime对象
+        in_prices = []
+        for dt, price in stock_in_data:
+            try:
+                # 确保dt是datetime对象
+                if isinstance(dt, str):
+                    try:
+                        dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        dt = datetime.strptime(dt, "%Y-%m-%d")
+                # 添加到处理后的数据列表
+                in_prices.append((dt, float(price)))
+            except Exception as e:
+                print(f"处理入库数据时出错: {e}")
+                continue
+        
+        # 处理出库数据，确保日期是datetime对象
+        out_prices = []
+        for dt, price in stock_out_data:
+            try:
+                # 确保dt是datetime对象
+                if isinstance(dt, str):
+                    try:
+                        dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        dt = datetime.strptime(dt, "%Y-%m-%d")
+                # 添加到处理后的数据列表
+                out_prices.append((dt, float(price)))
+            except Exception as e:
+                print(f"处理出库数据时出错: {e}")
+                continue
+        
+        return in_prices, out_prices

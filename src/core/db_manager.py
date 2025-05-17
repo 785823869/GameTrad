@@ -716,9 +716,25 @@ class DatabaseManager:
             return None
 
     def get_inventory_stats(self):
-        """获取库存统计数据：总物品数、总数量、总价值"""
-        query = "SELECT COUNT(*), SUM(quantity), SUM(inventory_value) FROM inventory"
-        return self.fetch_one(query)
+        """获取库存统计数据：总物品数、总数量、总价值、低库存物品数"""
+        try:
+            # 获取基本库存统计
+            query = "SELECT COUNT(*), SUM(quantity), SUM(inventory_value) FROM inventory WHERE quantity > 0"
+            result = self.fetch_one(query)
+            if not result or len(result) < 3:
+                return (0, 0, 0, 0)  # 返回默认值
+                
+            # 获取低库存物品数量（库存小于30的物品）
+            low_stock_query = "SELECT COUNT(*) FROM inventory WHERE quantity > 0 AND quantity < 30"
+            low_stock_result = self.fetch_one(low_stock_query)
+            low_stock_count = low_stock_result[0] if low_stock_result else 0
+            
+            # 合并结果
+            item_count, quantity, value = result
+            return (item_count or 0, quantity or 0, value or 0, low_stock_count)
+        except Exception as e:
+            print(f"获取库存统计失败: {e}")
+            return (0, 0, 0, 0)  # 出错时返回默认值
         
     def get_zero_inventory_items(self):
         """获取零库存或负库存的物品"""

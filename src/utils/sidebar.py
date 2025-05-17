@@ -41,11 +41,21 @@ class ModernSidebar:
         title_frame = tb.Frame(self.sidebar, bootstyle="dark")
         title_frame.pack(fill='x', padx=5, pady=(25, 35))
         
+        # 创建GameTrad标签 - 字体大一些
         tb.Label(title_frame, 
-               text="GameTrad 交易系统",
-               font=(ui_manager.main_font, 20, "bold"),  # 增大字体
+               text="GameTrad",
+               font=(ui_manager.main_font, 20, "bold"),  # 保持原始大小
                foreground="white",
-               bootstyle="inverse-dark").pack(fill='x', padx=5, pady=5)
+               bootstyle="inverse-dark",
+               anchor="center").pack(fill='x', padx=5, pady=(5, 0))
+        
+        # 创建交易系统标签 - 字体小一些
+        tb.Label(title_frame, 
+               text="交易系统",
+               font=(ui_manager.main_font, 14, "bold"),  # 较小的字体
+               foreground="white",
+               bootstyle="inverse-dark",
+               anchor="center").pack(fill='x', padx=5, pady=(0, 5))
         
         # 内容区域
         self.content_frame = tb.Frame(parent)

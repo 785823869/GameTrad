@@ -45,11 +45,42 @@ class NvwaPriceTab:
         # 设置中文字体
         self.setup_fonts()
         
+        # 设置自定义样式
+        self.setup_styles()
+        
         # 初始化UI
         self._init_ui()
         
         # 自动刷新女娲石价格
         self.auto_refresh_nvwa_price()
+        
+    def setup_styles(self):
+        """设置自定义样式"""
+        style = ttk.Style()
+        
+        # 创建统一的标签样式
+        style.configure("Unified.TLabel", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
+        # 创建统一的下拉框样式
+        style.configure("Unified.TCombobox", 
+                      font=(self.chinese_font, 10),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")
+        
+        # 创建统一的按钮样式
+        style.configure("Unified.TButton", 
+                      font=(self.chinese_font, 10),
+                      foreground="#ffffff",
+                      background="#3498db")
+        
+        # 创建统一的复选框样式
+        style.configure("Unified.TCheckbutton", 
+                      font=(self.chinese_font, 10),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")
         
     def setup_fonts(self):
         """设置中文字体支持"""
@@ -103,24 +134,24 @@ class NvwaPriceTab:
         control_frame.columnconfigure(6, weight=1)  # 弹性空间
         
         # 平台选择
-        ttk.Label(control_frame, text="平台:", font=(self.chinese_font, 10)).grid(row=0, column=0, padx=(5, 2), pady=5, sticky="e")
-        self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=8, font=(self.chinese_font, 10))
+        ttk.Label(control_frame, text="平台:", style="Unified.TLabel").grid(row=0, column=0, padx=(5, 2), pady=5, sticky="e")
+        self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=8, style="Unified.TCombobox")
         self.platform.set("全部")
         self.platform.grid(row=0, column=1, padx=2, pady=5, sticky="w")
         self.platform.bind("<<ComboboxSelected>>", lambda e: self.refresh_nvwa_price())
         
         # 天数选择
-        ttk.Label(control_frame, text="天数:", font=(self.chinese_font, 10)).grid(row=0, column=2, padx=(10, 2), pady=5, sticky="e")
-        self.days = ttk.Combobox(control_frame, values=["7", "15", "30", "90", "180", "365"], state="readonly", width=5, font=(self.chinese_font, 10))
+        ttk.Label(control_frame, text="天数:", style="Unified.TLabel").grid(row=0, column=2, padx=(10, 2), pady=5, sticky="e")
+        self.days = ttk.Combobox(control_frame, values=["7", "15", "30", "90", "180", "365"], state="readonly", width=5, style="Unified.TCombobox")
         self.days.set("30")
         self.days.grid(row=0, column=3, padx=2, pady=5, sticky="w")
         
         # 控制按钮 - 使用更现代的按钮样式
-        refresh_btn = ttk.Button(control_frame, text="刷新", command=self.refresh_nvwa_price, style="primary.TButton", width=6)
+        refresh_btn = ttk.Button(control_frame, text="刷新", command=self.refresh_nvwa_price, style="Unified.TButton", width=6)
         refresh_btn.grid(row=0, column=4, padx=(10, 2), pady=5)
         
         auto_refresh_cb = ttk.Checkbutton(control_frame, text="自动刷新", variable=self._auto_refresh_var, 
-                       command=self.auto_refresh_nvwa_price, style="primary.TCheckbutton")
+                       command=self.auto_refresh_nvwa_price, style="Unified.TCheckbutton")
         auto_refresh_cb.grid(row=0, column=5, padx=5, pady=5)
         
         # 右侧按钮组

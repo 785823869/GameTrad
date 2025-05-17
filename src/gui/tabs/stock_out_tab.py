@@ -7,7 +7,7 @@ from datetime import datetime
 import tkinter as tk
 import re
 from src.gui.dialogs import ModalInputDialog
-from src.gui.components import OCRPreview
+from src.gui.components import OCRPreview, OCRPreviewDialog
 
 class StockOutTab:
     def __init__(self, notebook, main_gui):
@@ -55,15 +55,31 @@ class StockOutTab:
                       font=(self.chinese_font, 10),
                       foreground="#2c3e50")
         
+        # 创建统一的LabelFrame样式，背景色与主窗口背景色匹配
+        style.configure("Unified.TLabelframe", 
+                      background="#f0f0f0",  # 与主窗口背景色匹配
+                      borderwidth=1)
+                      
+        style.configure("Unified.TLabelframe.Label", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
+        # 创建统一的标签样式
+        style.configure("Unified.TLabel", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
         # 创建透明LabelFrame样式
         style.configure("Transparent.TLabelframe", 
-                      background="#ffffff",  # 与主背景色匹配
+                      background="transparent",  # 透明背景
                       borderwidth=1)
                       
         style.configure("Transparent.TLabelframe.Label", 
                       font=(self.chinese_font, 10, "bold"),
                       foreground="#2c3e50",
-                      background="#ffffff")  # 与主背景色匹配
+                      background="transparent")  # 透明背景
         
         # 过滤器样式
         style.configure("Filter.TLabel", 
@@ -89,10 +105,10 @@ class StockOutTab:
         toolbar.pack(fill='x', pady=(0, 5))
         
         # 过滤器区域
-        filter_frame = tb.LabelFrame(toolbar, text="筛选", bootstyle="warning", padding=5)
+        filter_frame = tb.LabelFrame(toolbar, text="筛选", style="Unified.TLabelframe", padding=5)
         filter_frame.pack(side='left', fill='y', padx=(0, 10))
         
-        tb.Label(filter_frame, text="物品:", bootstyle="warning").pack(side='left', padx=2)
+        tb.Label(filter_frame, text="物品:", style="Unified.TLabel").pack(side='left', padx=2)
         
         self.stock_out_filter_var = tb.StringVar()
         filter_entry = tb.Entry(filter_frame, textvariable=self.stock_out_filter_var, width=12, bootstyle="warning")
@@ -111,7 +127,7 @@ class StockOutTab:
         table_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
         
         # 表格和滚动条
-        columns = ('物品', '当前时间', '出库数量', '出库单价', '手续费', '押金', '总金额', '备注')
+        columns = ('物品', '当前时间', '出库数量', '出库单价', '手续费', '总金额', '备注')
         
         # 设置表头和列宽
         column_widths = {
@@ -120,8 +136,7 @@ class StockOutTab:
             '出库数量': 90,
             '出库单价': 95,
             '手续费': 85,
-            '押金': 85,
-            '总金额': 95,
+            '总金额': 120,    # 增加总金额列宽度
             '备注': 170      # 加宽备注列
         }
         
@@ -132,7 +147,6 @@ class StockOutTab:
             '出库数量': 'e',  # 数字右对齐
             '出库单价': 'e',
             '手续费': 'e',
-            '押金': 'e',
             '总金额': 'e',
             '备注': 'w'      # 文本左对齐
         }
@@ -173,7 +187,7 @@ class StockOutTab:
         right_panel.pack_propagate(False)
         
         # 操作按钮区
-        actions_frame = tb.LabelFrame(right_panel, text="操作", bootstyle="warning", padding=5)
+        actions_frame = tb.LabelFrame(right_panel, text="操作", style="Unified.TLabelframe", padding=5)
         actions_frame.pack(fill='x', pady=(0, 10))
         
         # 添加记录按钮 - 使用明显的颜色
@@ -187,8 +201,8 @@ class StockOutTab:
         tb.Button(actions_frame, text="刷新出库记录", command=self.refresh_stock_out, 
                 bootstyle="warning-outline").pack(fill='x', pady=2, ipady=2)
         
-        # OCR工具区域 - 使用透明样式
-        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", style="Transparent.TLabelframe", padding=5)
+        # OCR工具区域 - 使用统一样式
+        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", style="Unified.TLabelframe", padding=5)
         ocr_tools_frame.pack(fill='x', pady=(0, 10))
         
         tb.Button(ocr_tools_frame, text="上传图片自动出库", command=self.upload_ocr_import_stock_out,
@@ -203,8 +217,8 @@ class StockOutTab:
         
         tb.Label(shortcut_frame, text="快捷键: Ctrl+V 粘贴图片", bootstyle="secondary").pack(anchor='w')
         
-        # OCR预览区域 - 使用透明样式
-        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", style="Transparent.TLabelframe", padding=5)
+        # OCR预览区域 - 使用统一样式
+        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", style="Unified.TLabelframe", padding=5)
         ocr_frame.pack(fill='x', pady=5, padx=2)
         
         # 创建OCR预览组件
@@ -247,7 +261,6 @@ class StockOutTab:
             ("数量", "quantity", "int"),
             ("单价", "unit_price", "float"),
             ("手续费", "fee", "float"),
-            ("押金", "deposit", "float"),
             ("备注", "note", "str")
         ]
         
@@ -265,7 +278,6 @@ class StockOutTab:
             quantity = values["quantity"]
             unit_price = values["unit_price"]
             fee = values["fee"]
-            deposit = values["deposit"]
             note = values["note"]
             
             total_amount = quantity * unit_price - fee
@@ -283,7 +295,7 @@ class StockOutTab:
                 'quantity': quantity,
                 'unit_price': unit_price,
                 'fee': fee,
-                'deposit': deposit,
+                'deposit': 0.0,  # 设置押金默认值为0
                 'total_amount': total_amount,
                 'note': note if note is not None else ''
             })
@@ -318,18 +330,19 @@ class StockOutTab:
         
         for item in stock_out_data:
             try:
+                # 正确解析数据库查询结果，包括押金字段
                 _, item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note, *_ = item
             except Exception as e:
                 messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nitem={item}")
                 continue
                 
             if not filter_text or filter_text in str(item_name):
-                filtered.append((item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note))
+                filtered.append((item_name, transaction_time, quantity, unit_price, fee, total_amount, note))
                 
         # 添加数据到表格
-        total = [0, 0, 0, 0, 0]  # 数量、单价和、手续费和、押金和、总额
+        total = [0, 0, 0, 0, 0]  # 数量、单价和、手续费和、总额
         
-        for i, (item_name, transaction_time, quantity, unit_price, fee, deposit, total_amount, note) in enumerate(filtered):
+        for i, (item_name, transaction_time, quantity, unit_price, fee, total_amount, note) in enumerate(filtered):
             # 设置交替行颜色
             row_tags = ('evenrow',) if i % 2 == 0 else ('oddrow',)
             
@@ -337,7 +350,6 @@ class StockOutTab:
             quantity_display = f"{int(quantity):,}" if quantity else "0"
             unit_price_display = f"{int(round(unit_price)):,}" if unit_price else "0"
             fee_display = f"{int(round(fee)):,}" if fee else "0"
-            deposit_display = f"{int(round(deposit)):,}" if deposit else "0"
             total_amount_display = f"{int(round(total_amount)):,}" if total_amount else "0"
             
             self.stock_out_tree.insert('', 'end', values=(
@@ -346,7 +358,6 @@ class StockOutTab:
                 quantity_display,
                 unit_price_display,
                 fee_display,
-                deposit_display,
                 total_amount_display,
                 note if note is not None else ''
             ), tags=row_tags)
@@ -355,8 +366,7 @@ class StockOutTab:
                 total[0] += int(quantity)
                 total[1] += int(round(unit_price))
                 total[2] += int(round(fee))
-                total[3] += int(round(deposit))
-                total[4] += int(round(total_amount))
+                total[3] += int(round(total_amount))
             except:
                 pass
                 
@@ -368,7 +378,6 @@ class StockOutTab:
                 f"{total[1]:,}", 
                 f"{total[2]:,}", 
                 f"{total[3]:,}", 
-                f"{total[4]:,}", 
                 ''
             ), tags=('total',))
             
@@ -410,8 +419,8 @@ class StockOutTab:
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
         
         # 字段标题和数据类型
-        labels = ["物品", "时间", "数量", "单价", "手续费", "押金", "总额", "备注"]
-        types = [str, str, int, float, float, float, float, str]
+        labels = ["物品", "时间", "数量", "单价", "手续费", "总额", "备注"]
+        types = [str, str, int, float, float, float, str]
         entries = []
         error_labels = []
         
@@ -479,7 +488,6 @@ class StockOutTab:
                 new_vals[3] = float(new_vals[3])
                 new_vals[4] = float(new_vals[4])
                 new_vals[5] = float(new_vals[5])
-                new_vals[6] = float(new_vals[6])
             except Exception:
                 error_labels[2].config(text="数字字段必须为有效数字")
                 entries[2].focus_set()
@@ -495,9 +503,9 @@ class StockOutTab:
                 'quantity': new_vals[2],
                 'unit_price': new_vals[3],
                 'fee': new_vals[4],
-                'deposit': new_vals[5],
-                'total_amount': new_vals[6],
-                'note': new_vals[7]
+                'deposit': 0.0,
+                'total_amount': new_vals[5],
+                'note': new_vals[6]
             })
             
             self.refresh_stock_out()
@@ -601,82 +609,265 @@ class StockOutTab:
                 text = ocr_result.get('data')
                 if not text:
                     continue
-                data = self.parse_stock_out_ocr_text(text)
+                
+                # 首先尝试使用新的解析方法
+                data = self.parse_stock_out_ocr_text_v2(text)
+                # 如果新方法失败，回退到旧方法
+                if not data:
+                    data = self.parse_stock_out_ocr_text(text)
+                    
                 if data:
                     all_data.append(data)
             except Exception as e:
                 messagebox.showerror("错误", f"OCR识别失败: {e}")
                 
         if all_data:
-            # 批量导入数据
-            for data in all_data:
-                item_name = data.get('item_name')
-                quantity = data.get('quantity')
-                unit_price = data.get('unit_price')
-                fee = data.get('fee', 0)
-                total_amount = quantity * unit_price - fee
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                # 自动减少库存
-                success = self.db_manager.decrease_inventory(item_name, quantity)
-                if not success:
-                    messagebox.showerror("错误", f"库存不足，无法出库 {item_name} 数量 {quantity}")
-                    continue
-                    
-                self.db_manager.save_stock_out({
-                    'item_name': item_name,
-                    'transaction_time': now,
-                    'quantity': quantity,
-                    'unit_price': unit_price,
-                    'fee': fee,
-                    'deposit': 0.0,
-                    'total_amount': total_amount,
-                    'note': ''
-                })
+            # 显示OCR识别数据预览窗口
+            self.show_ocr_preview_dialog(all_data)
+        else:
+            messagebox.showwarning("警告", "未能识别有效的出库记录！")
+
+    def show_ocr_preview_dialog(self, ocr_data_list):
+        """显示OCR识别数据预览窗口（表格形式）"""
+        # 定义列
+        columns = ('物品名称', '数量', '单价', '手续费', '总金额')
+        
+        # 设置列宽和对齐方式
+        column_widths = {
+            '物品名称': 180,
+            '数量': 90,
+            '单价': 95,
+            '手续费': 95,
+            '总金额': 120
+        }
+        
+        column_aligns = {
+            '物品名称': 'w',  # 文本左对齐
+            '数量': 'e',      # 数字右对齐
+            '单价': 'e',
+            '手续费': 'e',
+            '总金额': 'e'
+        }
+        
+        # 使用通用OCR预览对话框组件
+        preview_dialog = OCRPreviewDialog(
+            parent=self.main_gui.root,
+            title="OCR识别数据预览",
+            chinese_font=self.chinese_font
+        )
+        
+        # 显示对话框并处理确认后的数据
+        preview_dialog.show(
+            data_list=ocr_data_list,
+            columns=columns,
+            column_widths=column_widths,
+            column_aligns=column_aligns,
+            callback=self.import_confirmed_ocr_data,
+            bootstyle="warning"  # 使用出库管理的主题色
+        )
+
+    def import_confirmed_ocr_data(self, confirmed_data):
+        """导入确认后的OCR数据"""
+        success_count = 0
+        
+        for data in confirmed_data:
+            item_name = data['item_name']
+            quantity = data['quantity']
+            unit_price = data['unit_price']
+            fee = data['fee']
+            # 使用传入的总金额，而不是重新计算
+            total_amount = data.get('total_amount', quantity * unit_price - fee)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
+            # 自动减少库存
+            success = self.db_manager.decrease_inventory(item_name, quantity)
+            if not success:
+                messagebox.showerror("错误", f"库存不足，无法出库 {item_name} 数量 {quantity}")
+                continue
+                
+            self.db_manager.save_stock_out({
+                'item_name': item_name,
+                'transaction_time': now,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'fee': fee,
+                'deposit': 0.0,  # 设置押金默认值为0
+                'total_amount': total_amount,
+                'note': ''
+            })
+            
+            success_count += 1
+        
+        if success_count > 0:
             self.refresh_stock_out()
             self.main_gui.refresh_inventory()
             # 清空图片列表并刷新预览
             self._pending_ocr_images_out.clear()
             self.ocr_preview.clear_images()
-            self.main_gui.log_operation('批量修改', '出库管理', all_data)
-            messagebox.showinfo("成功", f"已成功导入{len(all_data)}条出库记录！")
+            self.main_gui.log_operation('批量修改', '出库管理', confirmed_data)
+            messagebox.showinfo("成功", f"已成功导入{success_count}条出库记录！")
         else:
-            messagebox.showwarning("警告", "未能识别有效的出库记录！")
+            messagebox.showwarning("警告", "没有成功导入任何记录！")
 
     def parse_stock_out_ocr_text(self, text):
         """解析OCR识别后的文本，提取出库相关信息"""
+        if not text or not text.strip():
+            print("OCR识别文本为空")
+            return None
+            
+        print(f"OCR识别文本：\n{text}")  # 调试输出
+        
         lines = text.strip().split('\n')
         item_name = None
         quantity = None
         unit_price = None
         fee = 0
         
+        # 扩展关键字匹配范围
+        item_keywords = ['品名', '物品', '物品名称', '道具', '道具名称', '商品', '商品名称']
+        quantity_keywords = ['数量', '个数', '件数', '数目', '出售数量', '出库数量']
+        price_keywords = ['单价', '价格', '单价格', '出售价格', '出售单价', '出库价格', '出库单价', '每个价格']
+        fee_keywords = ['手续费', '费用', '交易费', '平台费', '服务费', '税费']
+        
         for line in lines:
-            if '品名' in line or '物品' in line:
-                match = re.search(r'[：:]\s*(.+)$', line)
+            # 物品名匹配
+            if any(keyword in line for keyword in item_keywords):
+                # 扩展匹配模式，支持多种分隔符
+                match = re.search(r'[：:]+\s*(.+)$', line)
+                if not match:
+                    match = re.search(r'[物品名称|品名|道具]+[^：:]*[：:]*\s*(.+)$', line)
                 if match:
                     item_name = match.group(1).strip()
-            elif '数量' in line:
-                match = re.search(r'[：:]\s*(\d+)', line)
+                    print(f"匹配到物品名：{item_name}")  # 调试输出
+            
+            # 数量匹配
+            elif any(keyword in line for keyword in quantity_keywords):
+                # 扩展匹配模式，支持多种数字格式
+                match = re.search(r'[：:]+\s*([\d,]+)', line)
+                if not match:
+                    match = re.search(r'[数量|个数|件数]+[^：:]*[：:]*\s*([\d,]+)', line)
                 if match:
-                    quantity = int(match.group(1))
-            elif '单价' in line or '价格' in line:
-                match = re.search(r'[：:]\s*(\d+)', line)
+                    qty_str = match.group(1).replace(',', '')
+                    quantity = int(qty_str)
+                    print(f"匹配到数量：{quantity}")  # 调试输出
+            
+            # 价格匹配
+            elif any(keyword in line for keyword in price_keywords):
+                # 扩展匹配模式，支持小数点和千位分隔符
+                match = re.search(r'[：:]+\s*([\d,\.]+)', line)
+                if not match:
+                    match = re.search(r'[单价|价格]+[^：:]*[：:]*\s*([\d,\.]+)', line)
                 if match:
-                    unit_price = float(match.group(1))
-            elif '手续费' in line or '费用' in line:
-                match = re.search(r'[：:]\s*(\d+)', line)
+                    price_str = match.group(1).replace(',', '')
+                    unit_price = float(price_str)
+                    print(f"匹配到单价：{unit_price}")  # 调试输出
+            
+            # 手续费匹配
+            elif any(keyword in line for keyword in fee_keywords):
+                # 扩展匹配模式，支持小数点和千位分隔符
+                match = re.search(r'[：:]+\s*([\d,\.]+)', line)
+                if not match:
+                    match = re.search(r'[手续费|费用]+[^：:]*[：:]*\s*([\d,\.]+)', line)
                 if match:
-                    fee = float(match.group(1))
+                    fee_str = match.group(1).replace(',', '')
+                    fee = float(fee_str)
+                    print(f"匹配到手续费：{fee}")  # 调试输出
+        
+        # 尝试从文本中提取数字作为备选
+        if not item_name or not quantity or not unit_price:
+            print("标准匹配失败，尝试备选提取方法")  # 调试输出
+            
+            # 如果没有找到物品名，尝试从第一行提取
+            if not item_name and lines:
+                item_name = lines[0].strip()
+                print(f"备选物品名：{item_name}")  # 调试输出
+            
+            # 提取所有数字
+            all_numbers = []
+            for line in lines:
+                # 匹配所有数字（包括小数）
+                numbers = re.findall(r'[\d,\.]+', line)
+                all_numbers.extend([n.replace(',', '') for n in numbers])
+            
+            # 转换为浮点数
+            all_floats = []
+            for n in all_numbers:
+                try:
+                    all_floats.append(float(n))
+                except ValueError:
+                    pass
+            
+            # 按数值大小排序
+            all_floats.sort()
+            print(f"提取的所有数字：{all_floats}")  # 调试输出
+            
+            # 如果有至少两个数字，假设较小的是数量，较大的是单价
+            if len(all_floats) >= 2 and not quantity:
+                for num in all_floats:
+                    if num < 100 and not quantity:  # 假设数量通常小于100
+                        quantity = int(num)
+                        print(f"备选数量：{quantity}")  # 调试输出
+            
+            if len(all_floats) >= 2 and not unit_price:
+                for num in reversed(all_floats):  # 从大到小
+                    if num > 100 and not unit_price:  # 假设价格通常大于100
+                        unit_price = float(num)
+                        print(f"备选单价：{unit_price}")  # 调试输出
         
         if item_name and quantity and unit_price:
-            return {
+            result = {
                 'item_name': item_name,
                 'quantity': quantity,
                 'unit_price': unit_price,
                 'fee': fee
             }
+            print(f"OCR识别结果：{result}")  # 调试输出
+            return result
+        
+        print("OCR识别失败，缺少必要信息")  # 调试输出
+        return None
+
+    def parse_stock_out_ocr_text_v2(self, text):
+        """
+        新的出库OCR文本解析方法，专门用于处理特定格式的出库数据
+        格式示例：
+        已成功售出灵之精火（66）。
+        售出单价：1388银两：手续费：4581银两：
+        """
+        if not text or not text.strip():
+            print("OCR识别文本为空")
+            return None
+            
+        print(f"OCR识别文本(V2)：\n{text}")  # 调试输出
+        
+        # 提取物品名称和数量
+        item_match = re.search(r'已成功售出([^（(]+)[（(](\d+)[）)]', text)
+        if not item_match:
+            print("未匹配到物品名称和数量")
+            return None
+        
+        item_name = item_match.group(1).strip()
+        quantity = int(item_match.group(2))
+        
+        # 提取单价
+        price_match = re.search(r'售出单价[：:]\s*(\d+)银两', text)
+        unit_price = int(price_match.group(1)) if price_match else 0
+        
+        # 提取手续费
+        fee_match = re.search(r'手续费[：:]\s*(\d+)银两', text)
+        fee = int(fee_match.group(1)) if fee_match else 0
+        
+        if item_name and quantity and unit_price:
+            result = {
+                'item_name': item_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'fee': fee
+            }
+            print(f"OCR识别结果(V2)：{result}")  # 调试输出
+            return result
+        
+        print("OCR识别失败(V2)，缺少必要信息")  # 调试输出
         return None
 
     def show_stock_out_menu(self, event):

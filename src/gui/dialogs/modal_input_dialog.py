@@ -52,18 +52,19 @@ class ModalInputDialog:
         self.dialog.geometry(f"{w}x{h}+{x}+{y}")
         
         # 设置样式
-        style = ttk.Style()
+        style = tb.Style()
+        style.configure('Dialog.TFrame', background='#f4f8fb')
         style.configure('Dialog.TLabel', font=('微软雅黑', 11), background='#f4f8fb')
         style.configure('Dialog.TEntry', font=('微软雅黑', 11))
-        style.configure('Dialog.TButton', font=('微软雅黑', 12, 'bold'), background='#3a4d54', foreground='#fff', padding=10)
+        style.configure('Dialog.TButton', font=('微软雅黑', 12, 'bold'), padding=10)
         style.map('Dialog.TButton', background=[('active', '#4f686e')], foreground=[('active', '#ffffff')])
         
         # 创建主容器框架，使用place布局
-        main_container = ttk.Frame(self.dialog, style='Dialog.TFrame')
+        main_container = tb.Frame(self.dialog, style='Dialog.TFrame')
         main_container.place(x=0, y=0, relwidth=1, relheight=1)
         
         # 主内容框架
-        content_frame = ttk.Frame(main_container, style='Dialog.TFrame')
+        content_frame = tb.Frame(main_container, style='Dialog.TFrame')
         content_frame.place(x=20, y=20, relwidth=0.95, height=h-100)
         
         # 添加字段
@@ -71,12 +72,11 @@ class ModalInputDialog:
             # 使用place布局来精确定位每个元素
             label_y = i * 60 + 10
             
-            # 标签 - 使用原生tk.Label以支持透明背景
-            label_widget = tk.Label(
+            # 标签 - 使用ttkbootstrap标签
+            label_widget = tb.Label(
                 content_frame, 
                 text=f"{label}:", 
-                font=('微软雅黑', 11),
-                bg='#f4f8fb',  # 与对话框背景色相同
+                style='Dialog.TLabel',
                 anchor='e'  # 右对齐文本
             )
             label_widget.place(x=10, y=label_y, width=80, height=30)
@@ -105,23 +105,23 @@ class ModalInputDialog:
             self.entries[field_name] = entry
             
             # 错误提示标签
-            err_label = tk.Label(
+            err_label = tb.Label(
                 content_frame, 
                 text="", 
                 foreground="red", 
-                background='#f4f8fb', 
+                style='Dialog.TLabel',
                 font=('微软雅黑', 10)
             )
             err_label.place(x=100, y=label_y+32, relwidth=0.7, height=20)
             self.error_labels[field_name] = err_label
         
         # 按钮区域
-        button_container = ttk.Frame(main_container, style='Dialog.TFrame')
+        button_container = tb.Frame(main_container, style='Dialog.TFrame')
         button_container.place(x=0, rely=1.0, relwidth=1, height=80, anchor='sw')
         
         # 使用place布局来精确放置按钮
         # 取消按钮
-        cancel_button = ttk.Button(
+        cancel_button = tb.Button(
             button_container, 
             text="取消", 
             command=self.dialog.destroy, 
@@ -130,7 +130,7 @@ class ModalInputDialog:
         cancel_button.place(relx=0.35, rely=0.5, width=100, height=36, anchor='center')
         
         # 提交按钮
-        submit_button = ttk.Button(
+        submit_button = tb.Button(
             button_container, 
             text="提交", 
             command=self.validate_and_submit, 

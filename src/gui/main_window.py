@@ -67,6 +67,9 @@ class GameTradingSystemGUI:
         # 不能像这样设置主题，应该在创建窗口时指定
         # self.root.style = tb.Style(theme="flatly")
         
+        # 定义全局背景色
+        self.global_bg_color = "#f0f0f0"
+        
         self.db_manager = DatabaseManager()
         self._pending_ocr_images = []
         

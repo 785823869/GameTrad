@@ -1,16 +1,13 @@
 import ttkbootstrap as tb
-from ttkbootstrap.constants import *
 from tkinter import ttk, messagebox, filedialog as fd
 import tkinter as tk
 import threading
 from datetime import datetime
 from PIL import Image
-import json
 import os
 from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
 from src.utils import clipboard_helper
-import pandas as pd
 from src.gui.utils.monitor_ocr_parser import parse_monitor_ocr_text
 
 class TradeMonitorTab:

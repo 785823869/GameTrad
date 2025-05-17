@@ -266,8 +266,8 @@ class StockOutTab:
         """显示添加出库记录的模态对话框"""
         fields = [
             ("物品", "item_name", "str"),
-            ("数量", "quantity", "int"),
-            ("单价", "unit_price", "float"),
+            ("出库数量", "quantity", "int"),
+            ("出库单价", "unit_price", "float"),
             ("手续费", "fee", "float"),
             ("备注", "note", "str")
         ]
@@ -436,13 +436,35 @@ class StockOutTab:
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
         
         # 字段标题和数据类型
-        labels = ["物品", "时间", "数量", "单价", "手续费", "总额", "备注"]
+        labels = ["物品", "出库时间", "出库数量", "出库单价", "手续费", "总金额", "备注"]
         types = [str, str, int, float, float, float, str]
         entries = []
         error_labels = []
         
+        # 处理表格值，移除千位分隔符
+        processed_values = list(values)
+        if len(processed_values) >= 7:
+            # 处理数量字段(索引2)
+            if processed_values[2]:
+                processed_values[2] = self._safe_int_convert(processed_values[2])
+            # 处理单价字段(索引3)
+            if processed_values[3]:
+                # 转换为浮点数后取整为整数
+                float_val = self._safe_float_convert(processed_values[3])
+                processed_values[3] = int(round(float_val))
+            # 处理手续费字段(索引4)
+            if processed_values[4]:
+                # 转换为浮点数后取整为整数
+                float_val = self._safe_float_convert(processed_values[4])
+                processed_values[4] = int(round(float_val))
+            # 处理总金额字段(索引5)
+            if processed_values[5]:
+                # 转换为浮点数后取整为整数
+                float_val = self._safe_float_convert(processed_values[5])
+                processed_values[5] = int(round(float_val))
+        
         # 创建字段
-        for i, (label, val, typ) in enumerate(zip(labels, values, types)):
+        for i, (label, val, typ) in enumerate(zip(labels, processed_values, types)):
             # 使用ttkbootstrap的标签，确保背景色一致
             tb.Label(
                 content_frame, 

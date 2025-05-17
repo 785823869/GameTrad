@@ -10,6 +10,10 @@ import random
 from datetime import datetime, timedelta
 import platform
 import os
+import requests
+import json
+import threading
+import time
 
 class DashboardTab(Frame):
     def __init__(self, parent_frame, main_gui=None, **kwargs):
@@ -17,7 +21,9 @@ class DashboardTab(Frame):
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
         
-        self.chinese_font = main_gui.chinese_font
+        # 设置背景色
+        self.configure(style="TFrame")
+        self.bg_color = "#f5f5f5"  # 定义统一的背景色
         
         # 创建变量
         self.total_items_var = tk.StringVar(value="0")
@@ -27,7 +33,17 @@ class DashboardTab(Frame):
         self.total_profit_var = tk.StringVar(value="¥0.00")
         
         # 设置中文字体
-        self.setup_fonts()
+        self.chinese_font = main_gui.chinese_font
+        
+        # 价格数据缓存
+        self.silver_price_cache = None
+        self.nvwa_price_cache = None
+        self.last_price_update = 0
+        self.price_cache_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'price_cache.json')
+        
+        # 加载缓存的价格数据
+        self.load_price_cache()
+        
         # 创建自定义样式
         self.setup_styles()
         # 填充整个父容器
@@ -35,84 +51,8 @@ class DashboardTab(Frame):
         # 创建界面
         self.create_widgets()
         
-    def setup_fonts(self):
-        """设置中文字体支持"""
-        # 检测操作系统
-        system = platform.system()
-        
-        # 设置tkinter默认字体
-        self.default_font = font.nametofont("TkDefaultFont")
-        self.text_font = font.nametofont("TkTextFont")
-        self.fixed_font = font.nametofont("TkFixedFont")
-        
-        # 设置matplotlib中文字体
-        if system == 'Windows':
-            # Windows系统常见中文字体
-            chinese_fonts = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
-        elif system == 'Darwin':  # macOS
-            chinese_fonts = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STFangsong']
-        else:  # Linux等其他系统
-            chinese_fonts = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Droid Sans Fallback']
-        
-        # 查找可用的中文字体
-        font_found = False
-        for font_name in chinese_fonts:
-            try:
-                # 检查当前系统是否有这个字体
-                if font_name.lower() in [f.lower() for f in font.families()]:
-                    # 为tkinter设置中文字体
-                    self.default_font.configure(family=font_name)
-                    self.text_font.configure(family=font_name)
-                    self.fixed_font.configure(family=font_name)
-                    
-                    # 为matplotlib设置中文字体
-                    plt.rcParams['font.family'] = [font_name, 'sans-serif']
-                    plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
-                    self.chinese_font = font_name
-                    font_found = True
-                    break
-            except Exception:
-                continue
-                
-        # 如果在tkinter字体中找不到合适的中文字体，尝试用matplotlib的字体查找机制
-        if not font_found:
-            for font_name in chinese_fonts:
-                try:
-                    font_path = fm.findfont(fm.FontProperties(family=font_name))
-                    if os.path.basename(font_path).lower() != 'dejavusans.ttf':  # 不是默认字体
-                        plt.rcParams['font.family'] = [font_name, 'sans-serif']
-                        plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
-                        self.chinese_font = font_name
-                        
-                        # 尝试为tkinter设置同样的字体
-                        try:
-                            self.default_font.configure(family=font_name)
-                            self.text_font.configure(family=font_name)
-                            self.fixed_font.configure(family=font_name)
-                        except:
-                            pass
-                            
-                        font_found = True
-                        break
-                except Exception:
-                    continue
-        
-        # 最后的备选方案
-        if not font_found:
-            try:
-                plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-                plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
-                self.chinese_font = 'SimHei'
-                try:
-                    self.default_font.configure(family='SimHei')
-                    self.text_font.configure(family='SimHei')
-                    self.fixed_font.configure(family='SimHei')
-                except:
-                    # 实在不行就用微软雅黑名称
-                    self.chinese_font = 'Microsoft YaHei'
-            except:
-                # 最后的备选方案
-                self.chinese_font = 'Microsoft YaHei'
+        # 延迟加载数据，确保界面完全渲染后再获取价格数据
+        self.after(2000, self.refresh_dashboard)
         
     def setup_styles(self):
         """设置自定义样式"""
@@ -329,6 +269,11 @@ class DashboardTab(Frame):
         # 清空frame内容
         for widget in frame.winfo_children():
             widget.destroy()
+            
+        # 设置matplotlib中文字体
+        plt.rcParams['font.family'] = [self.chinese_font, 'sans-serif']
+        plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
+            
         now = datetime.now()
         data = self.get_out_amounts_by_period(now.year, now.month, period)
         x = [label for label, _ in data]
@@ -386,15 +331,12 @@ class DashboardTab(Frame):
         plt.close(fig)
 
     def create_widgets(self):
-        # 设置主背景色
-        self.configure(style="TFrame")
-        
         # 顶部搜索和标签栏
-        top_frame = Frame(self, bootstyle="light")
+        top_frame = Frame(self)  # 移除背景色
         top_frame.pack(fill='x', pady=(0, 10))
         
         # 标签按钮区域
-        tabs_frame = Frame(top_frame, bootstyle="light")
+        tabs_frame = Frame(top_frame)  # 移除背景色
         tabs_frame.pack(side='left', padx=5)
         
         # 使用更现代的按钮样式
@@ -403,7 +345,7 @@ class DashboardTab(Frame):
         Button(tabs_frame, text="分析", bootstyle="secondary").pack(side='left', padx=2)
         
         # 替换搜索框为美化的刷新按钮
-        refresh_frame = Frame(top_frame, bootstyle="light")
+        refresh_frame = Frame(top_frame)  # 移除背景色
         refresh_frame.pack(side='right', padx=5)
         
         # 创建刷新按钮，使用success颜色使其更突出，添加刷新图标字符
@@ -416,8 +358,8 @@ class DashboardTab(Frame):
         )
         refresh_button.pack(side='right')
 
-        # 统计卡片区域
-        stats_frame = Frame(self, bootstyle="light")
+        # 统计卡片区域 - 移除背景色
+        stats_frame = Frame(self)  # 移除背景色
         stats_frame.pack(fill='x', pady=10, padx=10)
         
         # 获取数据
@@ -435,7 +377,8 @@ class DashboardTab(Frame):
                 "desc": f"{month_on_month:+.2f}% 月环比",
                 "is_positive": month_on_month >= 0,
                 "icon": "📈" if month_on_month >= 0 else "📉",
-                "bg_color": "#e8f4fc"
+                "bg_color": "#f0f7fb",
+                "card_style": "blue"
             },
             {
                 "title": "总库存价值",
@@ -443,52 +386,132 @@ class DashboardTab(Frame):
                 "desc": f"{inventory_mom:+.2f}% 月环比",
                 "is_positive": inventory_mom >= 0,
                 "icon": "📦",
-                "bg_color": "#e8fcf4"
+                "bg_color": "#f0fbf7",
+                "card_style": "green"
             },
             {
-                "title": "活跃用户",
-                "value": f"{active_users:,}",
-                "desc": f"{active_users_mom:+.2f}% 月环比",
-                "is_positive": active_users_mom >= 0,
-                "icon": "👥",
-                "bg_color": "#fcf8e8"
+                "title": "行情概览",
+                "desc": "",
+                "is_positive": True,
+                "icon": "💰",
+                "bg_color": "#fbf7f0",
+                "card_style": "yellow"
             }
         ]
         
         # 创建卡片
-        for card_info in card_data:
-            # 创建卡片容器
-            card = Frame(stats_frame, bootstyle="light")
-            card.pack(side='left', expand=True, fill='both', padx=5)
+        for idx, card_info in enumerate(card_data):
+            # 创建卡片外层容器
+            card_outer = Frame(stats_frame)
+            card_outer.pack(side='left', expand=True, fill='both', padx=5)
+            
+            # 创建Canvas用于绘制圆角矩形背景
+            canvas_height = 130  # 设置卡片高度
+            canvas = tk.Canvas(card_outer, height=canvas_height, 
+                              highlightthickness=0, bg=self.bg_color)  # 使用统一的背景色
+            canvas.pack(fill='both', expand=True)
+            
+            # 绘制阴影
+            shadow_id = self.create_card_shadow(
+                canvas, 5, 5, card_outer.winfo_reqwidth()-5, canvas_height-5,
+                radius=15, shadow_size=3
+            )
+            
+            # 绘制半圆角矩形作为卡片背景（只有左上和右上为圆角）
+            bg_color = card_info["bg_color"]
+            rect_id = self.draw_semi_rounded_rectangle(
+                canvas, 2, 2, card_outer.winfo_reqwidth()-2, canvas_height-2,
+                radius=15, fill=bg_color, outline="", width=0
+            )
+            
+            # 创建Frame作为卡片内容容器
+            card = tk.Frame(canvas, bg=bg_color)
+            card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.92, relheight=0.85)
             
             # 卡片内部使用网格布局
             card.columnconfigure(0, weight=1)
             card.columnconfigure(1, weight=0)
             
-            # 标题和图标行
-            title_frame = Frame(card, bootstyle="light")
-            title_frame.grid(row=0, column=0, sticky='w', pady=(0, 5))
+            # 标题行
+            title_label = tk.Label(card, text=card_info["title"], 
+                               font=(self.chinese_font, 11, "bold"),
+                               fg="#555555", bg=bg_color)
+            title_label.grid(row=0, column=0, sticky='w', pady=(5, 5))
             
-            Label(title_frame, text=card_info["title"], font=(self.chinese_font, 11, "bold"), 
-                  foreground="#555555").pack(side='left')
+            # 根据卡片类型设置内容
+            if idx < 2:  # 前两个卡片（总收入，总库存价值）
+                # 数值显示 - 使用透明背景
+                value_label = tk.Label(card, text=card_info["value"], 
+                                   font=(self.chinese_font, 22, "bold"),
+                                   fg="#2c3e50", bg=bg_color)
+                value_label.grid(row=1, column=0, sticky='w')
+                
+                # 环比显示 - 使用透明背景
+                fg_color = "#27ae60" if card_info["is_positive"] else "#c0392b"
+                desc_label = tk.Label(card, text=card_info["desc"], 
+                                    font=(self.chinese_font, 10),
+                                    fg=fg_color, bg=bg_color)
+                desc_label.grid(row=2, column=0, sticky='w')
+            else:  # 第三个卡片（行情概览）
+                # 银两行情行 - 使用透明背景
+                silver_frame = tk.Frame(card, bg=bg_color)
+                silver_frame.grid(row=1, column=0, sticky='w', pady=(0, 5))
+                
+                tk.Label(silver_frame, text="银两行情:", 
+                     font=(self.chinese_font, 11),
+                     fg="#555555", bg=bg_color).pack(side='left')
+                
+                self.silver_price_label = tk.Label(silver_frame, text="加载中...", 
+                                             font=(self.chinese_font, 11, "bold"),
+                                             fg="#2c3e50", bg=bg_color)
+                self.silver_price_label.pack(side='left', padx=(5, 0))
+                
+                # 女娲石行情行 - 使用透明背景
+                nvwa_frame = tk.Frame(card, bg=bg_color)
+                nvwa_frame.grid(row=2, column=0, sticky='w')
+                
+                tk.Label(nvwa_frame, text="女娲石行情:", 
+                     font=(self.chinese_font, 11),
+                     fg="#555555", bg=bg_color).pack(side='left')
+                
+                self.nvwa_price_label = tk.Label(nvwa_frame, text="加载中...", 
+                                           font=(self.chinese_font, 11, "bold"),
+                                           fg="#2c3e50", bg=bg_color)
+                self.nvwa_price_label.pack(side='left', padx=(5, 0))
             
-            # 数值显示
-            value_label = Label(card, text=card_info["value"], 
-                               font=(self.chinese_font, 22, "bold"), 
-                               foreground="#2c3e50")
-            value_label.grid(row=1, column=0, sticky='w')
+            # 右侧图标容器 - 使用透明背景
+            icon_frame = tk.Frame(card, bg=bg_color)
+            icon_frame.grid(row=0, column=1, rowspan=3, padx=(0, 5))
             
-            # 环比显示
-            desc_style = "Positive.TLabel" if card_info["is_positive"] else "Negative.TLabel"
-            desc_label = Label(card, text=card_info["desc"], style=desc_style)
-            desc_label.grid(row=2, column=0, sticky='w')
+            # 右侧图标 - 使用大一点的字体
+            icon_label = tk.Label(icon_frame, text=card_info["icon"], 
+                              font=("Segoe UI Emoji", 30),
+                              bg=bg_color)
+            icon_label.pack(padx=10, pady=10)
             
-            # 右侧图标
-            icon_label = Label(card, text=card_info["icon"], font=("Segoe UI Emoji", 24))
-            icon_label.grid(row=0, column=1, rowspan=3, padx=(0, 10))
+            # 更新Canvas大小适应窗口
+            def update_canvas_size(event, canvas=canvas, rect_id=rect_id, shadow_id=shadow_id):
+                # 更新半圆角矩形
+                canvas.coords(rect_id, *self.get_semi_rounded_rectangle_points(2, 2, event.width-2, event.height-2, radius=15))
+                # 更新阴影
+                shadow_points = [
+                    5 + 15 + 3, 5 + 3,
+                    event.width - 5 - 15, 5 + 3,
+                    event.width - 5, 5 + 3,
+                    event.width - 5 + 3, 5 + 15,
+                    event.width - 5 + 3, event.height - 5,
+                    event.width - 5, event.height - 5 + 3,
+                    5, event.height - 5 + 3,
+                    5 - 3, event.height - 5,
+                    5 - 3, 5 + 15,
+                    5, 5 + 3
+                ]
+                canvas.coords(shadow_id, *shadow_points)
+            
+            canvas.bind("<Configure>", update_canvas_size)
 
-        # 主体区域
-        main_frame = Frame(self, bootstyle="light")
+        # 主体区域 - 移除背景色
+        main_frame = Frame(self)  # 移除bootstyle="light"
         main_frame.pack(fill='both', expand=True, padx=10)
 
         # 折线图区域（带周期切换）
@@ -691,8 +714,8 @@ class DashboardTab(Frame):
         fig2.tight_layout(pad=2)
         canvas2 = FigureCanvasTkAgg(fig2, master=chart_frame2)
         canvas2.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-        plt.close(fig2) 
-    
+        plt.close(fig2)
+
     def change_period(self, period_var, period, chart_frame):
         """切换周期并重绘图表"""
         period_var.set(period)
@@ -712,52 +735,314 @@ class DashboardTab(Frame):
             # 获取零库存物品
             zero_inventory = self.db_manager.get_zero_inventory_items()
             
-            # 清空零库存列表
-            for item in self.low_stock_tree.get_children():
-                self.low_stock_tree.delete(item)
-            
-            # 添加零库存物品
-            if zero_inventory:
-                self.low_stock_var.set(f"{len(zero_inventory)}项")
+            # 只在low_stock_tree存在时才操作
+            if hasattr(self, 'low_stock_tree'):
+                # 清空零库存列表
+                for item in self.low_stock_tree.get_children():
+                    self.low_stock_tree.delete(item)
                 
-                for item in zero_inventory:
-                    item_id, item_name, quantity = item
-                    self.low_stock_tree.insert("", "end", values=(item_name, quantity), tags=("warning",))
-                
-                # 设置警告标签样式
-                self.low_stock_tree.tag_configure("warning", foreground="#ff6000")
-            else:
-                self.low_stock_var.set("0项")
+                # 添加零库存物品
+                if zero_inventory:
+                    self.low_stock_var.set(f"{len(zero_inventory)}项")
+                    
+                    for item in zero_inventory:
+                        item_id, item_name, quantity = item
+                        self.low_stock_tree.insert("", "end", values=(item_name, quantity), tags=("warning",))
+                    
+                    # 设置警告标签样式
+                    self.low_stock_tree.tag_configure("warning", foreground="#ff6000")
+                else:
+                    self.low_stock_var.set("0项")
+            elif hasattr(self, 'low_stock_var'):
+                # 如果没有tree但有var,仍然可以更新计数
+                if zero_inventory:
+                    self.low_stock_var.set(f"{len(zero_inventory)}项")
+                else:
+                    self.low_stock_var.set("0项")
                 
             # 获取最近交易记录
             recent_transactions = self.db_manager.get_recent_transactions(5)
             
-            # 清空最近交易列表
-            for item in self.recent_trades_tree.get_children():
-                self.recent_trades_tree.delete(item)
-            
-            # 添加最近交易
-            if recent_transactions:
-                for transaction in recent_transactions:
-                    _, item_name, _, quantity, price, _, _, _, transaction_time, *_ = transaction
-                    
-                    # 格式化日期时间
-                    if isinstance(transaction_time, str):
-                        transaction_time = transaction_time
-                    else:
-                        transaction_time = transaction_time.strftime("%Y-%m-%d %H:%M")
+            # 只在recent_trades_tree存在时才操作
+            if hasattr(self, 'recent_trades_tree'):
+                # 清空最近交易列表
+                for item in self.recent_trades_tree.get_children():
+                    self.recent_trades_tree.delete(item)
+                
+                # 添加最近交易
+                if recent_transactions:
+                    for transaction in recent_transactions:
+                        _, item_name, _, quantity, price, _, _, _, transaction_time, *_ = transaction
                         
-                    self.recent_trades_tree.insert("", "end", values=(
-                        item_name, 
-                        f"{int(quantity):,}", 
-                        f"¥{float(price):,.2f}", 
-                        transaction_time
-                    ))
+                        # 格式化日期时间
+                        if isinstance(transaction_time, str):
+                            transaction_time = transaction_time
+                        else:
+                            transaction_time = transaction_time.strftime("%Y-%m-%d %H:%M")
+                            
+                        self.recent_trades_tree.insert("", "end", values=(
+                            item_name, 
+                            f"{int(quantity):,}", 
+                            f"¥{float(price):,.2f}", 
+                            transaction_time
+                        ))
+            
+            # 刷新银两和女娲石价格数据
+            self.refresh_price_data()
             
         except Exception as e:
             print(f"刷新仪表盘失败: {e}")
             import traceback
             traceback.print_exc()
+            
+    def refresh_price_data(self):
+        """专门用于刷新价格数据的方法"""
+        if not hasattr(self, 'silver_price_label') or not hasattr(self, 'nvwa_price_label'):
+            return
+
+        # 立即显示缓存的价格数据（如果有）
+        if self.silver_price_cache:
+            self.silver_price_label.config(text=self.silver_price_cache)
+        if self.nvwa_price_cache:
+            self.nvwa_price_label.config(text=self.nvwa_price_cache)
+        
+        # 如果距离上次更新超过5分钟，才从API获取新数据
+        current_time = time.time()
+        if current_time - self.last_price_update > 300:  # 5分钟 = 300秒
+            # 在后台线程中获取最新价格
+            self.fetch_prices_in_thread()
+        else:
+            print(f"使用缓存的价格数据，上次更新时间: {datetime.fromtimestamp(self.last_price_update)}")
+
+        # 只有当无法从API和缓存获取数据时，才尝试从其他Tab或数据库获取
+        if not self.silver_price_cache and not self.nvwa_price_cache:
+            # 从银两行情和女娲石行情标签页获取当前价格
+            self._legacy_price_fetch()
+
+    def fetch_prices_in_thread(self):
+        """在后台线程中获取价格数据"""
+        def fetch_task():
+            silver_price = self.fetch_silver_price()
+            nvwa_price = self.fetch_nvwa_price()
+            
+            # 在主线程中更新UI
+            self.after(0, lambda: self.update_price_labels(silver_price, nvwa_price))
+        
+        threading.Thread(target=fetch_task, daemon=True).start()
+    
+    def update_price_labels(self, silver_price, nvwa_price):
+        """更新价格标签"""
+        if hasattr(self, 'silver_price_label'):
+            if silver_price:
+                self.silver_price_label.config(text=silver_price)
+            elif self.silver_price_cache:
+                self.silver_price_label.config(text=self.silver_price_cache)
+        
+        if hasattr(self, 'nvwa_price_label'):
+            if nvwa_price:
+                self.nvwa_price_label.config(text=nvwa_price)
+            elif self.nvwa_price_cache:
+                self.nvwa_price_label.config(text=self.nvwa_price_cache)
+
+    def fetch_silver_price(self):
+        """直接从API获取银两价格数据"""
+        try:
+            # 模拟SilverPriceTab使用的API地址
+            url = "https://www.zxsjinfo.com/api/silver-price?days=7"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'series' in data:
+                    # 获取最新价格
+                    for platform, prices in data['series'].items():
+                        if prices and len(prices) > 0:
+                            latest_price = prices[-1]
+                            # 更新缓存
+                            self.silver_price_cache = f"¥{latest_price:.2f}/万"
+                            self.last_price_update = time.time()
+                            self.save_price_cache()
+                            return self.silver_price_cache
+            return None
+        except Exception as e:
+            print(f"获取银两价格失败: {e}")
+            return None
+    
+    def fetch_nvwa_price(self):
+        """直接从API获取女娲石价格数据"""
+        try:
+            # 使用NvwaPriceTab中相同的API地址
+            url = "https://www.zxsjinfo.com/api/nvwa-price?days=7"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'series' in data:
+                    # 获取最新价格
+                    for platform, prices in data['series'].items():
+                        if prices and len(prices) > 0:
+                            latest_price = prices[-1]
+                            # 更新缓存
+                            self.nvwa_price_cache = f"¥{latest_price:.2f}/个"
+                            self.last_price_update = time.time()
+                            self.save_price_cache()
+                            return self.nvwa_price_cache
+            return None
+        except Exception as e:
+            print(f"获取女娲石价格失败: {e}")
+            return None
+    
+    def load_price_cache(self):
+        """加载缓存的价格数据"""
+        try:
+            if os.path.exists(self.price_cache_file):
+                with open(self.price_cache_file, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                    self.silver_price_cache = cache_data.get('silver_price')
+                    self.nvwa_price_cache = cache_data.get('nvwa_price')
+                    self.last_price_update = cache_data.get('timestamp', 0)
+        except Exception as e:
+            print(f"加载价格缓存失败: {e}")
+    
+    def save_price_cache(self):
+        """保存价格数据到缓存文件"""
+        try:
+            cache_data = {
+                'silver_price': self.silver_price_cache,
+                'nvwa_price': self.nvwa_price_cache,
+                'timestamp': self.last_price_update
+            }
+            with open(self.price_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f)
+        except Exception as e:
+            print(f"保存价格缓存失败: {e}")
+            
+    def _legacy_price_fetch(self):
+        """实现旧的从其他Tab或数据库获取价格的方法"""
+        # 获取银两价格
+        silver_price = "加载中..."
+        silver_from_ui = False
+        
+        # 先尝试从UI获取
+        if hasattr(self.main_gui, 'silver_price_tab') and self.main_gui.silver_price_tab:
+            if hasattr(self.main_gui.silver_price_tab, 'current_price_label'):
+                try:
+                    silver_text = self.main_gui.silver_price_tab.current_price_label.cget("text")
+                    if silver_text and silver_text != "--":
+                        silver_price = silver_text
+                        silver_from_ui = True
+                except Exception:
+                    pass
+        
+        # 如果无法从UI获取，直接从数据库获取
+        if not silver_from_ui:
+            try:
+                silver_data = self.db_manager.fetch_one(
+                    "SELECT price FROM silver_price ORDER BY update_time DESC LIMIT 1"
+                )
+                if silver_data and silver_data[0]:
+                    silver_price = f"¥{float(silver_data[0]):.2f}/万"
+            except Exception as e:
+                print(f"从数据库获取银两价格数据失败: {e}")
+        
+        self.silver_price_label.config(text=silver_price)
+        if silver_price != "加载中...":
+            self.silver_price_cache = silver_price
+            self.last_price_update = time.time()
+            self.save_price_cache()
+        
+        # 获取女娲石价格
+        nvwa_price = "加载中..."
+        nvwa_from_ui = False
+        
+        # 先尝试从UI获取
+        if hasattr(self.main_gui, 'nvwa_price_tab') and self.main_gui.nvwa_price_tab:
+            if hasattr(self.main_gui.nvwa_price_tab, 'current_price_label'):
+                try:
+                    nvwa_text = self.main_gui.nvwa_price_tab.current_price_label.cget("text")
+                    if nvwa_text and nvwa_text != "--":
+                        nvwa_price = nvwa_text
+                        nvwa_from_ui = True
+                except Exception:
+                    pass
+        
+        # 如果无法从UI获取，直接从数据库获取
+        if not nvwa_from_ui:
+            try:
+                nvwa_data = self.db_manager.fetch_one(
+                    "SELECT price FROM nvwa_price ORDER BY update_time DESC LIMIT 1"
+                )
+                if nvwa_data and nvwa_data[0]:
+                    nvwa_price = f"¥{float(nvwa_data[0]):.2f}/个"
+            except Exception as e:
+                print(f"从数据库获取女娲石价格数据失败: {e}")
+        
+        self.nvwa_price_label.config(text=nvwa_price)
+        if nvwa_price != "加载中...":
+            self.nvwa_price_cache = nvwa_price
+            self.last_price_update = time.time()
+            self.save_price_cache()
+
+    def draw_rounded_rectangle(self, canvas, x1, y1, x2, y2, radius=25, **kwargs):
+        """绘制圆角矩形"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return canvas.create_polygon(points, **kwargs, smooth=True)
+        
+    def draw_semi_rounded_rectangle(self, canvas, x1, y1, x2, y2, radius=25, **kwargs):
+        """绘制半圆角矩形（只有上方圆角）"""
+        points = [
+            x1 + radius, y1,  # 左上角圆角起始点
+            x2 - radius, y1,  # 右上角圆角起始点
+            x2, y1,           # 右上角顶点
+            x2, y1 + radius,  # 右上角圆角结束点
+            x2, y2,           # 右下角（直角）
+            x1, y2,           # 左下角（直角）
+            x1, y1 + radius,  # 左上角圆角结束点
+            x1, y1            # 左上角顶点
+        ]
+        return canvas.create_polygon(points, **kwargs, smooth=True)
+        
+    def get_semi_rounded_rectangle_points(self, x1, y1, x2, y2, radius=25):
+        """获取半圆角矩形的点（只有上方圆角）"""
+        return [
+            x1 + radius, y1,  # 左上角圆角起始点
+            x2 - radius, y1,  # 右上角圆角起始点
+            x2, y1,           # 右上角顶点
+            x2, y1 + radius,  # 右上角圆角结束点
+            x2, y2,           # 右下角（直角）
+            x1, y2,           # 左下角（直角）
+            x1, y1 + radius,  # 左上角圆角结束点
+            x1, y1            # 左上角顶点
+        ]
+        
+    def create_card_shadow(self, canvas, x1, y1, x2, y2, radius=15, shadow_size=3):
+        """为卡片创建阴影效果"""
+        # 绘制阴影（浅灰色多边形，稍微偏移）
+        shadow_offset = shadow_size
+        shadow_points = [
+            x1 + radius + shadow_offset, y1 + shadow_offset,
+            x2 - radius, y1 + shadow_offset,
+            x2, y1 + shadow_offset,
+            x2 + shadow_offset, y1 + radius,
+            x2 + shadow_offset, y2,
+            x2, y2 + shadow_offset,
+            x1, y2 + shadow_offset, 
+            x1 - shadow_offset, y2,
+            x1 - shadow_offset, y1 + radius,
+            x1, y1 + shadow_offset
+        ]
+        return canvas.create_polygon(shadow_points, fill="#E0E0E0", outline="", smooth=True)
 
     def get_inventory_data(self):
         """从数据库获取库存管理数据，计算库存数量和利润率"""

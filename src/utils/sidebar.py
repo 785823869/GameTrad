@@ -15,6 +15,27 @@ class ModernSidebar:
         self.sidebar.pack(side='left', fill='y')
         self.sidebar.pack_propagate(False)  # 固定宽度
         
+        # 创建自定义按钮样式，提高文字与背景对比度
+        style = tb.Style()
+        style.configure('Sidebar.TButton', 
+                        background='#2c3e50',  # 深色背景
+                        foreground='#ffffff',  # 白色文字
+                        font=(ui_manager.main_font, 11))
+                        
+        style.map('Sidebar.TButton',
+                  foreground=[('active', '#ffffff')],  # 确保激活状态也是白色文字
+                  background=[('active', '#1a252f')])  # 激活状态背景色更深
+                  
+        # 创建激活状态的样式
+        style.configure('SidebarActive.TButton', 
+                        background='#3498db',  # 蓝色背景
+                        foreground='#ffffff',  # 白色文字
+                        font=(ui_manager.main_font, 11, 'bold'))
+                        
+        style.map('SidebarActive.TButton',
+                  foreground=[('active', '#ffffff')],
+                  background=[('active', '#2980b9')])  # 较深的蓝色
+        
         # 创建应用标题 - 增加内边距并调整字体大小
         title_frame = tb.Frame(self.sidebar, bootstyle="dark")
         title_frame.pack(fill='x', padx=5, pady=(25, 35))
@@ -33,11 +54,11 @@ class ModernSidebar:
         """添加侧边栏选项"""
         tab_id = f"tab_{len(self.tabs)}"
         
-        # 创建选项按钮 - 使用light-outline而不是outline-light提高文字可见性
+        # 创建选项按钮 - 使用自定义样式提高对比度
         tab_button = tb.Button(
             self.sidebar,
             text=f" {icon} {title}",
-            bootstyle="light-outline",  # 修改为light-outline提高对比度
+            style="Sidebar.TButton",  # 使用自定义按钮样式
             command=lambda: self.switch_tab(tab_id),
             width=20
         )
@@ -92,10 +113,10 @@ class ModernSidebar:
         if self.active_tab:
             self.tab_frames[self.active_tab].pack_forget()
             
-            # 更改之前活动按钮的样式 - 与add_tab中的样式保持一致
+            # 更改之前活动按钮的样式 - 重置为正常样式
             for tab in self.tabs:
                 if tab['id'] == self.active_tab:
-                    tab['button'].configure(bootstyle="light-outline")  # 修改为一致的样式
+                    tab['button'].configure(style="Sidebar.TButton")  # 使用自定义非激活样式
         
         # 显示新选项卡
         self.tab_frames[tab_id].pack(fill='both', expand=True)
@@ -106,7 +127,7 @@ class ModernSidebar:
         # 更改当前活动按钮的样式
         for tab in self.tabs:
             if tab['id'] == tab_id:
-                tab['button'].configure(bootstyle="light")
+                tab['button'].configure(style="SidebarActive.TButton")  # 使用自定义激活样式
     
     def get_active_tab_content(self):
         """获取当前活动选项卡的内容"""

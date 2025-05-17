@@ -131,13 +131,13 @@ class NvwaPriceTab:
         ttk.Button(btn_frame, text="导出图表", command=self.export_nvwa_chart, style="info.TButton", width=8).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="导出数据", command=self.export_nvwa_data, style="info.TButton", width=8).pack(side=tk.LEFT, padx=2)
         
-        # 信息展示区 - 使用更美观的卡片式设计
-        info_frame = ttk.Frame(self.nvwa_tab, style="Card.TFrame")
+        # 信息展示区 - 移除背景色，使其透明
+        info_frame = ttk.Frame(self.nvwa_tab)  # 移除style="Card.TFrame"
         info_frame.pack(fill='x', padx=10, pady=5)
         
-        # 使用更现代的卡片设计
+        # 使用更现代的卡片设计，移除背景色
         def create_info_card(parent, title, value="--", highlight=False):
-            card = ttk.Frame(parent, style="Card.TFrame", padding=10)
+            card = ttk.Frame(parent, padding=10)  # 移除style="Card.TFrame"
             card.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
             
             # 标题使用小号字体

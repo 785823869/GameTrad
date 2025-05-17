@@ -1,9 +1,9 @@
 """
-工具函数模块
+实用工具模块包
+包含各种工具函数和辅助功能
 """
-# 导入实用工具模块
-from src.utils import clipboard_helper
-from src.utils import ocr  # 添加OCR模块
 
-# 导出模块
-__all__ = ['clipboard_helper', 'ocr'] 
+# 导入子模块
+from . import clipboard_helper
+# OCR功能
+from . import ocr 

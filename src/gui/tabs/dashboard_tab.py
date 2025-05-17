@@ -14,6 +14,11 @@ import requests
 import json
 import threading
 import time
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
+
+# 禁用SSL警告
+warnings.simplefilter('ignore', InsecureRequestWarning)
 
 class DashboardTab(Frame):
     def __init__(self, parent_frame, main_gui=None, **kwargs):
@@ -43,6 +48,7 @@ class DashboardTab(Frame):
         
         # 加载缓存的价格数据
         self.load_price_cache()
+        print(f"初始化时价格缓存状态: 银两={self.silver_price_cache}, 女娲石={self.nvwa_price_cache}, 最后更新时间={(datetime.fromtimestamp(self.last_price_update) if self.last_price_update else '无')}")
         
         # 创建自定义样式
         self.setup_styles()
@@ -52,7 +58,12 @@ class DashboardTab(Frame):
         self.create_widgets()
         
         # 延迟加载数据，确保界面完全渲染后再获取价格数据
+        print("设置2秒后刷新仪表盘...")
         self.after(2000, self.refresh_dashboard)
+        
+        # 如果5秒后价格还未刷新，再尝试一次
+        print("设置5秒后再次尝试刷新价格...")
+        self.after(5000, self.refresh_price_data)
         
     def setup_styles(self):
         """设置自定义样式"""
@@ -806,10 +817,19 @@ class DashboardTab(Frame):
         if self.nvwa_price_cache:
             self.nvwa_price_label.config(text=self.nvwa_price_cache)
         
-        # 如果距离上次更新超过5分钟，才从API获取新数据
-        current_time = time.time()
-        if current_time - self.last_price_update > 300:  # 5分钟 = 300秒
-            # 在后台线程中获取最新价格
+        # 定义是否应该立即刷新价格数据的条件
+        force_refresh = (
+            # 如果银两价格显示为"加载中..."，强制刷新
+            (hasattr(self, 'silver_price_label') and self.silver_price_label.cget("text") == "加载中...") or
+            # 如果距离上次更新超过5分钟，强制刷新
+            (time.time() - self.last_price_update > 300) or  # 5分钟 = 300秒
+            # 如果缓存中没有价格数据，强制刷新
+            (not self.silver_price_cache or not self.nvwa_price_cache)
+        )
+        
+        # 如果满足强制刷新条件，在后台线程中获取最新价格
+        if force_refresh:
+            print("正在强制刷新价格数据...")
             self.fetch_prices_in_thread()
         else:
             print(f"使用缓存的价格数据，上次更新时间: {datetime.fromtimestamp(self.last_price_update)}")
@@ -847,24 +867,127 @@ class DashboardTab(Frame):
     def fetch_silver_price(self):
         """直接从API获取银两价格数据"""
         try:
-            # 模拟SilverPriceTab使用的API地址
-            url = "https://www.zxsjinfo.com/api/silver-price?days=7"
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data and 'series' in data:
-                    # 获取最新价格
-                    for platform, prices in data['series'].items():
-                        if prices and len(prices) > 0:
-                            latest_price = prices[-1]
-                            # 更新缓存
+            # 使用与SilverPriceTab相同的正确API URL
+            urls = [
+                "https://www.zxsjinfo.com/api/gold-price?days=7&server=%E7%91%B6%E5%85%89%E6%B2%81%E9%9B%AA",  # 从SilverPriceTab验证可用的URL
+                "https://www.zxsjinfo.com/api/gold-price?days=7",  # 不带服务器参数的URL
+                "https://www.zxsjinfo.com/api/silver-price?days=7",  # 原始URL
+                "https://www.zxsjinfo.com/api/silver_price?days=7",  # 下划线替代连字符
+                "https://www.zxsjinfo.com/api/price?type=silver&days=7",  # 可能的通用格式
+                "https://www.zxsjinfo.com/api/game-prices?item=silver&days=7"  # 另一种可能格式
+            ]
+            
+            # 更详细的日志输出
+            print(f"开始获取银两价格数据，尝试多个URL...")
+            
+            for url in urls:
+                try:
+                    print(f"尝试从 {url} 获取银两价格")
+                    # 增加超时时间并忽略SSL验证（与main_window一致）
+                    response = requests.get(url, timeout=20, verify=False)
+                    print(f"请求状态码: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        # 打印JSON结构，帮助调试
+                        print(f"获取到数据结构: {list(data.keys() if isinstance(data, dict) else ['不是字典'])}")
+                        
+                        if data and isinstance(data, dict):
+                            if 'series' in data:
+                                # 优先使用DD373平台价格
+                                if 'DD373' in data['series'] and data['series']['DD373'] and len(data['series']['DD373']) > 0:
+                                    latest_price = data['series']['DD373'][-1]
+                                    self.silver_price_cache = f"¥{latest_price:.2f}/万"
+                                    self.last_price_update = time.time()
+                                    self.save_price_cache()
+                                    print(f"成功获取银两价格(DD373): {self.silver_price_cache}")
+                                    return self.silver_price_cache
+                                
+                                # 如果没有DD373平台，使用任何可用平台
+                                print(f"发现的平台: {list(data['series'].keys())}")
+                                for platform, prices in data['series'].items():
+                                    print(f"发现平台: {platform}, 价格数量: {len(prices) if prices else 0}")
+                                    if prices and len(prices) > 0:
+                                        latest_price = prices[-1]
+                                        # 更新缓存
+                                        self.silver_price_cache = f"¥{latest_price:.2f}/万"
+                                        self.last_price_update = time.time()
+                                        self.save_price_cache()
+                                        print(f"成功获取银两价格({platform}): {self.silver_price_cache}")
+                                        return self.silver_price_cache
+                            elif 'price' in data:
+                                # 可能的替代格式
+                                latest_price = float(data['price'])
+                                self.silver_price_cache = f"¥{latest_price:.2f}/万"
+                                self.last_price_update = time.time()
+                                self.save_price_cache()
+                                print(f"成功获取银两价格(替代格式): {self.silver_price_cache}")
+                                return self.silver_price_cache
+                            else:
+                                # 尝试其他可能的数据结构
+                                print(f"未识别的数据结构: {data}")
+                                for key, value in data.items():
+                                    print(f"键: {key}, 值类型: {type(value)}")
+                except Exception as e:
+                    print(f"尝试URL {url} 失败: {e}")
+                    continue
+            
+            # 直接从main_gui获取价格数据
+            try:
+                if hasattr(self.main_gui, 'fetch_silver_price_multi_series'):
+                    print("尝试从main_gui.fetch_silver_price_multi_series获取价格...")
+                    data = self.main_gui.fetch_silver_price_multi_series(7)
+                    if data and 'series' in data:
+                        # 优先使用DD373平台价格，与main_window中的代码保持一致
+                        if 'DD373' in data['series'] and data['series']['DD373'] and len(data['series']['DD373']) > 0:
+                            latest_price = data['series']['DD373'][-1]
                             self.silver_price_cache = f"¥{latest_price:.2f}/万"
                             self.last_price_update = time.time()
                             self.save_price_cache()
+                            print(f"从main_gui成功获取银两价格(DD373): {self.silver_price_cache}")
                             return self.silver_price_cache
+                        # 尝试使用其他平台价格
+                        for platform, prices in data['series'].items():
+                            if prices and len(prices) > 0:
+                                latest_price = prices[-1]
+                                self.silver_price_cache = f"¥{latest_price:.2f}/万"
+                                self.last_price_update = time.time()
+                                self.save_price_cache()
+                                print(f"从main_gui成功获取银两价格({platform}): {self.silver_price_cache}")
+                                return self.silver_price_cache
+            except Exception as e:
+                print(f"从main_gui获取银两价格失败: {e}")
+            
+            # 所有URL都失败，尝试从SilverPriceTab直接获取当前价格
+            if hasattr(self.main_gui, 'silver_price_tab') and self.main_gui.silver_price_tab:
+                if hasattr(self.main_gui.silver_price_tab, 'current_price_label'):
+                    try:
+                        silver_text = self.main_gui.silver_price_tab.current_price_label.cget("text")
+                        if silver_text and silver_text != "--":
+                            print(f"从SilverPriceTab获取到价格: {silver_text}")
+                            # 转换格式为¥xx.xx/万
+                            try:
+                                price_value = float(silver_text)
+                                silver_text = f"¥{price_value:.2f}/万"
+                            except:
+                                pass
+                            self.silver_price_cache = silver_text
+                            self.last_price_update = time.time()
+                            self.save_price_cache()
+                            return silver_text
+                    except Exception as e:
+                        print(f"从SilverPriceTab获取价格失败: {e}")
+            
+            # 如果缓存中有数据，返回缓存
+            if self.silver_price_cache:
+                print(f"使用缓存的银两价格: {self.silver_price_cache}")
+                return self.silver_price_cache
+                
             return None
         except Exception as e:
-            print(f"获取银两价格失败: {e}")
+            print(f"获取银两价格失败(外层异常): {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def fetch_nvwa_price(self):

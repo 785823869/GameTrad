@@ -457,12 +457,66 @@ class DashboardTab(Frame):
                                    fg="#2c3e50", bg=bg_color)
                 value_label.grid(row=1, column=0, sticky='w')
                 
-                # 环比显示 - 使用透明背景
-                fg_color = "#27ae60" if card_info["is_positive"] else "#c0392b"
-                desc_label = tk.Label(card, text=card_info["desc"], 
-                                    font=(self.chinese_font, 10),
-                                    fg=fg_color, bg=bg_color)
-                desc_label.grid(row=2, column=0, sticky='w')
+                # 环比显示 - 使用简约风格
+                is_positive = card_info["is_positive"]
+                
+                # 获取环比值（去掉百分号和"月环比"文本）
+                mom_text_parts = card_info["desc"].split('%')
+                mom_value_text = mom_text_parts[0].replace('+','').replace('-','')
+                try:
+                    mom_value = float(mom_value_text)
+                    is_zero = abs(mom_value) < 0.01  # 接近于0视为0
+                except:
+                    is_zero = False
+                    
+                # 分离数字部分和文本部分
+                mom_percent = mom_text_parts[0] + '%'
+                mom_label_text = '月环比'
+                
+                # 根据正负值或零值设置不同的颜色和箭头
+                if is_zero:
+                    arrow_color = text_color = "#607D8B"  # 中性灰色
+                    arrow_icon = "–"  # 使用短横线表示持平
+                elif is_positive:
+                    arrow_color = text_color = "#27ae60"  # 绿色
+                    arrow_icon = "▲"  # 小三角箭头
+                else:
+                    arrow_color = text_color = "#c0392b"  # 红色
+                    arrow_icon = "▼"  # 小三角箭头
+                
+                # 创建一个Frame作为环比显示的容器
+                mom_frame = tk.Frame(card, bg=bg_color)
+                mom_frame.grid(row=2, column=0, sticky='w', pady=(3, 0))
+                
+                # 分开显示箭头、环比值和文本，使布局更美观
+                arrow_label = tk.Label(
+                    mom_frame, 
+                    text=arrow_icon, 
+                    font=("Segoe UI Symbol", 10, "bold"),  # 使用更清晰的图标字体
+                    fg=arrow_color, 
+                    bg=bg_color
+                )
+                arrow_label.pack(side="left", padx=(0, 3), pady=0)
+                
+                # 数值部分 - 使用粗体
+                percent_label = tk.Label(
+                    mom_frame, 
+                    text=mom_percent, 
+                    font=(self.chinese_font, 11, "bold"),  # 稍微增大
+                    fg=text_color, 
+                    bg=bg_color
+                )
+                percent_label.pack(side="left", padx=0, pady=0)
+                
+                # "月环比"文字部分 - 使用普通字体
+                label_label = tk.Label(
+                    mom_frame, 
+                    text=mom_label_text, 
+                    font=(self.chinese_font, 10),  # 普通字体
+                    fg="#555555",  # 使用灰色
+                    bg=bg_color
+                )
+                label_label.pack(side="left", padx=(2, 0), pady=0)
             else:  # 第三个卡片（行情概览）
                 # 银两行情行 - 使用透明背景
                 silver_frame = tk.Frame(card, bg=bg_color)

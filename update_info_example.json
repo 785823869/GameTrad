@@ -1,0 +1,12 @@
+{
+  "tag_name": "v1.0.1",
+  "name": "游戏交易系统 v1.0.1",
+  "body": "## 更新内容\n\n- 添加在线更新功能\n- 修复部分界面显示问题\n- 优化数据库性能\n- 添加更多物品字典\n\n## 安装说明\n\n1. 下载安装包\n2. 运行安装程序\n3. 按照提示完成安装",
+  "published_at": "2024-05-15T08:00:00Z",
+  "assets": [
+    {
+      "name": "GameTrad_Setup_1.0.1.exe",
+      "browser_download_url": "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
+    }
+  ]
+} 

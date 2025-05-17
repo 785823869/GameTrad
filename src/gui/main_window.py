@@ -46,6 +46,10 @@ from src.gui.import_data_dialog import ImportDataDialog
 # 导入UI管理器
 from src.utils.ui_manager import UIManager
 from src.utils.sidebar import ModernSidebar
+# 导入更新对话框
+from src.gui.dialogs.update_dialog import UpdateDialog
+# 导入版本信息
+from src import __version__
 
 def safe_float(val, default=0.0):
     try:
@@ -107,7 +111,25 @@ class GameTradingSystemGUI:
         # 帮助菜单
         help_menu = tb.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="帮助", menu=help_menu)
+        help_menu.add_command(label="检查更新", command=self.check_for_updates)
         help_menu.add_command(label="关于", command=self.show_about)
+        
+    def check_for_updates(self):
+        """检查应用程序更新"""
+        # 使用GitHub Releases作为更新源
+        update_url = "https://api.github.com/repos/785823869/GameTrad/releases/latest"
+        direct_download_url = "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
+        
+        print(f"开始检查更新，API URL: {update_url}, 下载URL: {direct_download_url}")
+        
+        # 创建更新器实例并设置直接下载URL
+        from src.utils.updater import AppUpdater
+        updater = AppUpdater(update_url)
+        updater.direct_download_url = direct_download_url
+        
+        # 创建并显示更新对话框
+        update_dialog = UpdateDialog(self.root, updater=updater)
+        update_dialog.show()
         
     def open_server_chan_config(self):
         """打开Server酱配置窗口"""
@@ -157,6 +179,38 @@ class GameTradingSystemGUI:
             
         ttk.Button(frame, text="保存", command=save_config).pack(pady=10)
         
+    def show_about(self):
+        """显示关于对话框"""
+        about_text = """
+GameTrad 游戏交易系统 v{version}
+
+简介：
+GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存管理、交易监控和数据分析功能，帮助游戏玩家和交易商高效管理游戏物品交易流程，实现利润最大化。
+
+核心功能：
+✦ 仪表盘 - 实时数据概览与图表分析
+✦ 库存管理 - 智能库存追踪与价值评估
+✦ 入库管理 - 多渠道物品入库与数据记录
+✦ 出库管理 - 高效物品出库与利润计算
+✦ 交易监控 - 实时市场价格与交易策略
+✦ 行情分析 - 女娲石/银两价格趋势分析
+✦ 操作日志 - 完整历史记录与回滚功能
+
+技术特性：
+• 基于Python 3.8+与ttkbootstrap构建的现代UI
+• 多线程异步处理，确保操作流畅
+• OCR图像识别，支持自动数据提取
+• 智能数据分析与可视化图表
+• 云端数据存储与多设备同步
+• 在线自动更新功能
+
+作者：三只小猪
+
+版权所有 © 2025 GameTrad团队
+保留所有权利
+        """.format(version=__version__)
+        messagebox.showinfo("关于", about_text)
+
     def load_server_chan_config(self):
         """加载Server酱配置"""
         try:

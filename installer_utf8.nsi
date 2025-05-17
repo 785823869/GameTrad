@@ -3,12 +3,13 @@ Unicode true
 
 ; 安装程序初始定义常量
 !define PRODUCT_NAME "游戏交易系统"
-!define PRODUCT_VERSION "1.0"
+!define PRODUCT_VERSION "1.0.0"
 !define PRODUCT_PUBLISHER "三只小猪"
-!define PRODUCT_WEB_SITE "http://www.example.com"
+!define PRODUCT_WEB_SITE "https://github.com/785823869/GameTrad"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\GameTrad.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
+!define PRODUCT_UPDATE_URL "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
 
 SetCompressor lzma
 
@@ -22,6 +23,8 @@ SetCompressor lzma
 
 ; 欢迎页面
 !insertmacro MUI_PAGE_WELCOME
+; 许可协议页面
+!insertmacro MUI_PAGE_LICENSE "LICENSE"
 ; 安装目录选择页面
 !insertmacro MUI_PAGE_DIRECTORY
 ; 安装过程页面
@@ -49,7 +52,7 @@ VIAddVersionKey /LANG=2052 "FileVersion" "1.0.0.0"
 
 ; 安装程序名称
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "GameTrad_Setup.exe"
+OutFile "GameTrad_Setup_${PRODUCT_VERSION}.exe"
 InstallDir "$PROGRAMFILES\GameTrad"
 InstallDirRegKey HKLM "${PRODUCT_DIR_REGKEY}" ""
 ShowInstDetails show
@@ -76,6 +79,9 @@ Section "MainSection" SEC01
   WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
   WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
   WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
+  
+  ; 写入更新URL信息
+  WriteRegStr HKLM "Software\GameTrad" "UpdateURL" "${PRODUCT_UPDATE_URL}"
 SectionEnd
 
 Section Uninstall
@@ -91,6 +97,7 @@ Section Uninstall
   ; 删除注册表项
   DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
   DeleteRegKey HKLM "${PRODUCT_DIR_REGKEY}"
+  DeleteRegKey HKLM "Software\GameTrad"
   
   ; 删除安装目录
   RMDir /r "$INSTDIR"

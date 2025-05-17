@@ -260,8 +260,8 @@ class StockInTab:
         """显示添加入库记录的模态对话框"""
         fields = [
             ("物品", "item_name", "str"),
-            ("数量", "quantity", "int"),
-            ("花费", "cost", "float"),
+            ("入库数量", "quantity", "int"),
+            ("入库花费", "cost", "float"),
             ("备注", "note", "str")
         ]
         
@@ -401,13 +401,31 @@ class StockInTab:
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
         
         # 字段标题和数据类型
-        labels = ["物品", "时间", "数量", "花费", "均价", "备注"]
+        labels = ["物品", "入库时间", "入库数量", "入库花费", "入库均价", "备注"]
         types = [str, str, int, float, float, str]
         entries = []
         error_labels = []
         
+        # 处理表格值，移除千位分隔符
+        processed_values = list(values)
+        if len(processed_values) >= 6:
+            # 处理数量字段(索引2)
+            if processed_values[2]:
+                # 使用辅助方法转换数量字段，移除千位分隔符
+                processed_values[2] = self._safe_int_convert(processed_values[2])
+            # 处理花费字段(索引3)
+            if processed_values[3]:
+                # 转换为浮点数后取整为整数
+                float_val = self._safe_float_convert(processed_values[3])
+                processed_values[3] = int(round(float_val))
+            # 处理均价字段(索引4)
+            if processed_values[4]:
+                # 转换为浮点数后取整为整数
+                float_val = self._safe_float_convert(processed_values[4])
+                processed_values[4] = int(round(float_val))
+        
         # 创建字段
-        for i, (label, val, typ) in enumerate(zip(labels, values, types)):
+        for i, (label, val, typ) in enumerate(zip(labels, processed_values, types)):
             # 使用ttkbootstrap的标签，确保背景色一致
             tb.Label(
                 content_frame, 
@@ -543,6 +561,38 @@ class StockInTab:
         if 0 <= idx < len(self._pending_ocr_images):
             del self._pending_ocr_images[idx]
             self.refresh_ocr_image_preview()
+            
+    def _safe_int_convert(self, value):
+        """安全地将值转换为整数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                # 移除千位分隔符和其他非数字字符
+                clean_value = ''.join(c for c in value if c.isdigit())
+                return int(clean_value) if clean_value else 0
+            return 0
+        except Exception as e:
+            print(f"整数转换异常: {e}, 值: {value}")
+            return 0
+            
+    def _safe_float_convert(self, value):
+        """安全地将值转换为浮点数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, float):
+                return value
+            if isinstance(value, int):
+                return float(value)
+            if isinstance(value, str):
+                # 移除千位分隔符
+                clean_value = value.replace(',', '')
+                return float(clean_value) if clean_value else 0.0
+            return 0.0
+        except Exception as e:
+            print(f"浮点数转换异常: {e}, 值: {value}")
+            return 0.0
 
     def upload_ocr_import_stock_in(self):
         """上传图片进行OCR识别导入"""
@@ -987,27 +1037,40 @@ class StockInTab:
             
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
-        # 识别当前鼠标位置的行
-        row_id = self.stock_in_tree.identify_row(event.y)
-        
-        # 如果鼠标离开了上一个高亮行，恢复其原始样式
-        if self.last_hover_row and self.last_hover_row != row_id:
-            # 获取行的当前标签
-            current_tags = list(self.stock_in_tree.item(self.last_hover_row, 'tags'))
-            # 移除悬停标签
-            if 'hovering' in current_tags:
-                current_tags.remove('hovering')
-                self.stock_in_tree.item(self.last_hover_row, tags=current_tags)
-                
-        # 如果鼠标位于一个有效行上，应用悬停高亮效果
-        if row_id and row_id != self.last_hover_row:
-            # 获取行的当前标签
-            current_tags = list(self.stock_in_tree.item(row_id, 'tags'))
-            # 添加悬停标签
-            if 'hovering' not in current_tags:
-                current_tags.append('hovering')
-                self.stock_in_tree.item(row_id, tags=current_tags)
-                
-        # 更新上一个高亮行的记录
-        self.last_hover_row = row_id if row_id else None
+        try:
+            # 识别当前鼠标位置的行
+            row_id = self.stock_in_tree.identify_row(event.y)
+            
+            # 如果鼠标离开了上一个高亮行，恢复其原始样式
+            if self.last_hover_row and self.last_hover_row != row_id:
+                # 先检查行是否仍然存在
+                if self.last_hover_row in self.stock_in_tree.get_children():
+                    # 获取行的当前标签
+                    current_tags = list(self.stock_in_tree.item(self.last_hover_row, 'tags'))
+                    # 移除悬停标签
+                    if 'hovering' in current_tags:
+                        current_tags.remove('hovering')
+                        self.stock_in_tree.item(self.last_hover_row, tags=current_tags)
+                else:
+                    # 如果行不存在，重置last_hover_row
+                    self.last_hover_row = None
+                    
+            # 如果鼠标位于一个有效行上，应用悬停高亮效果
+            if row_id and row_id != self.last_hover_row:
+                # 确保行仍然存在
+                if row_id in self.stock_in_tree.get_children():
+                    # 获取行的当前标签
+                    current_tags = list(self.stock_in_tree.item(row_id, 'tags'))
+                    # 添加悬停标签
+                    if 'hovering' not in current_tags:
+                        current_tags.append('hovering')
+                        self.stock_in_tree.item(row_id, tags=current_tags)
+                    
+            # 更新上一个高亮行的记录
+            self.last_hover_row = row_id if row_id else None
+        except Exception as e:
+            # 捕获任何异常，避免鼠标移动处理出错导致程序崩溃
+            print(f"处理表格悬停效果时出错: {e}")
+            # 重置悬停行记录
+            self.last_hover_row = None
     # ...后续补全所有入库管理相关方法... 

@@ -570,16 +570,42 @@ class LogTab:
         # 创建详情窗口
         detail_window = tk.Toplevel(self.main_gui.root)
         detail_window.title("操作详情")
-        detail_window.geometry("1200x600")
-        main_frame = ttk.Frame(detail_window, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        detail_window.geometry("1300x700")  # 增加默认窗口大小
+        detail_window.minsize(900, 500)  # 设置最小窗口大小
+        detail_window.resizable(True, True)  # 允许调整窗口大小
+        
+        # 使用主题样式美化界面
+        style = ttk.Style()
+        style.configure('Detail.TFrame', padding=12)
+        style.configure('DetailHeader.TLabel', font=('Microsoft YaHei', 10, 'bold'), padding=5)
+        
+        # 全局设置表格行高 - 只配置基本样式，后续覆盖特定样式
+        style.configure('Treeview', rowheight=25)  # 恢复默认行高
+        
+        # 创建特定样式，明确区分修改前和修改后的表格样式
+        style.configure('HighRow.Treeview', rowheight=25)  # 恢复"修改前"表格默认行高
+        
+        # 特别设置"修改后"表格样式 - 增加行高使其更明显
+        style.configure('Highlight.Treeview', background='#fffbe6')
+        style.configure('Highlight.Treeview', rowheight=60)  # 只为"修改后"表格设置行高
+        
+        main_frame = ttk.Frame(detail_window, style='Detail.TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # 添加标题和信息区，使用Grid布局以获得更好的对齐效果
         info_frame = ttk.Frame(main_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(info_frame, text=f"操作类型：{op_type}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-        ttk.Label(info_frame, text=f"标签页：{tab_name}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-        ttk.Label(info_frame, text=f"操作时间：{timestamp}", font=('Microsoft YaHei', 10, 'bold')).pack(side=tk.LEFT, padx=10)
-        tree_frame = ttk.Frame(main_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        info_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        ttk.Label(info_frame, text=f"操作类型：{op_type}", style='DetailHeader.TLabel').pack(side=tk.LEFT, padx=10)
+        ttk.Label(info_frame, text=f"标签页：{tab_name}", style='DetailHeader.TLabel').pack(side=tk.LEFT, padx=10)
+        ttk.Label(info_frame, text=f"操作时间：{timestamp}", style='DetailHeader.TLabel').pack(side=tk.LEFT, padx=10)
+        
+        # 创建一个带有边框的框架来容纳树形视图
+        tree_container = ttk.LabelFrame(main_frame, text="数据内容", padding=15)
+        tree_container.pack(fill=tk.BOTH, expand=True)
+        
+        tree_frame = ttk.Frame(tree_container)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)  # 增加内边距
         
         # 解析数据并显示
         try:
@@ -662,7 +688,7 @@ class LogTab:
                     # 无法确定列
                     ttk.Label(tree_frame, text=f"无法确定数据结构。原始数据:\n{str(data)[:1000]}", 
                              font=('Microsoft YaHei', 10)).pack(pady=20)
-                    ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+                    ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10, padx=10)
                     return
                     
             # 处理修改日志结构 {'old':..., 'new':...}
@@ -671,11 +697,34 @@ class LogTab:
                 new_data = data['new']
                 
                 # 先显示"修改前"
-                ttk.Label(main_frame, text="修改前：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10)
-                tree_old = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1)
-                for col in columns:
+                ttk.Label(tree_container, text="修改前：", style='DetailHeader.TLabel').pack(anchor='w', padx=10, pady=(10, 5))
+                
+                # 创建带有水平滚动条的容器
+                old_frame = ttk.Frame(tree_frame)
+                old_frame.pack(fill=tk.X, expand=True, pady=8)  # 增加垂直间距
+                
+                # 创建Treeview和滚动条
+                tree_old = ttk.Treeview(old_frame, columns=columns, show='headings', height=1)
+                h_scrollbar_old = ttk.Scrollbar(old_frame, orient="horizontal", command=tree_old.xview)
+                tree_old.configure(xscrollcommand=h_scrollbar_old.set)
+                
+                # 设置最小列宽和弹性列宽
+                min_width = 120  # 增加最小列宽
+                
+                # 计算每列的最佳宽度
+                max_widths = self._calculate_column_widths(columns, [old_data] if old_data else [], min_width)
+                
+                # 设置行高
+                style = ttk.Style()
+                style.configure('HighRow.Treeview', rowheight=45)  # 设置"修改前"表格行高
+                
+                for idx, col in enumerate(columns):
                     tree_old.heading(col, text=col)
-                    tree_old.column(col, width=120, anchor='center')
+                    col_width = max_widths.get(col, min_width)
+                    tree_old.column(col, width=col_width, minwidth=min_width, anchor='center')
+                
+                # 应用行高样式
+                tree_old.configure(style='HighRow.Treeview')
                 
                 # 安全地处理旧数据
                 try:
@@ -690,16 +739,42 @@ class LogTab:
                     tree_old.insert('', 'end', values=["处理数据出错" for _ in columns])
                     print(f"处理旧数据出错: {e}")
                 
-                tree_old.pack(fill=tk.X, padx=10)
+                # 布局控件
+                tree_old.pack(fill=tk.X, expand=True)
+                h_scrollbar_old.pack(fill=tk.X)
                 
                 # 再显示"修改后"，高亮显示
-                ttk.Label(main_frame, text="修改后：", font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
+                ttk.Label(tree_container, text="修改后：", style='DetailHeader.TLabel').pack(anchor='w', padx=10, pady=(15, 5))
+                
+                # 创建带有水平滚动条的容器
+                new_frame = ttk.Frame(tree_frame)
+                new_frame.pack(fill=tk.X, expand=True, pady=8)  # 增加垂直间距
+                
+                # 重新配置"修改后"表格样式确保更改生效
                 style = ttk.Style()
-                style.configure('Highlight.Treeview', background='#fffbe6')  # 淡黄色
-                tree_new = ttk.Treeview(tree_frame, columns=columns, show='headings', height=1, style='Highlight.Treeview')
-                for col in columns:
+                # 清除可能的样式缓存
+                style.configure('Highlight.Treeview', background='#fffbe6')
+                style.configure('Highlight.Treeview', rowheight=60)  # 只为"修改后"表格设置行高
+                
+                # 创建Treeview并明确应用样式
+                tree_new = ttk.Treeview(new_frame, columns=columns, show='headings', height=2, style='Highlight.Treeview')
+                h_scrollbar_new = ttk.Scrollbar(new_frame, orient="horizontal", command=tree_new.xview)
+                tree_new.configure(xscrollcommand=h_scrollbar_new.set)
+                
+                # 计算每列的最佳宽度
+                max_widths_new = self._calculate_column_widths(columns, [new_data] if new_data else [], min_width)
+                
+                # 使用新旧数据中列宽的最大值
+                for col in max_widths_new:
+                    if col in max_widths:
+                        max_widths[col] = max(max_widths[col], max_widths_new[col])
+                    else:
+                        max_widths[col] = max_widths_new[col]
+                
+                for idx, col in enumerate(columns):
                     tree_new.heading(col, text=col)
-                    tree_new.column(col, width=120, anchor='center')
+                    col_width = max_widths.get(col, min_width)
+                    tree_new.column(col, width=col_width, minwidth=min_width, anchor='center')
                 
                 # 安全地处理新数据
                 try:
@@ -714,19 +789,45 @@ class LogTab:
                     tree_new.insert('', 'end', values=["处理数据出错" for _ in columns])
                     print(f"处理新数据出错: {e}")
                 
-                tree_new.pack(fill=tk.X, padx=10)
-                ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+                # 布局控件
+                tree_new.pack(fill=tk.X, expand=True)
+                h_scrollbar_new.pack(fill=tk.X)
+                
+                # 尝试直接设置行高 - 通过表格整体高度调整
+                # 已知表格只有一行，所以可以通过调整整体高度实现
+                tree_new.configure(height=2)  # 设置为稍大的高度
+                
+                # 关闭按钮放在底部居中
+                button_frame = ttk.Frame(main_frame)
+                button_frame.pack(fill=tk.X, pady=15)
+                ttk.Button(button_frame, text="关闭", command=detail_window.destroy, width=15).pack(pady=10, padx=10, anchor=tk.CENTER)
                 return
                 
-            # 创建一个Treeview显示所有记录
-            tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
+            # 创建滚动容器
+            tree_scroll_frame = ttk.Frame(tree_frame)
+            tree_scroll_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # 创建Treeview和滚动条
+            tree = ttk.Treeview(tree_scroll_frame, columns=columns, show='headings')
+            v_scrollbar = ttk.Scrollbar(tree_scroll_frame, orient="vertical", command=tree.yview)
+            h_scrollbar = ttk.Scrollbar(tree_scroll_frame, orient="horizontal", command=tree.xview)
+            tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+            
+            # 设置行高
+            style = ttk.Style()
+            style.configure('Treeview', rowheight=25)  # 恢复默认行高
+            
+            # 计算每列的最佳宽度
+            if isinstance(data, list):
+                max_widths = self._calculate_column_widths(columns, data, min_width=120)  # 增加最小列宽
+            else:
+                max_widths = self._calculate_column_widths(columns, [data], min_width=120)
+                
+            # 设置列宽和标题    
             for col in columns:
                 tree.heading(col, text=col)
-                tree.column(col, width=120, anchor='center')
-                
-            # 增加滚动条
-            scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-            tree.configure(yscrollcommand=scrollbar.set)
+                col_width = max_widths.get(col, 120)  # 增加默认列宽
+                tree.column(col, width=col_width, minwidth=100, anchor='center')  # 增加最小列宽
             
             # 处理数据是数组的情况（特别是"添加"类型）
             if isinstance(data, list):
@@ -785,11 +886,11 @@ class LogTab:
                         
                 # 设置交替行背景色
                 style = ttk.Style()
-                style.configure('Treeview', rowheight=25)
+                style.configure('Treeview', rowheight=45)  # 确保交替行也使用相同的行高
                 
                 # 先定义标签
-                tree.tag_configure('evenrow', background='#f0f0f0')
-                tree.tag_configure('oddrow', background='white')
+                tree.tag_configure('evenrow', background='#f9f9f9')
+                tree.tag_configure('oddrow', background='#ffffff')
                 
                 # 然后应用标签
                 for i, item in enumerate(tree.get_children()):
@@ -824,21 +925,71 @@ class LogTab:
                 tree.insert('', 'end', values=values)
             
             # 正确布局组件
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+            
+            # 添加记录数显示和按钮的框架
+            footer_frame = ttk.Frame(main_frame)
+            footer_frame.pack(fill=tk.X, pady=10)
             
             # 添加记录数显示
             if isinstance(data, list) and len(data) > 1:
-                ttk.Label(main_frame, text=f"共 {len(data)} 条记录", 
+                ttk.Label(footer_frame, text=f"共 {len(data)} 条记录", 
                          font=('Microsoft YaHei', 10)).pack(side=tk.LEFT, pady=5, padx=10)
+                
+            # 关闭按钮
+            ttk.Button(footer_frame, text="关闭", command=detail_window.destroy, width=15).pack(side=tk.RIGHT, pady=5, padx=10)
                 
         except Exception as e:
             import traceback
             traceback.print_exc()
             error_msg = f"显示数据失败: {str(e)}"
             ttk.Label(tree_frame, text=error_msg, font=('Microsoft YaHei', 10)).pack(pady=20)
+            ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
             
-        ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+    def _calculate_column_widths(self, columns, data, min_width=100):
+        """
+        计算每一列的最佳宽度
+        
+        参数:
+            columns: 列名列表
+            data: 数据列表
+            min_width: 最小列宽
+            
+        返回:
+            字典，键为列名，值为建议宽度
+        """
+        max_widths = {col: min_width for col in columns}
+        
+        # 计算列标题的宽度
+        for col in columns:
+            # 列标题宽度 (一个中文字符约等于2个英文字符宽度)
+            title_width = sum(2 if '\u4e00' <= ch <= '\u9fff' else 1 for ch in col) * 12  # 增加字符宽度系数
+            max_widths[col] = max(max_widths[col], title_width)
+        
+        # 计算每列数据的最大宽度
+        for row in data:
+            if isinstance(row, dict):
+                for col in columns:
+                    key = col  # 使用列名作为键
+                    val = str(row.get(key, ""))
+                    # 数据宽度
+                    data_width = sum(2 if '\u4e00' <= ch <= '\u9fff' else 1 for ch in val) * 12  # 增加字符宽度系数
+                    max_widths[col] = max(max_widths[col], data_width)
+            elif isinstance(row, (list, tuple)):
+                for i, col in enumerate(columns):
+                    if i < len(row):
+                        val = str(row[i])
+                        # 数据宽度
+                        data_width = sum(2 if '\u4e00' <= ch <= '\u9fff' else 1 for ch in val) * 12  # 增加字符宽度系数
+                        max_widths[col] = max(max_widths[col], data_width)
+        
+        # 限制最大宽度，避免过宽
+        for col in max_widths:
+            max_widths[col] = min(max_widths[col], 350)  # 增加最大列宽限制
+        
+        return max_widths
 
     def reset_filters(self):
         """重置所有筛选条件"""

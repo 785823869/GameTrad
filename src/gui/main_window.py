@@ -1684,17 +1684,49 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
             self.db_manager.save_stock_out({
                 'item_name': old[0],
                 'transaction_time': old[1],
-                'quantity': int(old[2]),
-                'unit_price': float(old[3]),
-                'fee': float(old[4]),
+                'quantity': self._safe_int_convert(old[2]),
+                'unit_price': self._safe_float_convert(old[3]),
+                'fee': self._safe_float_convert(old[4]),
                 'deposit': 0.0,
-                'total_amount': float(old[5]),
+                'total_amount': self._safe_float_convert(old[5]),
                 'note': old[6] if len(old) > 6 else ''
             })
             self.refresh_stock_out()
             self.refresh_inventory()
             return True
         return False
+    
+    def _safe_int_convert(self, value):
+        """安全地将值转换为整数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                # 移除千位分隔符和其他非数字字符
+                clean_value = ''.join(c for c in value if c.isdigit())
+                return int(clean_value) if clean_value else 0
+            return 0
+        except Exception as e:
+            print(f"整数转换异常: {e}, 值: {value}")
+            return 0
+            
+    def _safe_float_convert(self, value):
+        """安全地将值转换为浮点数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, float):
+                return value
+            if isinstance(value, int):
+                return float(value)
+            if isinstance(value, str):
+                # 移除千位分隔符
+                clean_value = value.replace(',', '')
+                return float(clean_value) if clean_value else 0.0
+            return 0.0
+        except Exception as e:
+            print(f"浮点数转换异常: {e}, 值: {value}")
+            return 0.0
     
     def _undo_modify_trade_monitor(self, data):
         """回退修改交易监控操作"""
@@ -1704,14 +1736,14 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
             self.db_manager.save_trade_monitor({
                 'item_name': old[0],
                 'monitor_time': old[1],
-                'quantity': int(old[2]),
-                'market_price': float(old[3]),
-                'target_price': float(old[4]),
-                'planned_price': float(old[5]),
-                'break_even_price': float(old[6]),
-                'profit': float(old[7]),
-                'profit_rate': float(str(old[8]).strip('%')),
-                'strategy': old[9]
+                'quantity': self._safe_int_convert(old[2]),
+                'market_price': self._safe_float_convert(old[3]),
+                'target_price': self._safe_float_convert(old[4]),
+                'planned_price': self._safe_float_convert(old[5]),
+                'break_even_price': self._safe_float_convert(old[6]),
+                'profit': self._safe_float_convert(old[7]),
+                'profit_rate': self._safe_float_convert(str(old[8]).strip('%')),
+                'strategy': old[9] if len(old) > 9 else ''
             })
             self.trade_monitor_tab.refresh_monitor()
             return True
@@ -1873,9 +1905,9 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
                 self.db_manager.save_stock_in({
                     'item_name': new_data[0],
                     'transaction_time': new_data[1],
-                    'quantity': int(new_data[2]),
-                    'cost': float(new_data[3]),
-                    'avg_cost': float(new_data[4]),
+                    'quantity': self._safe_int_convert(new_data[2]),
+                    'cost': self._safe_float_convert(new_data[3]),
+                    'avg_cost': self._safe_float_convert(new_data[4]),
                     'note': new_data[5] if len(new_data) > 5 else ''
                 })
                 self.refresh_stock_in()
@@ -1894,43 +1926,49 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
                 self.db_manager.delete_stock_out(old_data[0], old_data[1])
                 
             # 保存新记录
-                op_type = OperationType.OTHER
+            if isinstance(new_data, (list, tuple)) and len(new_data) >= 6:
+                self.db_manager.save_stock_out({
+                    'item_name': new_data[0],
+                    'transaction_time': new_data[1],
+                    'quantity': self._safe_int_convert(new_data[2]),
+                    'unit_price': self._safe_float_convert(new_data[3]),
+                    'fee': self._safe_float_convert(new_data[4]),
+                    'deposit': 0.0,
+                    'total_amount': self._safe_float_convert(new_data[5]),
+                    'note': new_data[6] if len(new_data) > 6 else ''
+                })
+                self.refresh_stock_out()
+                self.refresh_inventory()
+                return True
+        return False
+        
+    def _redo_modify_trade_monitor(self, data):
+        """恢复修改交易监控操作"""
+        if isinstance(data, dict) and 'new' in data:
+            new_data = data['new']
+            old_data = data.get('old', [])
+            
+            # 删除旧记录
+            if old_data and len(old_data) >= 2:
+                self.db_manager.delete_trade_monitor(old_data[0], old_data[1])
                 
-        # 验证标签页是否合法
-        if tab_name not in TabName.get_all_tabs():
-            # 使用一个默认值
-            tab_name = TabName.SYSTEM
-        
-        # 增加操作类别信息
-        category = OperationType.get_category(op_type)
-        can_revert = OperationType.can_revert(op_type)
-        
-        log = {
-            '操作类型': op_type,
-            '操作类别': category,
-            '标签页': tab_name,
-            '操作时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            '数据': data,
-            '已回退': reverted,
-            '可回退': can_revert
-        }
-        
-        # 保存到数据库（如有）
-        if hasattr(self, 'db_manager') and hasattr(self.db_manager, 'save_operation_log'):
-            self.db_manager.save_operation_log(op_type, tab_name, data, reverted)
-            
-        # 内存同步（可选，便于撤销/重做等）
-        if hasattr(self, 'operation_logs'):
-            self.operation_logs.append(log)
-            
-        # 日志tab界面同步（如有）
-        if hasattr(self, 'log_tab') and hasattr(self.log_tab, 'log_tree'):
-            self.log_tab.log_tree.insert('', 'end', values=(
-                log['操作类型'] + ("（已回退）" if reverted else ""),
-                log['标签页'],
-                log['操作时间'],
-                json.dumps(log['数据'], ensure_ascii=False)
-            ))
+            # 保存新记录
+            if isinstance(new_data, (list, tuple)) and len(new_data) >= 9:
+                self.db_manager.save_trade_monitor({
+                    'item_name': new_data[0],
+                    'monitor_time': new_data[1],
+                    'quantity': self._safe_int_convert(new_data[2]),
+                    'market_price': self._safe_float_convert(new_data[3]),
+                    'target_price': self._safe_float_convert(new_data[4]),
+                    'planned_price': self._safe_float_convert(new_data[5]),
+                    'break_even_price': self._safe_float_convert(new_data[6]),
+                    'profit': self._safe_float_convert(new_data[7]),
+                    'profit_rate': self._safe_float_convert(str(new_data[8]).strip('%')),
+                    'strategy': new_data[9] if len(new_data) > 9 else ''
+                })
+                self.trade_monitor_tab.refresh_monitor()
+                return True
+        return False
 
     def open_import_data_dialog(self):
         """打开导入数据对话框"""

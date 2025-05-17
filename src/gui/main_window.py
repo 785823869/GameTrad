@@ -206,7 +206,6 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
 • OCR图像识别，支持自动数据提取
 • 智能数据分析与可视化图表
 • 云端数据存储与多设备同步
-• 在线自动更新功能
 
 作者：三只小猪
 
@@ -1056,7 +1055,7 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
             self.root.after(0, lambda: messagebox.showerror("错误", f"导出监控报表失败: {str(e)}"))
 
     def open_formula_manager(self):
-        """打开公式管理窗口"""
+        """打开公式管理器窗口"""
         FormulaManagerWindow(self.root, self)
 
     def _on_tab_changed_ocr(self, event=None, tab_title=None):
@@ -1078,12 +1077,27 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         if tab == '入库管理' or '入库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_in_tab.paste_ocr_import_stock_in)
             self.current_ocr_tab = 'in'
+            # 清空其他标签页的预览区域
+            if hasattr(self, 'stock_out_tab') and hasattr(self.stock_out_tab, 'ocr_preview'):
+                self.stock_out_tab.ocr_preview.clear_images()
+            if hasattr(self, 'trade_monitor_tab') and hasattr(self.trade_monitor_tab, 'ocr_preview'):
+                self.trade_monitor_tab.ocr_preview.clear_images()
         elif tab == '出库管理' or '出库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_out_tab.paste_ocr_import_stock_out)
             self.current_ocr_tab = 'out'
+            # 清空其他标签页的预览区域
+            if hasattr(self, 'stock_in_tab') and hasattr(self.stock_in_tab, 'ocr_preview'):
+                self.stock_in_tab.ocr_preview.clear_images()
+            if hasattr(self, 'trade_monitor_tab') and hasattr(self.trade_monitor_tab, 'ocr_preview'):
+                self.trade_monitor_tab.ocr_preview.clear_images()
         elif tab == '交易监控' or '交易监控' in str(tab):
             self.root.bind_all('<Control-v>', self.trade_monitor_tab.paste_ocr_import_monitor)
             self.current_ocr_tab = 'monitor'
+            # 清空其他标签页的预览区域
+            if hasattr(self, 'stock_in_tab') and hasattr(self.stock_in_tab, 'ocr_preview'):
+                self.stock_in_tab.ocr_preview.clear_images()
+            if hasattr(self, 'stock_out_tab') and hasattr(self.stock_out_tab, 'ocr_preview'):
+                self.stock_out_tab.ocr_preview.clear_images()
         else:
             self.current_ocr_tab = None
 

@@ -86,16 +86,46 @@ class OCRPreview(ttk.Frame):
             return
             
         last_frame = children[-1]
-        orig_bg = last_frame.cget("background")
+        # 添加错误处理，尝试获取背景色，如果失败使用默认值
+        try:
+            # 尝试不同的背景属性名称
+            orig_bg = None
+            for bg_attr in ["background", "bg"]:
+                try:
+                    orig_bg = last_frame.cget(bg_attr)
+                    if orig_bg:
+                        break
+                except:
+                    continue
+                    
+            # 如果无法获取背景色，使用默认值
+            if not orig_bg:
+                orig_bg = "#f0f0f0"  # 默认浅灰色背景
+        except Exception:
+            # 发生任何错误，使用默认背景色
+            orig_bg = "#f0f0f0"
         
         # 闪烁效果
         def blink(frame, count=0, is_highlighted=True):
             if count >= 6:  # 闪烁3次
-                frame.configure(background=orig_bg)
+                try:
+                    frame.configure(background=orig_bg)
+                except Exception:
+                    # 忽略配置错误，确保函数不会崩溃
+                    pass
                 return
                 
             bg_color = "#ffcc00" if is_highlighted else orig_bg
-            frame.configure(background=bg_color)
+            try:
+                frame.configure(background=bg_color)
+            except Exception:
+                # 如果无法设置背景色，尝试其他属性
+                try:
+                    frame.configure(bg=bg_color)
+                except Exception:
+                    # 所有尝试都失败，静默忽略错误
+                    pass
+            
             self.after(300, lambda: blink(frame, count+1, not is_highlighted))
             
         # 开始闪烁

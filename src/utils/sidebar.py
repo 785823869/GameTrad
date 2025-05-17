@@ -126,20 +126,17 @@ class ModernSidebar:
         self.active_tab = tab_id
         
         # 更改当前活动按钮的样式
+        tab_title = None
         for tab in self.tabs:
             if tab['id'] == tab_id:
                 tab['button'].configure(style="SidebarActive.TButton")  # 使用自定义激活样式
+                tab_title = tab['title']
+                break
                 
         # 执行tab切换回调
         if 'on_tab_changed' in self.callbacks and callable(self.callbacks['on_tab_changed']):
-            # 查找当前选中的标签页标题
-            tab_title = None
-            for tab in self.tabs:
-                if tab['id'] == tab_id:
-                    tab_title = tab['title']
-                    break
             # 调用回调并传递标签页标题
-            self.callbacks['on_tab_changed'](tab_title)
+            self.callbacks['on_tab_changed'](tab_title=tab_title)
     
     def get_active_tab_content(self):
         """获取当前活动选项卡的内容"""

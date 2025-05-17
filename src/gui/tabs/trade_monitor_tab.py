@@ -7,7 +7,7 @@ from datetime import datetime
 from PIL import Image
 import json
 from src.gui.dialogs import ModalInputDialog
-from src.gui.components import OCRPreview
+from src.gui.components import OCRPreview, OCRPreviewDialog
 
 class TradeMonitorTab:
     def __init__(self, notebook, main_gui):
@@ -55,15 +55,31 @@ class TradeMonitorTab:
                       font=(self.chinese_font, 10),
                       foreground="#2c3e50")
         
+        # 创建统一的LabelFrame样式，背景色与主窗口背景色匹配
+        style.configure("Unified.TLabelframe", 
+                      background="#f0f0f0",  # 与主窗口背景色匹配
+                      borderwidth=1)
+                      
+        style.configure("Unified.TLabelframe.Label", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
+        # 创建统一的标签样式
+        style.configure("Unified.TLabel", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
         # 创建透明LabelFrame样式
         style.configure("Transparent.TLabelframe", 
-                      background="#ffffff",  # 与主背景色匹配
+                      background="transparent",  # 透明背景
                       borderwidth=1)
                       
         style.configure("Transparent.TLabelframe.Label", 
                       font=(self.chinese_font, 10, "bold"),
                       foreground="#2c3e50",
-                      background="#ffffff")  # 与主背景色匹配
+                      background="transparent")  # 透明背景
         
         # 过滤器样式
         style.configure("Filter.TLabel", 
@@ -89,10 +105,10 @@ class TradeMonitorTab:
         toolbar.pack(fill='x', pady=(0, 5))
         
         # 过滤器区域
-        filter_frame = tb.LabelFrame(toolbar, text="筛选", bootstyle="primary", padding=5)
+        filter_frame = tb.LabelFrame(toolbar, text="筛选", style="Unified.TLabelframe", padding=5)
         filter_frame.pack(side='left', fill='y', padx=(0, 10))
         
-        tb.Label(filter_frame, text="物品:", bootstyle="primary").pack(side='left', padx=2)
+        tb.Label(filter_frame, text="物品:", style="Unified.TLabel").pack(side='left', padx=2)
         
         self.monitor_filter_var = tb.StringVar()
         filter_entry = tb.Entry(filter_frame, textvariable=self.monitor_filter_var, width=12, bootstyle="primary")
@@ -178,7 +194,7 @@ class TradeMonitorTab:
         right_panel.pack_propagate(False)
         
         # 操作按钮区
-        actions_frame = tb.LabelFrame(right_panel, text="操作", bootstyle="primary", padding=5)
+        actions_frame = tb.LabelFrame(right_panel, text="操作", style="Unified.TLabelframe", padding=5)
         actions_frame.pack(fill='x', pady=(0, 10))
         
         # 添加记录按钮 - 使用明显的颜色
@@ -192,8 +208,8 @@ class TradeMonitorTab:
         tb.Button(actions_frame, text="刷新交易记录", command=self.refresh_monitor, 
                 bootstyle="primary-outline").pack(fill='x', pady=2, ipady=2)
         
-        # OCR工具区域 - 使用透明样式
-        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", style="Transparent.TLabelframe", padding=5)
+        # OCR工具区域 - 使用统一样式
+        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", style="Unified.TLabelframe", padding=5)
         ocr_tools_frame.pack(fill='x', pady=(0, 10))
         
         tb.Button(ocr_tools_frame, text="上传图片识别导入", command=self.upload_ocr_import_monitor,
@@ -208,8 +224,8 @@ class TradeMonitorTab:
         
         tb.Label(shortcut_frame, text="快捷键: Ctrl+V 粘贴图片", bootstyle="secondary").pack(anchor='w')
         
-        # OCR预览区域 - 使用透明样式
-        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", style="Transparent.TLabelframe", padding=5)
+        # OCR预览区域 - 使用统一样式
+        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", style="Unified.TLabelframe", padding=5)
         ocr_frame.pack(fill='x', pady=5, padx=2)
         
         # 创建OCR预览组件
@@ -358,45 +374,98 @@ class TradeMonitorTab:
                 self.status_var.set(f"OCR识别失败: {str(e)}")
                 
         if all_data:
-            # 批量导入监控数据
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            for data in all_data:
-                item_name = data.get('item_name')
-                quantity = data.get('quantity', 0)
-                market_price = data.get('market_price', 0)
-                target_price = data.get('target_price', 0)
-                planned_price = data.get('planned_price', 0)
-                
-                # 计算保本价、利润和利润率
-                break_even_price = round(target_price * 1.03) if target_price else 0
-                profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
-                profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
-                
-                # 保存数据
-                self.db_manager.save_trade_monitor({
-                    'item_name': item_name,
-                    'monitor_time': now,
-                    'quantity': quantity,
-                    'market_price': market_price,
-                    'target_price': target_price,
-                    'planned_price': planned_price,
-                    'break_even_price': break_even_price,
-                    'profit': profit,
-                    'profit_rate': profit_rate,
-                    'strategy': data.get('strategy', '')
-                })
+            # 显示OCR识别数据预览窗口
+            self.show_ocr_preview_dialog(all_data)
+        else:
+            messagebox.showwarning("警告", "未能识别有效的监控记录！")
+            self.status_var.set("未能识别有效记录")
+
+    def show_ocr_preview_dialog(self, ocr_data_list):
+        """显示OCR识别数据预览窗口（表格形式）"""
+        # 定义列
+        columns = ('物品名称', '数量', '市场价', '目标价', '计划价', '利润')
+        
+        # 设置列宽和对齐方式
+        column_widths = {
+            '物品名称': 180,
+            '数量': 90,
+            '市场价': 95,
+            '目标价': 95,
+            '计划价': 95,
+            '利润': 120
+        }
+        
+        column_aligns = {
+            '物品名称': 'w',  # 文本左对齐
+            '数量': 'e',      # 数字右对齐
+            '市场价': 'e',
+            '目标价': 'e',
+            '计划价': 'e',
+            '利润': 'e'
+        }
+        
+        # 使用通用OCR预览对话框组件
+        preview_dialog = OCRPreviewDialog(
+            parent=self.main_gui.root,
+            title="OCR识别数据预览",
+            chinese_font=self.chinese_font
+        )
+        
+        # 显示对话框并处理确认后的数据
+        preview_dialog.show(
+            data_list=ocr_data_list,
+            columns=columns,
+            column_widths=column_widths,
+            column_aligns=column_aligns,
+            callback=self.import_confirmed_ocr_data,
+            bootstyle="primary"  # 使用交易监控的主题色
+        )
+        
+    def import_confirmed_ocr_data(self, confirmed_data):
+        """导入确认后的OCR数据"""
+        success_count = 0
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for data in confirmed_data:
+            item_name = data.get('item_name', '')
+            quantity = data.get('quantity', 0)
+            market_price = data.get('market_price', 0)
+            target_price = data.get('target_price', 0)
+            planned_price = data.get('planned_price', 0)
             
+            # 计算保本价、利润和利润率
+            break_even_price = round(target_price * 1.03) if target_price else 0
+            profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+            profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
+            
+            # 保存数据
+            self.db_manager.save_trade_monitor({
+                'item_name': item_name,
+                'monitor_time': now,
+                'quantity': quantity,
+                'market_price': market_price,
+                'target_price': target_price,
+                'planned_price': planned_price,
+                'break_even_price': break_even_price,
+                'profit': profit,
+                'profit_rate': profit_rate,
+                'strategy': data.get('strategy', '')
+            })
+            
+            success_count += 1
+        
+        if success_count > 0:
             self.refresh_monitor()
             self.main_gui.log_operation('修改', '交易监控')
-            messagebox.showinfo("成功", f"成功导入 {len(all_data)} 条监控记录")
-            self.status_var.set(f"已导入 {len(all_data)} 条记录")
+            messagebox.showinfo("成功", f"成功导入 {success_count} 条监控记录")
+            self.status_var.set(f"已导入 {success_count} 条记录")
             
             # 清空已处理的图片
             self._pending_ocr_images = []
             self.ocr_preview.clear_images()
         else:
-            messagebox.showwarning("警告", "未能识别有效的监控记录！")
-            self.status_var.set("未能识别有效记录")
+            messagebox.showwarning("警告", "没有成功导入任何记录！")
+            self.status_var.set("未导入任何记录")
 
     def paste_ocr_import_monitor(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""

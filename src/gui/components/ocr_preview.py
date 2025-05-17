@@ -15,8 +15,16 @@ class OCRPreview(ttk.Frame):
         self.photo_refs = []  # 存储PhotoImage引用，防止被垃圾回收
         self.callback = None  # 删除图片后的回调函数
         
+        # 获取父组件的背景色，用于透明效果
+        try:
+            parent_bg = parent.cget("background")
+            if not parent_bg:
+                parent_bg = "#f0f0f0"  # 默认背景色
+        except:
+            parent_bg = "#f0f0f0"  # 默认背景色
+        
         # 创建滚动区域以支持多图片
-        self.canvas = tk.Canvas(self, highlightthickness=0)
+        self.canvas = tk.Canvas(self, highlightthickness=0, bg=parent_bg)
         self.scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
         self.scrollable_frame = ttk.Frame(self.canvas)
         

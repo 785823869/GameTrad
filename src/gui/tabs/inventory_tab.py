@@ -60,6 +60,22 @@ class InventoryTab:
         style.configure("Search.TEntry", 
                       font=(self.chinese_font, 10),
                       foreground="#2c3e50")
+        
+        # 创建统一的标签样式
+        style.configure("Unified.TLabel", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
+        
+        # 创建统一的LabelFrame样式，背景色与主窗口背景色匹配
+        style.configure("Unified.TLabelframe", 
+                      background="#f0f0f0",  # 与主窗口背景色匹配
+                      borderwidth=1)
+                      
+        style.configure("Unified.TLabelframe.Label", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#f0f0f0")  # 与主窗口背景色匹配
 
     def create_tab(self):
         # 使用ttkbootstrap的风格创建主框架
@@ -71,14 +87,14 @@ class InventoryTab:
         control_frame.pack(fill='x', pady=(0, 10))
         
         # 创建搜索区域
-        search_frame = tb.LabelFrame(control_frame, text="筛选库存", bootstyle="info", padding=10)
+        search_frame = tb.LabelFrame(control_frame, text="筛选库存", style="Unified.TLabelframe", padding=10)
         search_frame.pack(side='left', padx=(0, 10), fill='y')
         
         # 使用ttkbootstrap的Grid布局使搜索区域更美观
-        tb.Label(search_frame, text="搜索物品:", bootstyle="info").grid(row=0, column=0, padx=(0, 5), pady=5)
+        tb.Label(search_frame, text="搜索物品:", style="Unified.TLabel").grid(row=0, column=0, padx=(0, 5), pady=5)
         
         self.search_var = tk.StringVar()
-        search_entry = tb.Entry(search_frame, textvariable=self.search_var, width=20, bootstyle="info")
+        search_entry = tb.Entry(search_frame, textvariable=self.search_var, width=20, bootstyle="default")
         search_entry.grid(row=0, column=1, padx=5, pady=5)
         search_entry.bind("<Return>", lambda e: self.filter_inventory())
         
@@ -87,14 +103,14 @@ class InventoryTab:
         
         tb.Button(button_frame, text="搜索", 
                 command=self.filter_inventory,
-                bootstyle="info").pack(side='left', padx=2)
+                bootstyle="default").pack(side='left', padx=2)
         
         tb.Button(button_frame, text="清除", 
                 command=lambda: [self.search_var.set(""), self.filter_inventory()],
                 bootstyle="secondary").pack(side='left', padx=2)
         
         # 创建操作按钮区域
-        action_frame = tb.LabelFrame(control_frame, text="操作", bootstyle="success", padding=10)
+        action_frame = tb.LabelFrame(control_frame, text="操作", style="Unified.TLabelframe", padding=10)
         action_frame.pack(side='right', padx=5, fill='y')
         
         # 刷新按钮增加图标风格

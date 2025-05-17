@@ -84,40 +84,68 @@ class DashboardTab(Frame):
         import matplotlib.font_manager as fm
         import platform
         
+        # 获取当前已安装的所有字体
+        all_fonts = fm.findSystemFonts(fontpaths=None, fontext='ttf')
+        chinese_fonts = []
+        
         # 根据操作系统设置中文字体
         system = platform.system()
         if system == "Windows":
             # Windows常见中文字体
-            font_list = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
+            preferred_fonts = ['Microsoft YaHei', 'SimHei', 'SimSun', 'NSimSun', 'FangSong', 'KaiTi']
         elif system == "Darwin":  # macOS
             # macOS常见中文字体
-            font_list = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STSong', 'STKaiti']
+            preferred_fonts = ['PingFang SC', 'Heiti SC', 'STHeiti', 'STSong', 'STKaiti']
         else:  # Linux和其他系统
             # Linux常见中文字体
-            font_list = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Droid Sans Fallback']
+            preferred_fonts = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Droid Sans Fallback']
         
-        # 添加默认字体
-        font_list.append(self.chinese_font)
+        # 检查我们的默认字体是否已在列表中
+        if self.chinese_font not in preferred_fonts:
+            preferred_fonts.insert(0, self.chinese_font)
         
-        # 添加系统中已安装的可用中文字体
-        available_fonts = []
-        for font in font_list:
+        # 检查每个系统字体是否支持中文
+        for font_path in all_fonts:
             try:
-                if fm.findfont(fm.FontProperties(family=font)) != fm.findfont(fm.FontProperties()):
-                    available_fonts.append(font)
-            except:
+                font_name = fm.FontProperties(fname=font_path).get_name()
+                if any(preferred in font_name for preferred in preferred_fonts):
+                    chinese_fonts.append(font_name)
+            except Exception:
                 continue
         
-        if available_fonts:
-            # 设置Matplotlib的字体
-            plt.rcParams['font.family'] = ['sans-serif']
-            plt.rcParams['font.sans-serif'] = available_fonts
-        else:
-            # 如果没有找到合适的中文字体，使用默认字体并打印警告
-            print("警告: 未能找到合适的中文字体，图表中的中文可能无法正确显示")
+        # 如果没有找到中文字体，尝试使用备选方案
+        if not chinese_fonts:
+            # 检查每个首选字体是否可用
+            available_fonts = []
+            for font in preferred_fonts:
+                try:
+                    if fm.findfont(fm.FontProperties(family=font)) != fm.findfont(fm.FontProperties()):
+                        available_fonts.append(font)
+                        chinese_fonts.append(font)
+                except:
+                    continue
+        
+        # 如果仍然没有找到中文字体，使用系统默认字体
+        if not chinese_fonts:
+            chinese_fonts = [self.chinese_font]
+            print("警告: 未能找到合适的中文字体，使用系统默认字体")
             
+        # 设置Matplotlib全局字体
+        plt.rcParams['font.family'] = ['sans-serif']
+        plt.rcParams['font.sans-serif'] = chinese_fonts
+        
         # 确保负号显示正确
         plt.rcParams['axes.unicode_minus'] = False
+        
+        # 设置其他图表参数以优化显示
+        plt.rcParams['figure.facecolor'] = '#f9f9f9'
+        plt.rcParams['axes.facecolor'] = '#f9f9f9'
+        plt.rcParams['axes.grid'] = True
+        plt.rcParams['grid.alpha'] = 0.3
+        plt.rcParams['grid.linestyle'] = '--'
+        
+        # 打印找到的中文字体，便于调试
+        print(f"matplotlib将使用以下中文字体: {', '.join(chinese_fonts[:3])}{' 等' if len(chinese_fonts) > 3 else ''}")
     
     def on_destroy(self, event):
         """处理销毁事件，清理资源"""
@@ -398,29 +426,71 @@ class DashboardTab(Frame):
         x = [label for label, _ in data]
         y = [a for _, a in data]
         
+        # 获取合适的中文字体
+        chinese_font = self.get_suitable_chinese_font()
+        
+        # 确保图表使用正确的中文字体
+        plt.rcParams['font.family'] = ['sans-serif']
+        plt.rcParams['font.sans-serif'] = [chinese_font, 'SimHei', 'Microsoft YaHei', 'STHeiti', 'WenQuanYi Micro Hei']
+        plt.rcParams['axes.unicode_minus'] = False
+        
         # 设置图表样式
         plt.style.use('seaborn-v0_8-whitegrid')
         fig, ax = plt.subplots(figsize=(5,3), dpi=100)
         fig.patch.set_facecolor('#f9f9f9')
         ax.set_facecolor('#f9f9f9')
         
+        # 如果没有数据，显示提示信息
+        if not x or not y:
+            plt.close(fig)
+            Label(frame, text="没有出库数据可显示", font=(chinese_font, 12)).pack(pady=50)
+            return
+        
         # 绘制线条和点
         line_color = '#3498db'
         marker_color = '#2980b9'
         highlight_color = '#e74c3c'
         
-        ax.plot(x, y, color=line_color, linewidth=2, marker='o', markersize=5, 
+        # 如果期间是日/周/月，需要转换字符串日期为日期对象以便使用日期定位器
+        date_objects = None
+        if period == 'day':
+            try:
+                # 尝试将日期标签转换为日期对象
+                from datetime import datetime
+                # 假设x中的标签是日期字符串，格式如"10"（表示月份第10天）
+                # 获取当前年月作为基准
+                current_year = now.year
+                current_month = now.month
+                
+                # 创建日期对象列表
+                date_objects = []
+                for date_str in x:
+                    try:
+                        # 尝试直接解析日期字符串
+                        day = int(date_str)
+                        # 创建日期对象
+                        date_obj = datetime(current_year, current_month, day)
+                        date_objects.append(date_obj)
+                    except (ValueError, TypeError):
+                        # 如果解析失败，跳过
+                        continue
+            except Exception as e:
+                print(f"转换日期标签失败: {e}")
+        
+        # 绘制线条和点，使用原始x作为标签
+        ax.plot(range(len(x)), y, color=line_color, linewidth=2, marker='o', markersize=5, 
                 markerfacecolor=marker_color, markeredgecolor='white', markeredgewidth=1, zorder=3)
         
         # 高亮最后一个点
         if x and y:
-            ax.scatter([x[-1]], [y[-1]], s=100, color=highlight_color, zorder=5, alpha=0.7,
+            ax.scatter([len(x)-1], [y[-1]], s=100, color=highlight_color, zorder=5, alpha=0.7,
                       edgecolors='white', linewidth=2)
         
-        # 设置标题和标签
-        ax.set_title("出库金额趋势", loc='left', fontsize=14, fontweight='bold', color='#2c3e50')
-        ax.set_xlabel("")
-        ax.set_ylabel("金额", fontsize=11, color='#7f8c8d')
+        # 设置标题和标签，显式指定中文字体
+        ax.set_title("出库金额趋势", loc='left', fontsize=14, fontweight='bold', 
+                    color='#2c3e50', fontfamily=chinese_font)
+        ax.set_xlabel("", fontfamily=chinese_font)
+        ax.set_ylabel("金额", fontsize=11, color='#7f8c8d', fontfamily=chinese_font)
         
         # 设置网格和边框
         ax.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7', zorder=0)
@@ -432,17 +502,77 @@ class DashboardTab(Frame):
         # y轴金额格式化
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${int(x):,}"))
         
-        # x轴美化
-        if period == 'day':
-            ax.set_xticks(x[::max(1, len(x)//7)])
-        ax.tick_params(axis='x', labelsize=9, colors='#7f8c8d')
-        ax.tick_params(axis='y', labelsize=9, colors='#7f8c8d')
+        # 设置x轴刻度
+        # 理想刻度数量（根据图表宽度和美观度考虑）
+        ideal_ticks = 6
         
-        fig.tight_layout(pad=2)
+        # 设置x轴标签位置
+        if len(x) <= ideal_ticks:
+            # 数据点较少时，全部显示
+            ax.set_xticks(range(len(x)))
+            ax.set_xticklabels(x, fontfamily=chinese_font)
+        else:
+            # 数据点较多时，均匀选择标签位置
+            step = max(1, len(x) // ideal_ticks)
+            positions = list(range(0, len(x), step))
+            # 确保包含最后一个点
+            if (len(x) - 1) not in positions:
+                positions.append(len(x) - 1)
+            ax.set_xticks(positions)
+            ax.set_xticklabels([x[pos] for pos in positions], fontfamily=chinese_font)
+        
+        # 如果有日期对象，使用matplotlib的日期定位器
+        if date_objects and len(date_objects) == len(x):
+            from matplotlib.dates import DateFormatter, AutoDateLocator, DayLocator, date2num
+            
+            # 将x轴的数值刻度替换为日期刻度
+            date_nums = [date2num(date) for date in date_objects]
+            
+            # 使用日期定位器设置均匀间隔
+            min_date = min(date_objects)
+            max_date = max(date_objects)
+            date_range = (max_date - min_date).days + 1
+            
+            # 根据日期范围选择合适的定位器
+            if date_range <= 7:  # 一周内，按天间隔
+                ax.xaxis.set_major_locator(DayLocator(interval=max(1, date_range // ideal_ticks)))
+            else:
+                # 使用自动定位器
+                ax.xaxis.set_major_locator(AutoDateLocator(maxticks=ideal_ticks))
+                
+            # 设置日期格式
+            ax.xaxis.set_major_formatter(DateFormatter('%d'))  # 仅显示日
+        
+        # 设置所有刻度标签的字体和旋转角度
+        for label in ax.get_xticklabels():
+            label.set_fontfamily(chinese_font)
+            label.set_fontsize(9)
+            label.set_color('#7f8c8d')
+            label.set_rotation(30)
+            
+        for label in ax.get_yticklabels():
+            label.set_fontfamily(chinese_font)
+            label.set_fontsize(9)
+            label.set_color('#7f8c8d')
+        
+        # 添加平均线
+        if y:
+            avg_y = sum(y) / len(y)
+            ax.axhline(y=avg_y, color='#e74c3c', linestyle='--', alpha=0.5, linewidth=1)
+            ax.text(
+                len(x)//2, avg_y, 
+                f"平均: ${int(avg_y):,}", 
+                color='#e74c3c', fontsize=8, fontfamily=chinese_font,
+                va='bottom', ha='center', bbox=dict(facecolor='white', alpha=0.7, boxstyle='round,pad=0.2')
+            )
+        
+        # 自动调整布局，确保标签完全显示
+        fig.tight_layout(pad=2.5)
+        
         canvas = FigureCanvasTkAgg(fig, master=frame)
         canvas.get_tk_widget().pack(fill='both', expand=True)
         plt.close(fig)
-        
+
     def draw_price_trend_chart(self, frame, item_name, period='day'):
         """绘制物品价格趋势图"""
         # 清空frame内容
@@ -463,6 +593,12 @@ class DashboardTab(Frame):
             chinese_font = self.get_suitable_chinese_font()
             Label(frame, text=f"未找到 {item_name} 的价格数据", font=(chinese_font, 12)).pack(pady=50)
             return
+        
+        # 确保正确设置中文字体
+        chinese_font = self.get_suitable_chinese_font()
+        plt.rcParams['font.family'] = ['sans-serif']
+        plt.rcParams['font.sans-serif'] = [chinese_font, 'SimHei', 'Microsoft YaHei', 'STHeiti', 'WenQuanYi Micro Hei']
+        plt.rcParams['axes.unicode_minus'] = False
         
         # 设置图表样式
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -506,10 +642,11 @@ class DashboardTab(Frame):
             Label(frame, text=f"无法绘制 {item_name} 的价格趋势图，数据格式异常", font=(chinese_font, 12)).pack(pady=50)
             return
             
-        # 设置标题和标签
-        ax.set_title(f"{item_name}物价趋势", loc='left', fontsize=14, fontweight='bold', color='#2c3e50')
-        ax.set_xlabel("日期", fontsize=10, color='#7f8c8d')
-        ax.set_ylabel("价格", fontsize=11, color='#7f8c8d')
+        # 设置标题和标签 - 显式指定字体
+        ax.set_title(f"{item_name}物价趋势", loc='left', fontsize=14, fontweight='bold', 
+                   color='#2c3e50', fontfamily=chinese_font)
+        ax.set_xlabel("日期", fontsize=10, color='#7f8c8d', fontfamily=chinese_font)
+        ax.set_ylabel("价格", fontsize=11, color='#7f8c8d', fontfamily=chinese_font)
         
         # 设置网格和边框
         ax.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7', zorder=0)
@@ -525,13 +662,15 @@ class DashboardTab(Frame):
         all_dates = [data[0] for data in all_price_data]
         
         if all_dates:
-            # 设置合适的日期格式
+            # 获取日期的最小值和最大值
             min_date = min(all_dates)
             max_date = max(all_dates)
-            date_range = (max_date - min_date).days
+            date_range = (max_date - min_date).days + 1  # 包含首尾天数
             
             # 根据日期范围选择合适的格式
-            from matplotlib.dates import DateFormatter
+            from matplotlib.dates import DateFormatter, AutoDateLocator, DayLocator, WeekdayLocator, MonthLocator, YearLocator, date2num
+            
+            # 标准化日期格式
             if date_range <= 2:
                 # 非常短的时间跨度，显示小时
                 date_format = '%H:%M'
@@ -545,23 +684,61 @@ class DashboardTab(Frame):
                 # 半年以上，显示年-月
                 date_format = '%Y-%m'
             
-            ax.xaxis.set_major_formatter(DateFormatter(date_format))
+            # 设置日期格式器
+            formatter = DateFormatter(date_format)
+            ax.xaxis.set_major_formatter(formatter)
             
-            # 设置适当的刻度数量
-            if len(all_dates) > 7:
-                # 选择合适的间隔，最多显示7个刻度
-                step = max(1, len(all_dates) // 7)
-                ax.set_xticks(all_dates[::step])
-            else:
-                # 如果数据点较少，全部显示
-                ax.set_xticks(all_dates)
+            # 优化：创建均匀分布的日期刻度
+            # 理想刻度数量（根据图表宽度和美观度考虑）
+            ideal_ticks = 6
+            
+            # 计算均匀间隔
+            if date_range <= 1:  # 一天内，按小时间隔
+                from matplotlib.dates import HourLocator
+                ax.xaxis.set_major_locator(HourLocator(interval=max(1, 24 // ideal_ticks)))
+            elif date_range <= 7:  # 一周内，按天间隔
+                ax.xaxis.set_major_locator(DayLocator(interval=max(1, date_range // ideal_ticks)))
+            elif date_range <= 30:  # 一个月内，几天为一个间隔
+                ax.xaxis.set_major_locator(DayLocator(interval=max(1, date_range // ideal_ticks)))
+            elif date_range <= 365:  # 一年内，按月或周间隔
+                if date_range <= 90:  # 三个月内，按周间隔
+                    ax.xaxis.set_major_locator(WeekdayLocator(interval=max(1, date_range // 7 // ideal_ticks)))
+                else:  # 按月间隔
+                    ax.xaxis.set_major_locator(MonthLocator(interval=max(1, date_range // 30 // ideal_ticks)))
+            else:  # 一年以上，按年或月间隔
+                if date_range <= 365 * 2:  # 两年内，按月间隔
+                    ax.xaxis.set_major_locator(MonthLocator(interval=max(1, date_range // 30 // ideal_ticks)))
+                else:  # 按年间隔
+                    ax.xaxis.set_major_locator(YearLocator(base=max(1, date_range // 365 // ideal_ticks)))
+            
+            # 如果以上定位器导致标签过多，使用自动定位器
+            if len(ax.get_xticks()) > ideal_ticks * 1.5:
+                ax.xaxis.set_major_locator(AutoDateLocator(maxticks=ideal_ticks))
+        
+        # 设置所有刻度标签的字体
+        for label in ax.get_xticklabels():
+            label.set_fontfamily(chinese_font)
+        for label in ax.get_yticklabels():
+            label.set_fontfamily(chinese_font)
         
         # 美化x轴和y轴刻度标签
-        ax.tick_params(axis='x', labelsize=9, colors='#7f8c8d', rotation=30)
+        ax.tick_params(axis='x', labelsize=9, colors='#7f8c8d', rotation=30, labelrotation=30)
         ax.tick_params(axis='y', labelsize=9, colors='#7f8c8d')
         
         # 自动调整布局，确保标签完全显示
-        fig.tight_layout(pad=2)
+        fig.tight_layout(pad=2.5)  # 增加边距以确保所有标签都可见
+        
+        # 在图表中添加当前时间段平均价格
+        if prices:
+            avg_price = sum(prices) / len(prices)
+            ax.axhline(y=avg_price, color='#e74c3c', linestyle='--', alpha=0.5, linewidth=1)
+            ax.text(
+                all_dates[len(all_dates)//2], avg_price, 
+                f"平均: {int(avg_price):,}", 
+                color='#e74c3c', fontsize=8, fontfamily=chinese_font,
+                va='bottom', ha='center', bbox=dict(facecolor='white', alpha=0.7, boxstyle='round,pad=0.2')
+            )
+        
         canvas = FigureCanvasTkAgg(fig, master=frame)
         canvas.get_tk_widget().pack(fill='both', expand=True)
         plt.close(fig)
@@ -828,26 +1005,82 @@ class DashboardTab(Frame):
         chinese_font = self.get_suitable_chinese_font()
         Label(item_frame, text="物品:", font=(chinese_font, 9)).pack(side='left')
         
+        # 添加搜索框
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(
+            item_frame, 
+            textvariable=self.search_var,
+            width=8,
+            font=(chinese_font, 9),
+            bootstyle="primary"
+        )
+        search_entry.pack(side='left', padx=2)
+        
+        # 添加提示文本
+        def on_focus_in(event):
+            if search_entry.get() == "搜索物品...":
+                search_entry.delete(0, tk.END)
+                search_entry.config(bootstyle="primary")
+                
+        def on_focus_out(event):
+            if not search_entry.get():
+                search_entry.insert(0, "搜索物品...")
+                search_entry.config(bootstyle="secondary")
+        
+        # 设置初始提示文本
+        search_entry.insert(0, "搜索物品...")
+        search_entry.config(bootstyle="secondary")
+        
+        # 绑定焦点事件
+        search_entry.bind("<FocusIn>", on_focus_in)
+        search_entry.bind("<FocusOut>", on_focus_out)
+        
+        # 添加搜索图标按钮
+        search_button = ttk.Button(
+            item_frame,
+            text="🔍",
+            width=2,
+            bootstyle="primary-outline",
+            command=self.apply_item_filter
+        )
+        search_button.pack(side='left', padx=(0, 5))
+        
+        # 添加清空搜索按钮
+        clear_button = ttk.Button(
+            item_frame,
+            text="✕",
+            width=2,
+            bootstyle="secondary-outline",
+            command=self.clear_search
+        )
+        clear_button.pack(side='left', padx=(0, 5))
+        
+        # 绑定搜索框键盘事件
+        self.search_var.trace_add("write", lambda name, index, mode: self.delayed_search())
+        
+        # 搜索延迟计时器ID
+        self.search_delay_timer = None
+        
         # 获取所有物品
-        all_items = self.get_all_items()
-        if not all_items:
-            all_items = ["--请先添加物品--"]
+        self.all_items_original = self.get_all_items()
+        if not self.all_items_original:
+            self.all_items_original = ["--请先添加物品--"]
         
         # 创建StringVar变量并设置默认值
-        self.selected_item = tk.StringVar(value=all_items[0] if all_items else "")
+        self.selected_item = tk.StringVar(value=self.all_items_original[0] if self.all_items_original else "")
         
         # 创建下拉框
-        item_dropdown = ttk.Combobox(
+        self.item_dropdown = ttk.Combobox(
             item_frame, 
             textvariable=self.selected_item,
-            values=all_items,
+            values=self.all_items_original,
             state="readonly",
             width=15
         )
-        item_dropdown.pack(side='left', padx=5)
+        self.item_dropdown.pack(side='left', padx=5)
         
         # 绑定选择事件
-        item_dropdown.bind("<<ComboboxSelected>>", 
+        self.item_dropdown.bind("<<ComboboxSelected>>", 
                           lambda e: self.update_price_chart(chart_frame, self.selected_item.get(), period_var.get()) if self.selected_item.get() and self.selected_item.get() != "--请先添加物品--" else None)
         
         # 周期切换按钮组
@@ -873,8 +1106,8 @@ class DashboardTab(Frame):
         chart_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
         # 初始绘制图表 - 如果有物品则绘制第一个物品的价格图
-        if all_items and all_items[0] != "--请先添加物品--":
-            self.draw_price_trend_chart(chart_frame, all_items[0], 'day')
+        if self.all_items_original and self.all_items_original[0] != "--请先添加物品--":
+            self.draw_price_trend_chart(chart_frame, self.all_items_original[0], 'day')
         else:
             # 显示提示信息
             Label(chart_frame, text="请先添加物品数据", font=(chinese_font, 12)).pack(pady=50)
@@ -1033,6 +1266,14 @@ class DashboardTab(Frame):
         months = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]
         values = [random.randint(30000, 80000) for _ in months]
         
+        # 获取合适的中文字体
+        chinese_font = self.get_suitable_chinese_font()
+        
+        # 确保柱状图使用正确的中文字体
+        plt.rcParams['font.family'] = ['sans-serif']
+        plt.rcParams['font.sans-serif'] = [chinese_font, 'SimHei', 'Microsoft YaHei', 'STHeiti', 'WenQuanYi Micro Hei']
+        plt.rcParams['axes.unicode_minus'] = False
+        
         # 使用渐变色
         colors = ['#3498db' if i != datetime.now().month - 1 else '#e74c3c' for i in range(len(months))]
         
@@ -1042,27 +1283,53 @@ class DashboardTab(Frame):
         current_month_idx = datetime.now().month - 1
         if 0 <= current_month_idx < len(months):
             ax2.text(current_month_idx, values[current_month_idx] + 2000, "当前", 
-                    ha='center', va='bottom', color='#e74c3c', fontweight='bold', fontfamily=self.chinese_font)
+                    ha='center', va='bottom', color='#e74c3c', fontweight='bold', 
+                    fontfamily=chinese_font, fontsize=9)
         
-        # 美化图表
-        ax2.set_ylabel("金额", fontsize=10, color='#7f8c8d', fontfamily=self.chinese_font)
+        # 美化图表 - 显式指定中文字体
+        ax2.set_ylabel("金额", fontsize=10, color='#7f8c8d', fontfamily=chinese_font)
         ax2.spines['top'].set_visible(False)
         ax2.spines['right'].set_visible(False)
         ax2.spines['left'].set_color('#bdc3c7')
         ax2.spines['bottom'].set_color('#bdc3c7')
-        ax2.tick_params(axis='x', labelsize=8, colors='#7f8c8d', rotation=45)
-        ax2.tick_params(axis='y', labelsize=8, colors='#7f8c8d')
         
-        # 单独设置刻度标签字体
-        for label in ax2.get_xticklabels():
-            label.set_fontfamily(self.chinese_font)
+        # 设置x轴刻度标签，显式指定字体和旋转角度
+        ax2.set_xticks(range(len(months)))
+        ax2.set_xticklabels(months, fontsize=8, color='#7f8c8d', rotation=45, fontfamily=chinese_font)
+        
+        # 设置y轴刻度标签字体
         for label in ax2.get_yticklabels():
-            label.set_fontfamily(self.chinese_font)
+            label.set_fontfamily(chinese_font)
+            label.set_fontsize(8)
+            label.set_color('#7f8c8d')
         
         # 格式化y轴
         ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${int(x/1000)}k"))
         
-        fig2.tight_layout(pad=2)
+        # 添加网格线仅在y轴
+        ax2.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7')
+        
+        # 为当前月份的柱状添加数值标签
+        if 0 <= current_month_idx < len(months):
+            ax2.text(
+                current_month_idx, 
+                values[current_month_idx] / 2, 
+                f"¥{values[current_month_idx]:,}",
+                ha='center', 
+                va='center', 
+                fontsize=8,
+                color='white', 
+                fontweight='bold', 
+                fontfamily=chinese_font
+            )
+        
+        # 增加图表顶部标题
+        ax2.set_title("月度销售收入", fontsize=12, fontweight='bold', color='#2c3e50', 
+                      fontfamily=chinese_font, loc='left', pad=10)
+        
+        # 增加图表边距以确保所有标签可见
+        fig2.tight_layout(pad=2.5)
+        
         canvas2 = FigureCanvasTkAgg(fig2, master=chart_frame2)
         canvas2.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
         plt.close(fig2)
@@ -1098,7 +1365,24 @@ class DashboardTab(Frame):
             # 更新物价趋势部分
             if hasattr(self, 'selected_item') and hasattr(self, 'period_var'):
                 # 重新获取所有物品
-                all_items = self.get_all_items()
+                updated_all_items = self.get_all_items()
+                
+                if hasattr(self, 'all_items_original'):
+                    # 保存当前搜索文本
+                    current_search = ""
+                    if hasattr(self, 'search_var'):
+                        current_search = self.search_var.get().strip().lower()
+                    
+                    # 更新原始物品列表
+                    self.all_items_original = updated_all_items if updated_all_items else ["--请先添加物品--"]
+                    
+                    # 重新应用当前的搜索过滤
+                    if current_search and hasattr(self, 'apply_item_filter'):
+                        self.apply_item_filter()
+                    else:
+                        # 直接更新下拉框值
+                        if hasattr(self, 'item_dropdown'):
+                            self.item_dropdown['values'] = self.all_items_original
                 
                 # 查找下拉框并更新其值
                 for widget in self.winfo_children():
@@ -1113,15 +1397,20 @@ class DashboardTab(Frame):
                                                     if isinstance(w, ttk.Combobox):
                                                         current_item = self.selected_item.get()
                                                         
-                                                        # 更新下拉框选项
-                                                        if all_items:
-                                                            w['values'] = all_items
+                                                        # 更新下拉框选项 - 使用过滤后的值或原始值
+                                                        if hasattr(self, 'item_dropdown') and w == self.item_dropdown:
+                                                            # 已在上面更新，跳过
+                                                            pass
+                                                        elif updated_all_items:
+                                                            w['values'] = updated_all_items
                                                         else:
                                                             w['values'] = ["--请先添加物品--"]
                                                         
                                                         # 如果当前选中的物品不在列表中，则选择第一个物品
-                                                        if current_item not in all_items and all_items:
-                                                            self.selected_item.set(all_items[0])
+                                                        dropdown_values = w['values']
+                                                        if dropdown_values and current_item not in dropdown_values:
+                                                            if dropdown_values[0] != "--无匹配物品--":
+                                                                self.selected_item.set(dropdown_values[0])
                                                         
                                                         # 获取图表框架并更新图表
                                                         chart_frame = None
@@ -1132,7 +1421,7 @@ class DashboardTab(Frame):
                                                                 
                                                         if chart_frame:
                                                             selected_item = self.selected_item.get()
-                                                            if selected_item and selected_item != "--请先添加物品--":
+                                                            if selected_item and selected_item not in ["--请先添加物品--", "--无匹配物品--"]:
                                                                 period = self.period_var.get()
                                                                 self.update_price_chart(chart_frame, selected_item, period)
                                                         break
@@ -1881,8 +2170,8 @@ class DashboardTab(Frame):
         if db_manager is None:
             return []
             
-        # 从库存表获取所有物品名称
-        query = "SELECT DISTINCT item_name FROM inventory WHERE quantity > 0 ORDER BY item_name"
+        # 从库存表获取所有物品名称，包括库存为0的物品
+        query = "SELECT DISTINCT item_name FROM inventory ORDER BY item_name"
         results = db_manager.fetch_all(query)
         
         # 提取物品名称
@@ -1950,3 +2239,64 @@ class DashboardTab(Frame):
                 continue
         
         return in_prices, out_prices
+
+    def delayed_search(self):
+        """延迟搜索，避免频繁更新"""
+        # 取消之前的计时器
+        if self.search_delay_timer:
+            self.after_cancel(self.search_delay_timer)
+        
+        # 创建新的延迟计时器
+        self.search_delay_timer = self.after(300, self.apply_item_filter)
+    
+    def clear_search(self):
+        """清空搜索框并重置下拉框"""
+        if hasattr(self, 'search_var'):
+            # 如果当前是提示文本，则不更改
+            current_text = self.search_var.get()
+            if current_text != "搜索物品..." and current_text:
+                self.search_var.set("")
+                
+                # 为所有可能的搜索框恢复提示文本
+                for widget in self.winfo_children():
+                    for child in widget.winfo_children():
+                        if isinstance(child, Frame):
+                            for grandchild in child.winfo_children():
+                                if isinstance(grandchild, ttk.Entry) and hasattr(grandchild, 'get') and not grandchild.get():
+                                    # 找到可能的搜索框，设置提示文本
+                                    grandchild.insert(0, "搜索物品...")
+                                    grandchild.config(bootstyle="secondary")
+        
+        # 重置下拉框为所有物品
+        if hasattr(self, 'item_dropdown') and hasattr(self, 'all_items_original'):
+            self.item_dropdown['values'] = self.all_items_original
+        
+    def apply_item_filter(self):
+        """根据搜索框内容过滤下拉框中的物品"""
+        search_text = self.search_var.get().strip().lower()
+        
+        # 如果是提示文本，则视为空
+        if search_text == "搜索物品...":
+            search_text = ""
+        
+        if not hasattr(self, 'all_items_original') or not self.all_items_original:
+            return
+            
+        # 如果搜索文本为空，显示所有物品
+        if not search_text:
+            self.item_dropdown['values'] = self.all_items_original
+            return
+            
+        # 过滤匹配的物品
+        filtered_items = [item for item in self.all_items_original if search_text in item.lower()]
+        
+        # 如果没有匹配项，显示一个提示
+        if not filtered_items:
+            filtered_items = ["--无匹配物品--"]
+            
+        # 更新下拉框的值
+        self.item_dropdown['values'] = filtered_items
+        
+        # 如果当前选中的物品不在过滤结果中，清空选择
+        if self.selected_item.get() not in filtered_items and filtered_items != ["--无匹配物品--"]:
+            self.selected_item.set("")

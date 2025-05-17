@@ -152,15 +152,15 @@ class InventoryTab:
         
         # 列对齐方式设置
         column_aligns = {
-            '物品': 'w',    # 文本左对齐
-            '库存数': 'e',   # 数字右对齐
-            '总入库均价': 'e',
-            '保本均价': 'e',
-            '总出库均价': 'e',
-            '利润': 'e',
-            '利润率': 'e',
-            '成交利润额': 'e',
-            '库存价值': 'e'
+            '物品': 'center',    # 文本居中对齐
+            '库存数': 'center',   # 数字居中对齐
+            '总入库均价': 'center',
+            '保本均价': 'center',
+            '总出库均价': 'center',
+            '利润': 'center',
+            '利润率': 'center',
+            '成交利润额': 'center',
+            '库存价值': 'center'
         }
         
         for col in columns:

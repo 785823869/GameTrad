@@ -72,6 +72,9 @@ class GameTradingSystemGUI:
         # 定义全局背景色
         self.global_bg_color = "#f0f0f0"
         
+        # 确保配置目录存在
+        os.makedirs(os.path.join("data", "config"), exist_ok=True)
+        
         self.db_manager = DatabaseManager()
         
         # 设置默认中文字体
@@ -110,6 +113,7 @@ class GameTradingSystemGUI:
         menubar.add_cascade(label="设置", menu=settings_menu)
         settings_menu.add_command(label="Server酱配置", command=self.open_server_chan_config)
         settings_menu.add_command(label="公式管理", command=self.open_formula_manager)
+        settings_menu.add_command(label="备注规则配置", command=self.open_note_rules_config)
         settings_menu.add_command(label="物品字典管理", command=self.open_item_dict_manager)
         
         # 帮助菜单
@@ -1057,6 +1061,12 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
     def open_formula_manager(self):
         """打开公式管理器窗口"""
         FormulaManagerWindow(self.root, self)
+        
+    def open_note_rules_config(self):
+        """直接打开备注规则配置页面"""
+        formula_manager = FormulaManagerWindow(self.root, self)
+        formula_manager.page_var.set("备注规则")
+        formula_manager._build_fields()
 
     def _on_tab_changed_ocr(self, event=None, tab_title=None):
         """处理标签页切换事件，重新绑定OCR相关的快捷键"""

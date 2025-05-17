@@ -248,12 +248,12 @@ class InventoryTab:
                     
                     # 格式化数据
                     quantity_str = f"{int(quantity):,}" if quantity else "0"
-                    avg_price_str = f"{float(avg_price):,.2f}" if avg_price else "0.00"
-                    break_even_str = f"{float(break_even_price):,.2f}" if break_even_price else "0.00"
-                    selling_price_str = f"{float(selling_price):,.2f}" if selling_price else "0.00"
-                    profit_str = f"{float(profit):,.2f}" if profit else "0.00"
+                    avg_price_str = f"{float(avg_price):,.0f}" if avg_price else "0"
+                    break_even_str = f"{float(break_even_price):,.0f}" if break_even_price else "0"
+                    selling_price_str = f"{float(selling_price):,.0f}" if selling_price else "0"
+                    profit_str = f"{float(profit):,.0f}" if profit else "0"
                     profit_rate_str = f"{float(profit_rate):,.2f}%" if profit_rate else "0.00%"
-                    total_profit_str = f"{float(total_profit):,.2f}" if total_profit else "0.00"
+                    total_profit_str = f"{float(total_profit):,.0f}" if total_profit else "0"
                     inventory_value_str = f"{float(inventory_value):,.2f}" if inventory_value else "0.00"
                     
                     # 添加到表格，并设置多种标签

@@ -37,6 +37,16 @@ class DashboardTab(Frame):
         self.low_stock_var = tk.StringVar(value="0项")
         self.total_profit_var = tk.StringVar(value="¥0.00")
         
+        # 自动滚动相关变量
+        self.auto_scroll_enabled = False
+        self.auto_scroll_timer_id = None
+        self.auto_scroll_speed = 2000  # 滚动速度(毫秒)
+        
+        # 库存详情表格自动滚动相关变量
+        self.inventory_auto_scroll_enabled = True  # 默认启用
+        self.inventory_auto_scroll_timer_id = None
+        self.inventory_auto_scroll_speed = 3000  # 滚动速度(毫秒)
+        
         # 设置中文字体
         self.chinese_font = main_gui.chinese_font
         
@@ -65,6 +75,23 @@ class DashboardTab(Frame):
         print("设置5秒后再次尝试刷新价格...")
         self.after(5000, self.refresh_price_data)
         
+        # 绑定销毁事件，确保清理资源
+        self.bind("<Destroy>", self.on_destroy)
+    
+    def on_destroy(self, event):
+        """处理销毁事件，清理资源"""
+        # 如果事件的窗口是当前窗口(非子组件)，则执行清理
+        if event.widget == self:
+            self.cleanup_resources()
+    
+    def cleanup_resources(self):
+        """清理资源"""
+        # 停止用户库存监控表格自动滚动
+        self.stop_auto_scroll()
+        
+        # 停止库存详情表格自动滚动
+        self.stop_inventory_auto_scroll()
+    
     def setup_styles(self):
         """设置自定义样式"""
         style = Style()
@@ -93,6 +120,14 @@ class DashboardTab(Frame):
                        font=(self.chinese_font, 10, "bold"),
                        background="#e0e6ed",
                        foreground="#2c3e50")
+        
+        # 用户库存监控表格的颜色标签样式
+        style.map("Dashboard.Treeview",
+                 background=[("selected", "#3498db")],
+                 foreground=[("selected", "#ffffff")])
+        
+        # 注意：Treeview标签样式(如高库存、低库存和交替行颜色)
+        # 需要在Treeview实例上使用tag_configure进行配置，而不是在Style对象上
         
         # 配置所有标签使用中文字体
         style.configure("TLabel", font=(self.chinese_font, 10))
@@ -614,21 +649,49 @@ class DashboardTab(Frame):
         user_frame = LabelFrame(main_frame, text="用户库存监控", bootstyle="primary")
         user_frame.pack(side='left', pady=10, fill='y')
         
+        # 创建内部内容框架
+        user_content_frame = Frame(user_frame, bootstyle="light")
+        user_content_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # 控制按钮区域
+        control_frame = Frame(user_content_frame, bootstyle="light")
+        control_frame.pack(fill='x', pady=(0, 5))
+        
+        # 添加自动滚动按钮
+        self.auto_scroll_button = Button(
+            control_frame, 
+            text="开始自动滚动", 
+            bootstyle="success-outline", 
+            command=self.toggle_auto_scroll,
+            width=12
+        )
+        self.auto_scroll_button.pack(side='right', padx=2)
+        
         # 使用树形视图
-        user_tree = ttk.Treeview(user_frame, columns=("name", "item", "inventory"), 
+        user_tree = ttk.Treeview(user_content_frame, columns=("name", "item", "inventory"), 
                                  show="headings", height=10, style="Dashboard.Treeview")
-        user_tree.heading("name", text="用户名")
-        user_tree.heading("item", text="物品")
-        user_tree.heading("inventory", text="库存数")
+        user_tree.heading("name", text="用户名", anchor="center")
+        user_tree.heading("item", text="物品", anchor="center")
+        user_tree.heading("inventory", text="库存数", anchor="center")
         
-        user_tree.column("name", width=120)
-        user_tree.column("item", width=160)
-        user_tree.column("inventory", width=100)
+        user_tree.column("name", width=120, anchor='center')
+        user_tree.column("item", width=160, anchor='center')
+        user_tree.column("inventory", width=100, anchor='center')
         
-        user_tree.pack(fill='both', expand=True, padx=5, pady=5)
+        # 配置标签样式，确保与setup_styles中定义的一致
+        style = ttk.Style()
+        style.configure("Dashboard.Treeview", rowheight=28, font=(self.chinese_font, 10))
+        
+        # 为Treeview组件配置标签样式
+        user_tree.tag_configure("inventory_high", foreground="#27ae60")  # 高库存(绿色)
+        user_tree.tag_configure("inventory_low", foreground="#c0392b")   # 低库存(红色)
+        user_tree.tag_configure("evenrow", background="#f5f9fc")         # 偶数行背景色
+        user_tree.tag_configure("oddrow", background="#ffffff")          # 奇数行背景色
+        
+        user_tree.pack(fill='both', expand=True)
         
         # 添加滚动条
-        user_scrollbar = ttk.Scrollbar(user_frame, orient="vertical", command=user_tree.yview)
+        user_scrollbar = ttk.Scrollbar(user_content_frame, orient="vertical", command=user_tree.yview)
         user_tree.configure(yscrollcommand=user_scrollbar.set)
         user_scrollbar.pack(side='right', fill='y')
         
@@ -719,6 +782,9 @@ class DashboardTab(Frame):
             tag_name = f"row_{idx}"
             source_tree.tag_configure(tag_name, background=bg_color)
             source_tree.item(item_id, tags=(tag_name,))
+            
+        # 保存库存详情表格的引用供自动滚动使用
+        self.inventory_detail_tree = source_tree
 
         # 柱状图
         chart_frame2 = LabelFrame(bottom_frame, text="月度收入", bootstyle="primary")
@@ -775,6 +841,9 @@ class DashboardTab(Frame):
     def refresh_dashboard(self):
         """刷新仪表盘数据"""
         try:
+            # 先停止现有的滚动
+            self.stop_inventory_auto_scroll()
+            
             # 获取库存统计
             inventory_stats = self.db_manager.get_inventory_stats()
             if inventory_stats:
@@ -844,6 +913,10 @@ class DashboardTab(Frame):
             
             # 刷新银两和女娲石价格数据
             self.refresh_price_data()
+            
+            # 刷新完成后，启动库存详情表格的自动滚动
+            # 延迟1秒启动，确保数据加载完成
+            self.after(1000, self.start_inventory_auto_scroll)
             
         except Exception as e:
             print(f"刷新仪表盘失败: {e}")
@@ -1289,6 +1362,9 @@ class DashboardTab(Frame):
 
     def update_user_inventory_monitor(self):
         """更新用户库存监控数据"""
+        # 先停止现有的自动滚动
+        self.stop_auto_scroll()
+        
         # 清空现有数据
         for item in self.user_inventory_tree.get_children():
             self.user_inventory_tree.delete(item)
@@ -1336,22 +1412,44 @@ class DashboardTab(Frame):
                 for item_name, quantities in items_with_note.items():
                     inventory = quantities['in'] - quantities['out']
                     if inventory > 0:  # 只显示有库存的物品
+                        # 设置库存数量的阈值，用于颜色标记
+                        # 库存大于100为高库存(绿色)，小于30为低库存(红色)
+                        tags = []
+                        if inventory > 100:
+                            tags.append('inventory_high')  # 高库存标签
+                        elif inventory < 30:
+                            tags.append('inventory_low')   # 低库存标签
+                            
                         self.user_inventory_tree.insert("", "end", values=(
                             username,
                             item_name,
                             f"{int(inventory):,}"
-                        ))
+                        ), tags=tags)
                         
             # 设置交替行颜色
             for i, item_id in enumerate(self.user_inventory_tree.get_children()):
+                # 获取当前标签
+                current_tags = list(self.user_inventory_tree.item(item_id, "tags"))
+                # 添加交替行颜色标签
                 if i % 2 == 0:
-                    self.user_inventory_tree.item(item_id, tags=('evenrow',))
+                    if 'evenrow' not in current_tags:
+                        current_tags.append('evenrow')
                 else:
-                    self.user_inventory_tree.item(item_id, tags=('oddrow',))
+                    if 'oddrow' not in current_tags:
+                        current_tags.append('oddrow')
+                # 更新标签
+                self.user_inventory_tree.item(item_id, tags=current_tags)
                     
             # 如果没有数据，显示提示信息
             if not self.user_inventory_tree.get_children():
                 self.user_inventory_tree.insert("", "end", values=("无匹配数据", "请检查备注规则设置", ""))
+            
+            # 检查是否应该启动自动滚动
+            # 如果行数大于5，自动开始滚动
+            if len(self.user_inventory_tree.get_children()) > 5:
+                # 如果之前已启用自动滚动，则重新启动
+                if self.auto_scroll_enabled:
+                    self.start_auto_scroll()
                 
         except Exception as e:
             print(f"更新用户库存监控失败: {e}")
@@ -1372,4 +1470,117 @@ class DashboardTab(Frame):
         except Exception as e:
             print(f"加载备注规则失败: {e}")
             # 返回默认规则
-            return {"41": "柒柒柒嗷"} 
+            return {"41": "柒柒柒嗷"}
+
+    def start_auto_scroll(self):
+        """开始自动滚动"""
+        if not hasattr(self, 'user_inventory_tree'):
+            return
+        
+        # 检查是否有足够多的行来滚动
+        all_items = self.user_inventory_tree.get_children()
+        if len(all_items) <= 1:
+            return
+        
+        self.auto_scroll_enabled = True
+        self.perform_auto_scroll()
+    
+    def stop_auto_scroll(self):
+        """停止自动滚动"""
+        self.auto_scroll_enabled = False
+        if self.auto_scroll_timer_id:
+            self.after_cancel(self.auto_scroll_timer_id)
+            self.auto_scroll_timer_id = None
+    
+    def perform_auto_scroll(self):
+        """执行自动滚动"""
+        if not self.auto_scroll_enabled or not hasattr(self, 'user_inventory_tree'):
+            return
+        
+        # 获取所有项
+        all_items = self.user_inventory_tree.get_children()
+        if not all_items:
+            self.auto_scroll_timer_id = self.after(self.auto_scroll_speed, self.perform_auto_scroll)
+            return
+        
+        # 获取当前选中行
+        current_selection = self.user_inventory_tree.selection()
+        
+        # 如果没有选中行或者选中的是最后一行，则选中第一行
+        if not current_selection or current_selection[0] == all_items[-1]:
+            next_item = all_items[0]
+        else:
+            # 找到当前选中行的下一行
+            current_index = all_items.index(current_selection[0])
+            next_item = all_items[current_index + 1]
+        
+        # 清除现有选择并选择下一行
+        self.user_inventory_tree.selection_set(next_item)
+        
+        # 确保选中行可见
+        self.user_inventory_tree.see(next_item)
+        
+        # 设置定时器进行下一次滚动
+        self.auto_scroll_timer_id = self.after(self.auto_scroll_speed, self.perform_auto_scroll)
+    
+    def toggle_auto_scroll(self):
+        """切换自动滚动状态"""
+        if self.auto_scroll_enabled:
+            self.stop_auto_scroll()
+            if hasattr(self, 'auto_scroll_button'):
+                self.auto_scroll_button.config(text="开始自动滚动", bootstyle="success")
+        else:
+            self.start_auto_scroll()
+            if hasattr(self, 'auto_scroll_button'):
+                self.auto_scroll_button.config(text="停止自动滚动", bootstyle="danger") 
+
+    def start_inventory_auto_scroll(self):
+        """开始库存详情表格自动滚动"""
+        if not hasattr(self, 'inventory_detail_tree'):
+            return
+        
+        # 检查是否有足够多的行来滚动
+        all_items = self.inventory_detail_tree.get_children()
+        if len(all_items) <= 1:
+            return
+        
+        self.inventory_auto_scroll_enabled = True
+        self.perform_inventory_auto_scroll()
+    
+    def stop_inventory_auto_scroll(self):
+        """停止库存详情表格自动滚动"""
+        self.inventory_auto_scroll_enabled = False
+        if self.inventory_auto_scroll_timer_id:
+            self.after_cancel(self.inventory_auto_scroll_timer_id)
+            self.inventory_auto_scroll_timer_id = None
+    
+    def perform_inventory_auto_scroll(self):
+        """执行库存详情表格自动滚动"""
+        if not self.inventory_auto_scroll_enabled or not hasattr(self, 'inventory_detail_tree'):
+            return
+        
+        # 获取所有项
+        all_items = self.inventory_detail_tree.get_children()
+        if not all_items:
+            self.inventory_auto_scroll_timer_id = self.after(self.inventory_auto_scroll_speed, self.perform_inventory_auto_scroll)
+            return
+        
+        # 获取当前选中行
+        current_selection = self.inventory_detail_tree.selection()
+        
+        # 如果没有选中行或者选中的是最后一行，则选中第一行
+        if not current_selection or current_selection[0] == all_items[-1]:
+            next_item = all_items[0]
+        else:
+            # 找到当前选中行的下一行
+            current_index = all_items.index(current_selection[0])
+            next_item = all_items[current_index + 1]
+        
+        # 清除现有选择并选择下一行
+        self.inventory_detail_tree.selection_set(next_item)
+        
+        # 确保选中行可见
+        self.inventory_detail_tree.see(next_item)
+        
+        # 设置定时器进行下一次滚动
+        self.inventory_auto_scroll_timer_id = self.after(self.inventory_auto_scroll_speed, self.perform_inventory_auto_scroll)

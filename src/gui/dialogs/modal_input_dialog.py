@@ -37,14 +37,14 @@ class ModalInputDialog:
         # 创建模态窗口
         self.dialog = tb.Toplevel(self.parent)
         self.dialog.title(self.title)
-        self.dialog.minsize(420, 300)
+        self.dialog.minsize(450, 300)  # 增加最小宽度确保按钮可见
         self.dialog.configure(bg='#f4f8fb')
         self.dialog.transient(self.parent)  # 设置为父窗口的临时窗口
         self.dialog.grab_set()  # 模态
         
         # 窗口居中
-        w = 420
-        h = max(300, 80 + len(self.fields) * 60)
+        w = 480  # 增大默认宽度
+        h = max(320, 100 + len(self.fields) * 60)
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
         x = (screen_width - w) // 2
@@ -58,15 +58,22 @@ class ModalInputDialog:
         style.configure('Dialog.TButton', font=('微软雅黑', 12, 'bold'), background='#3a4d54', foreground='#fff', padding=10)
         style.map('Dialog.TButton', background=[('active', '#4f686e')], foreground=[('active', '#ffffff')])
         
+        # 创建主容器框架，使用place布局
+        main_container = ttk.Frame(self.dialog, style='Dialog.TFrame')
+        main_container.place(x=0, y=0, relwidth=1, relheight=1)
+        
         # 主内容框架
-        content_frame = ttk.Frame(self.dialog, style='Dialog.TFrame')
-        content_frame.pack(side='top', fill='both', expand=True, padx=20, pady=20)
+        content_frame = ttk.Frame(main_container, style='Dialog.TFrame')
+        content_frame.place(x=20, y=20, relwidth=0.95, height=h-100)
         
         # 添加字段
         for i, (label, field_name, field_type) in enumerate(self.fields):
-            ttk.Label(content_frame, text=f"{label}:", style='Dialog.TLabel').grid(
-                row=i*2, column=0, padx=12, pady=4, sticky='e'
-            )
+            # 使用place布局来精确定位每个元素
+            label_y = i * 60 + 10
+            
+            # 标签
+            label_widget = ttk.Label(content_frame, text=f"{label}:", style='Dialog.TLabel')
+            label_widget.place(x=10, y=label_y, width=80, height=30)
             
             # 设置输入验证
             vcmd = None
@@ -87,7 +94,8 @@ class ModalInputDialog:
             if field_name in self.initial_values:
                 entry.insert(0, str(self.initial_values[field_name]))
                 
-            entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='ew')
+            # 放置输入框，确保宽度足够
+            entry.place(x=100, y=label_y, relwidth=0.7, height=30)
             self.entries[field_name] = entry
             
             # 错误提示标签
@@ -98,31 +106,40 @@ class ModalInputDialog:
                 background='#f4f8fb', 
                 font=('微软雅黑', 10)
             )
-            err_label.grid(row=i*2+1, column=0, columnspan=2, sticky='w', padx=12)
+            err_label.place(x=100, y=label_y+32, relwidth=0.7, height=20)
             self.error_labels[field_name] = err_label
         
-        # 设置列宽
-        content_frame.columnconfigure(1, weight=1)
+        # 按钮区域
+        button_container = ttk.Frame(main_container, style='Dialog.TFrame')
+        button_container.place(x=0, rely=1.0, relwidth=1, height=80, anchor='sw')
         
-        # 按钮框架
-        button_frame = ttk.Frame(self.dialog, style='Dialog.TFrame')
-        button_frame.pack(side='bottom', fill='x', pady=20)
-        
-        # 提交按钮
-        ttk.Button(
-            button_frame, 
-            text="提交", 
-            command=self.validate_and_submit, 
-            style='Dialog.TButton'
-        ).pack(side='right', padx=20, ipadx=20)
-        
+        # 使用place布局来精确放置按钮
         # 取消按钮
-        ttk.Button(
-            button_frame, 
+        cancel_button = ttk.Button(
+            button_container, 
             text="取消", 
             command=self.dialog.destroy, 
             style='Dialog.TButton'
-        ).pack(side='right', padx=5, ipadx=20)
+        )
+        cancel_button.place(relx=0.35, rely=0.5, width=100, height=36, anchor='center')
+        
+        # 提交按钮
+        submit_button = ttk.Button(
+            button_container, 
+            text="提交", 
+            command=self.validate_and_submit, 
+            style='Dialog.TButton'
+        )
+        submit_button.place(relx=0.65, rely=0.5, width=100, height=36, anchor='center')
+        
+        # 确保窗口大小变化时按钮位置也相应调整
+        def on_resize(event):
+            # 窗口大小变化时重新计算按钮位置
+            button_container.place_configure(height=80)
+            cancel_button.place_configure(relx=0.35, rely=0.5, anchor='center')
+            submit_button.place_configure(relx=0.65, rely=0.5, anchor='center')
+            
+        self.dialog.bind("<Configure>", on_resize)
     
     def validate_and_submit(self):
         """验证输入并提交数据"""

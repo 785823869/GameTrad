@@ -1,0 +1,45 @@
+    def import_confirmed_ocr_data(self, confirmed_data):
+        """导入确认后的OCR数据"""
+        success_count = 0
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for data in confirmed_data:
+            item_name = data.get('item_name', '')
+            quantity = data.get('quantity', 0)
+            market_price = data.get('market_price', 0)
+            target_price = data.get('target_price', 0)
+            planned_price = data.get('planned_price', 0)
+            
+            # 计算保本价、利润和利润率
+            break_even_price = round(target_price * 1.03) if target_price else 0
+            profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+            profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
+            
+            # 保存数据
+            self.db_manager.save_trade_monitor({
+                'item_name': item_name,
+                'monitor_time': now,
+                'quantity': quantity,
+                'market_price': market_price,
+                'target_price': target_price,
+                'planned_price': planned_price,
+                'break_even_price': break_even_price,
+                'profit': profit,
+                'profit_rate': profit_rate,
+                'strategy': data.get('strategy', '')
+            })
+        
+            success_count += 1
+        
+        if success_count > 0:
+            self.refresh_monitor()
+            self.main_gui.log_operation('修改', '交易监控')
+            messagebox.showinfo("成功", f"成功导入 {success_count} 条监控记录")
+            self.status_var.set(f"已导入 {success_count} 条记录")
+            
+            # 清空已处理的图片
+            self._pending_ocr_images = []
+            self.ocr_preview.clear_images()
+        else:
+            messagebox.showwarning("警告", "没有成功导入任何记录！")
+            self.status_var.set("未导入任何记录") 

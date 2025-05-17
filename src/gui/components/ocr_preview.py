@@ -125,11 +125,16 @@ class OCRPreview(ttk.Frame):
             lbl.pack(pady=(0, 2))
             
             # 绑定点击事件，点击放大预览
-            lbl.bind("<Button-1>", lambda e, img=img, idx=idx: self._show_enlarged(img, idx))
+            # 使用闭包确保每个事件处理程序都有自己的img和idx副本
+            def make_click_handler(img_ref, idx_ref):
+                return lambda e: self._show_enlarged(img_ref, idx_ref)
+            lbl.bind("<Button-1>", make_click_handler(img, idx))
             
             # 创建删除按钮
-            btn = ttk.Button(frame, text="删除", width=5, 
-                           command=lambda i=idx: self.delete_image(i))
+            # 使用闭包确保每个按钮都有自己的索引副本
+            def make_delete_handler(idx_ref):
+                return lambda: self.delete_image(idx_ref)
+            btn = ttk.Button(frame, text="删除", width=5, command=make_delete_handler(idx))
             btn.pack()
             
     def _show_enlarged(self, img, idx):

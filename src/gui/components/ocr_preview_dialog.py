@@ -32,6 +32,7 @@ class OCRPreviewDialog:
             'column': None,
             'column_index': None
         }
+        self.last_hover_row = None  # 记录上一个高亮的行
     
     def show(self, data_list, columns, column_widths=None, column_aligns=None, 
              callback=None, bootstyle="warning"):
@@ -79,6 +80,20 @@ class OCRPreviewDialog:
         table_frame = tb.Frame(table_container, bootstyle="light")
         table_frame.pack(fill='both', expand=True)
         
+        # 配置表格样式，增加行高
+        style = tb.Style()
+        style.configure(f"{bootstyle}.Treeview", 
+                      rowheight=32,  # 增加行高，与主表格一致
+                      font=(self.chinese_font, 10),
+                      background="#ffffff",
+                      fieldbackground="#ffffff",
+                      foreground="#2c3e50")
+                      
+        style.configure(f"{bootstyle}.Treeview.Heading", 
+                      font=(self.chinese_font, 10, "bold"),
+                      background="#e0e6ed",
+                      foreground="#2c3e50")
+        
         # 设置默认列宽和对齐方式
         if not column_widths:
             column_widths = {col: 120 for col in columns}
@@ -95,7 +110,7 @@ class OCRPreviewDialog:
         
         # 创建表格
         self.tree = tb.Treeview(table_frame, columns=columns, show='headings', 
-                               height=10, bootstyle=bootstyle)
+                               height=10, bootstyle=bootstyle, style=f"{bootstyle}.Treeview")
         
         for col in columns:
             self.tree.heading(col, text=col, anchor='center')
@@ -113,8 +128,12 @@ class OCRPreviewDialog:
         scrollbar.pack(side='right', fill='y')
         
         # 配置表格样式
-        self.tree.tag_configure('evenrow', background='#fdf7f0')
+        self.tree.tag_configure('evenrow', background='#fdf7f0')  # 柔和的橙色背景
         self.tree.tag_configure('oddrow', background='#ffffff')
+        self.tree.tag_configure('hovering', background='#fff8ed')  # 鼠标悬停效果
+        
+        # 绑定鼠标移动事件
+        self.tree.bind("<Motion>", self._on_treeview_motion)
         
         # 清空树数据
         self.tree_data = {}
@@ -165,18 +184,27 @@ class OCRPreviewDialog:
     
     def _populate_tree(self, data_list):
         """将数据填充到表格中"""
+        print(f"填充表格的数据列表: {data_list}")  # 调试输出
+        
         for i, data in enumerate(data_list):
             # 设置交替行颜色
             row_tags = ('evenrow',) if i % 2 == 0 else ('oddrow',)
             
             # 获取所有值
             values = []
+            print(f"处理数据: {data}")  # 调试输出
+            print(f"表格列: {self.tree['columns']}")  # 调试输出
+            
             for col in self.tree['columns']:
                 # 尝试从数据中获取值，如果不存在则使用空字符串
                 if isinstance(data, dict):
-                    # 将列名转换为可能的键名
-                    key = col.lower().replace(' ', '_')
-                    value = data.get(key, data.get(col, ''))
+                    # 直接尝试使用列名作为键
+                    value = data.get(col, '')
+                    if value == '' and col.lower().replace(' ', '_') in data:
+                        # 如果没有找到，尝试使用转换后的键名
+                        key = col.lower().replace(' ', '_')
+                        value = data.get(key, '')
+                    print(f"列 {col} 的值: {value}")  # 调试输出
                 else:
                     # 如果数据不是字典，假设是列表或元组
                     try:
@@ -198,6 +226,7 @@ class OCRPreviewDialog:
             
             # 插入数据
             item_id = self.tree.insert('', 'end', values=values, tags=row_tags)
+            print(f"插入的值: {values}")  # 调试输出
             
             # 存储原始数据
             self.tree_data[item_id] = data
@@ -263,24 +292,65 @@ class OCRPreviewDialog:
             # 尝试转换为适当的类型
             try:
                 if '数量' in column_name:
-                    data[key] = int(new_value)
-                elif '价格' in column_name or '单价' in column_name or '费' in column_name:
-                    data[key] = float(new_value)
+                    # 确保数量是正整数
+                    int_value = int(new_value.replace(',', ''))
+                    if int_value <= 0:
+                        messagebox.showwarning("输入错误", "数量必须是正整数")
+                        self.edit_entry.focus_set()
+                        return
+                    data[key] = int_value
+                    # 同时更新英文键名
+                    data['quantity'] = int_value
+                    values[column_index] = f"{int_value:,}"
+                elif '单价' in column_name:
+                    # 确保单价是正数
+                    float_value = float(new_value.replace(',', ''))
+                    if float_value <= 0:
+                        messagebox.showwarning("输入错误", "单价必须是正数")
+                        self.edit_entry.focus_set()
+                        return
+                    data[key] = float_value
+                    # 同时更新英文键名
+                    data['unit_price'] = float_value
+                    values[column_index] = f"{int(float_value):,}" if float_value >= 1 else f"{float_value:.2f}"
+                elif '手续费' in column_name:
+                    # 手续费可以是0或正数
+                    float_value = float(new_value.replace(',', ''))
+                    if float_value < 0:
+                        messagebox.showwarning("输入错误", "手续费不能为负数")
+                        self.edit_entry.focus_set()
+                        return
+                    data[key] = float_value
+                    # 同时更新英文键名
+                    data['fee'] = float_value
+                    values[column_index] = f"{int(float_value):,}" if float_value >= 1 else f"{float_value:.2f}"
+                elif '价格' in column_name or '花费' in column_name:
+                    float_value = float(new_value.replace(',', ''))
+                    if float_value <= 0:
+                        messagebox.showwarning("输入错误", "价格必须是正数")
+                        self.edit_entry.focus_set()
+                        return
+                    data[key] = float_value
+                    values[column_index] = f"{int(float_value):,}" if float_value >= 1 else f"{float_value:.2f}"
                 else:
                     data[key] = new_value
             except ValueError:
-                # 如果转换失败，保持原值
-                pass
+                messagebox.showwarning("输入错误", f"'{column_name}'必须是有效的数字")
+                self.edit_entry.focus_set()
+                return
             
             # 如果存在总金额列，更新总金额
             if '总金额' in self.tree['columns']:
                 total_index = self.tree['columns'].index('总金额')
-                # 计算总金额（通常是数量 * 单价 - 手续费）
-                if '数量' in data and ('单价' in data or '价格' in data) and '手续费' in data:
-                    quantity = data.get('数量', data.get('quantity', 0))
-                    price = data.get('单价', data.get('unit_price', data.get('价格', 0)))
-                    fee = data.get('手续费', data.get('fee', 0))
-                    total = quantity * price - fee
+                
+                # 获取必要的数据，优先使用标准化的键名
+                quantity = data.get('quantity', data.get('数量', 0))
+                unit_price = data.get('unit_price', data.get('单价', data.get('价格', 0)))
+                fee = data.get('fee', data.get('手续费', 0))
+                
+                # 计算总金额
+                if quantity and unit_price:
+                    total = quantity * unit_price - fee
                     data['总金额'] = total
                     data['total_amount'] = total
                     values[total_index] = f"{int(total):,}"  # 显示为整数
@@ -301,15 +371,61 @@ class OCRPreviewDialog:
             
             # 数据验证
             if isinstance(data, dict):
-                # 检查必要字段
-                required_fields = ['物品名称', '数量', '单价']
-                required_keys = ['item_name', 'quantity', 'unit_price']
+                # 检查是否有入库管理所需的必要字段
+                required_fields = ['物品名称', '数量']
+                required_keys = ['item_name', 'quantity']
                 
-                # 检查字典中是否有必要的键
-                has_required = any(key in data for key in required_keys)
+                # 检查字典中是否有所有必要的键
+                missing_keys = []
                 
-                if not has_required:
-                    messagebox.showerror("输入错误", f"数据无效，请检查")
+                # 检查英文键名
+                for key in required_keys:
+                    if key not in data:
+                        # 尝试查找对应的中文键名
+                        if key == 'item_name' and '物品名称' in data:
+                            data[key] = data['物品名称']
+                        elif key == 'quantity' and '数量' in data:
+                            data[key] = data['数量']
+                        else:
+                            missing_keys.append(key)
+                
+                # 如果还有缺失的键，显示错误
+                if missing_keys:
+                    item_values = self.tree.item(item_id, 'values')
+                    item_desc = f"物品: {item_values[0]}" if item_values and len(item_values) > 0 else "未知物品"
+                    messagebox.showerror("数据不完整", f"{item_desc} 缺少必要字段: {', '.join(missing_keys)}\n请确保填写了所有必要信息。")
+                    return
+                
+                # 确保数据类型正确
+                try:
+                    data['quantity'] = int(data['quantity'])
+                    
+                    # 处理花费字段 - 优先使用cost，如果没有则尝试使用unit_price计算
+                    if 'cost' not in data and 'unit_price' in data:
+                        data['cost'] = float(data['unit_price']) * data['quantity']
+                    elif 'cost' in data:
+                        data['cost'] = float(data['cost'])
+                    else:
+                        # 如果既没有cost也没有unit_price，则报错
+                        item_values = self.tree.item(item_id, 'values')
+                        item_desc = f"物品: {item_values[0]}" if item_values and len(item_values) > 0 else "未知物品"
+                        messagebox.showerror("数据不完整", f"{item_desc} 缺少花费或单价信息\n请确保填写了花费或单价。")
+                        return
+                    
+                    # 处理均价字段 - 如果没有则计算
+                    if 'avg_cost' not in data:
+                        data['avg_cost'] = data['cost'] / data['quantity'] if data['quantity'] > 0 else 0
+                    else:
+                        data['avg_cost'] = float(data['avg_cost'])
+                    
+                    # 确保有备注字段
+                    if 'note' not in data:
+                        data['note'] = ''
+                    
+                except (ValueError, TypeError) as e:
+                    item_values = self.tree.item(item_id, 'values')
+                    item_desc = f"物品: {item_values[0]}" if item_values and len(item_values) > 0 else "未知物品"
+                    messagebox.showerror("数据格式错误", f"{item_desc} 的数据格式不正确: {str(e)}\n请确保数量为整数，花费和均价为数字。")
                     return
             
             confirmed_data.append(data)
@@ -320,3 +436,29 @@ class OCRPreviewDialog:
         # 调用回调函数
         if self.callback:
             self.callback(confirmed_data) 
+
+    def _on_treeview_motion(self, event):
+        """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
+        # 识别当前鼠标位置的行
+        row_id = self.tree.identify_row(event.y)
+        
+        # 如果鼠标离开了上一个高亮行，恢复其原始样式
+        if self.last_hover_row and self.last_hover_row != row_id:
+            # 获取行的当前标签
+            current_tags = list(self.tree.item(self.last_hover_row, 'tags'))
+            # 移除悬停标签
+            if 'hovering' in current_tags:
+                current_tags.remove('hovering')
+                self.tree.item(self.last_hover_row, tags=current_tags)
+                
+        # 如果鼠标位于一个有效行上，应用悬停高亮效果
+        if row_id and row_id != self.last_hover_row:
+            # 获取行的当前标签
+            current_tags = list(self.tree.item(row_id, 'tags'))
+            # 添加悬停标签
+            if 'hovering' not in current_tags:
+                current_tags.append('hovering')
+                self.tree.item(row_id, tags=current_tags)
+                
+        # 更新上一个高亮行的记录
+        self.last_hover_row = row_id if row_id else None 

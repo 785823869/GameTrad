@@ -498,6 +498,28 @@ class DatabaseManager:
         ]
         for sql in table_sqls:
             cursor.execute(sql)
+            
+        # 检查是否需要升级operation_logs表
+        try:
+            # 检查是否有操作类别字段
+            cursor.execute("SHOW COLUMNS FROM operation_logs LIKE 'operation_category'")
+            has_category = cursor.fetchone() is not None
+            
+            # 检查是否有可回退字段
+            cursor.execute("SHOW COLUMNS FROM operation_logs LIKE 'can_revert'")
+            has_can_revert = cursor.fetchone() is not None
+            
+            # 如果没有这些字段，添加它们
+            if not has_category:
+                cursor.execute("ALTER TABLE operation_logs ADD COLUMN operation_category VARCHAR(50) AFTER operation_type")
+                print("已添加operation_category字段到operation_logs表")
+                
+            if not has_can_revert:
+                cursor.execute("ALTER TABLE operation_logs ADD COLUMN can_revert BOOLEAN DEFAULT TRUE AFTER reverted")
+                print("已添加can_revert字段到operation_logs表")
+        except Exception as e:
+            print(f"升级数据库表结构时出错: {e}")
+        
         # 初始化item_dict表数据（如不存在）
         cursor.execute("SELECT COUNT(*) FROM item_dict")
         if cursor.fetchone()[0] == 0:
@@ -514,7 +536,15 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            query = "SELECT id, operation_type, tab_name, operation_data, operation_time, reverted FROM operation_logs WHERE 1=1"
+            query = """
+                SELECT 
+                    id, operation_type, tab_name, operation_data, 
+                    operation_time, reverted, 
+                    IFNULL(operation_category, '') as operation_category,
+                    IFNULL(can_revert, TRUE) as can_revert
+                FROM operation_logs 
+                WHERE 1=1
+            """
             params = []
             if tab_name:
                 query += " AND tab_name LIKE %s"
@@ -533,19 +563,32 @@ class DatabaseManager:
             cursor.execute(query, tuple(params))
             results = []
             for row in cursor.fetchall():
-                id, operation_type, tab_name, operation_data, operation_time, reverted = row
                 try:
-                    operation_data = json.loads(operation_data)
-                except Exception:
-                    pass
-                results.append({
-                    'id': id,
-                    '操作类型': operation_type,
-                    '标签页': tab_name,
-                    '操作时间': operation_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(operation_time, 'strftime') else str(operation_time),
-                    '数据': operation_data,
-                    '已回退': bool(reverted)
-                })
+                    # 解包查询结果
+                    id, operation_type, tab_name, operation_data, operation_time, reverted = row[:6]
+                    # 获取额外的新字段（如果存在）
+                    operation_category = row[6] if len(row) > 6 else ""
+                    can_revert = bool(row[7]) if len(row) > 7 else True
+                    
+                    # 解析JSON数据
+                    try:
+                        operation_data = json.loads(operation_data)
+                    except Exception:
+                        pass
+                        
+                    results.append({
+                        'id': id,
+                        '操作类型': operation_type,
+                        '标签页': tab_name,
+                        '操作时间': operation_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(operation_time, 'strftime') else str(operation_time),
+                        '数据': operation_data,
+                        '已回退': bool(reverted),
+                        '操作类别': operation_category,
+                        '可回退': can_revert
+                    })
+                except Exception as e:
+                    print(f"解析操作日志记录时出错: {e}")
+                    continue
             return results
         finally:
             cursor.close()
@@ -578,17 +621,46 @@ class DatabaseManager:
             conn.close()
 
     def save_operation_log(self, op_type, tab_name, data=None, reverted=False):
+        # 导入操作类型模块
+        try:
+            from src.utils.operation_types import OperationType
+            # 获取操作类别和可回退状态
+            category = OperationType.get_category(op_type)
+            can_revert = OperationType.can_revert(op_type)
+        except ImportError:
+            # 如果模块不存在，使用默认值
+            category = ""
+            can_revert = True
+        
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                "INSERT INTO operation_logs (operation_type, tab_name, operation_data, reverted) VALUES (%s, %s, %s, %s)",
-                (op_type, tab_name, json.dumps(data, ensure_ascii=False), int(bool(reverted)))
-            )
+            # 检查是否有新字段
+            cursor.execute("SHOW COLUMNS FROM operation_logs LIKE 'operation_category'")
+            has_category = cursor.fetchone() is not None
+            
+            cursor.execute("SHOW COLUMNS FROM operation_logs LIKE 'can_revert'")
+            has_can_revert = cursor.fetchone() is not None
+            
+            if has_category and has_can_revert:
+                # 使用新表结构
+                cursor.execute(
+                    """INSERT INTO operation_logs 
+                       (operation_type, operation_category, tab_name, operation_data, reverted, can_revert) 
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (op_type, category, tab_name, json.dumps(data, ensure_ascii=False), int(bool(reverted)), int(bool(can_revert)))
+                )
+            else:
+                # 使用旧表结构
+                cursor.execute(
+                    "INSERT INTO operation_logs (operation_type, tab_name, operation_data, reverted) VALUES (%s, %s, %s, %s)",
+                    (op_type, tab_name, json.dumps(data, ensure_ascii=False), int(bool(reverted)))
+                )
             conn.commit()
             log_id = cursor.lastrowid
             return log_id
-        except Exception:
+        except Exception as e:
+            print(f"保存操作日志失败: {e}")
             return None
         finally:
             cursor.close()

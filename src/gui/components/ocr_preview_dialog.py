@@ -1,7 +1,7 @@
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 
 class OCRPreviewDialog:
     """
@@ -33,6 +33,7 @@ class OCRPreviewDialog:
             'column_index': None
         }
         self.last_hover_row = None  # 记录上一个高亮的行
+        self.bootstyle = "warning"  # 默认样式，将在show方法中更新
     
     def show(self, data_list, columns, column_widths=None, column_aligns=None, 
              callback=None, bootstyle="warning"):
@@ -48,6 +49,7 @@ class OCRPreviewDialog:
             bootstyle: 对话框样式，如 "warning", "primary", "info"
         """
         self.callback = callback
+        self.bootstyle = bootstyle
         
         # 创建预览窗口
         self.window = tb.Toplevel(self.parent)
@@ -70,6 +72,59 @@ class OCRPreviewDialog:
             font=(self.chinese_font, 12, "bold"),
             bootstyle=bootstyle
         ).pack(pady=(0, 10))
+        
+        # 工具栏区域，添加批量操作按钮
+        toolbar_frame = tb.Frame(main_frame, bootstyle="light")
+        toolbar_frame.pack(fill='x', pady=(0, 5))
+        
+        # 添加全选按钮
+        select_all_btn = tb.Button(
+            toolbar_frame,
+            text="全选",
+            command=self._select_all_items,
+            bootstyle=f"{bootstyle}-outline",
+            width=10
+        )
+        select_all_btn.pack(side='left', padx=(0, 5))
+        
+        # 添加取消选择按钮
+        deselect_all_btn = tb.Button(
+            toolbar_frame,
+            text="取消选择",
+            command=self._deselect_all_items,
+            bootstyle="secondary-outline",
+            width=10
+        )
+        deselect_all_btn.pack(side='left', padx=5)
+        
+        # 添加删除选中记录按钮
+        delete_selected_btn = tb.Button(
+            toolbar_frame,
+            text="删除选中",
+            command=self._delete_selected_items,
+            bootstyle="danger-outline",
+            width=10
+        )
+        delete_selected_btn.pack(side='left', padx=5)
+        
+        # 添加批量设置备注按钮
+        batch_note_btn = tb.Button(
+            toolbar_frame,
+            text="批量备注",
+            command=self._batch_add_note,
+            bootstyle=f"{bootstyle}-outline",
+            width=10
+        )
+        batch_note_btn.pack(side='left', padx=5)
+        
+        # 添加选择提示
+        selection_tip = tb.Label(
+            toolbar_frame,
+            text="提示: Ctrl+A全选, Shift多选连续项, Ctrl点击多选不连续项",
+            bootstyle="secondary",
+            font=(self.chinese_font, 9)
+        )
+        selection_tip.pack(side='right', padx=5)
         
         # 创建表格框架，限制高度
         table_container = tb.Frame(main_frame, bootstyle="light", height=350)
@@ -108,9 +163,10 @@ class OCRPreviewDialog:
                 if '数量' in col or '价格' in col or '单价' in col or '金额' in col or '费' in col:
                     column_aligns[col] = 'e'
         
-        # 创建表格
+        # 创建表格，启用多选模式
         self.tree = tb.Treeview(table_frame, columns=columns, show='headings', 
-                               height=10, bootstyle=bootstyle, style=f"{bootstyle}.Treeview")
+                               height=10, bootstyle=bootstyle, style=f"{bootstyle}.Treeview",
+                               selectmode='extended')  # 启用多选模式
         
         for col in columns:
             self.tree.heading(col, text=col, anchor='center')
@@ -135,6 +191,9 @@ class OCRPreviewDialog:
         # 绑定鼠标移动事件
         self.tree.bind("<Motion>", self._on_treeview_motion)
         
+        # 绑定全选快捷键
+        self.tree.bind('<Control-a>', self._select_all_shortcut)
+        
         # 清空树数据
         self.tree_data = {}
         
@@ -149,6 +208,14 @@ class OCRPreviewDialog:
         self.tree.bind('<Double-1>', self._edit_cell)
         self.edit_entry.bind('<Return>', self._save_edit)
         self.edit_entry.bind('<FocusOut>', self._save_edit)
+        
+        # 显示所选项目数量
+        self.status_var = tb.StringVar(value="共 0 项已选中")
+        status_bar = tb.Label(main_frame, textvariable=self.status_var, bootstyle="secondary")
+        status_bar.pack(side='bottom', anchor='w', padx=5, pady=(0, 5))
+        
+        # 绑定选择变化事件
+        self.tree.bind('<<TreeviewSelect>>', self._update_selection_status)
         
         # 按钮区域 - 使用固定高度的框架
         button_container = tb.Frame(main_frame, bootstyle="light", height=60)
@@ -230,6 +297,43 @@ class OCRPreviewDialog:
             
             # 存储原始数据
             self.tree_data[item_id] = data
+    
+    def _select_all_items(self):
+        """全选所有项目"""
+        for item in self.tree.get_children():
+            self.tree.selection_add(item)
+        self._update_selection_status()
+    
+    def _deselect_all_items(self):
+        """取消所有选择"""
+        self.tree.selection_remove(*self.tree.selection())
+        self._update_selection_status()
+    
+    def _delete_selected_items(self):
+        """删除选中的项目"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+        
+        if messagebox.askyesno("确认删除", f"确定要删除选中的 {len(selected)} 条记录吗？"):
+            for item_id in selected:
+                # 从表格和数据中删除
+                self.tree.delete(item_id)
+                if item_id in self.tree_data:
+                    del self.tree_data[item_id]
+            
+            # 更新选中状态
+            self._update_selection_status()
+    
+    def _select_all_shortcut(self, event):
+        """响应Ctrl+A全选快捷键"""
+        self._select_all_items()
+        return "break"  # 阻止事件继续传播
+    
+    def _update_selection_status(self, event=None):
+        """更新选中状态栏显示"""
+        selected_count = len(self.tree.selection())
+        self.status_var.set(f"共 {selected_count} 项已选中")
     
     def _edit_cell(self, event):
         """处理双击编辑单元格"""
@@ -364,9 +468,19 @@ class OCRPreviewDialog:
     
     def _import_data(self):
         """导入按钮的回调函数"""
+        # 获取选中的条目，如果没有选择则获取所有条目
+        selected_items = self.tree.selection()
+        items_to_import = selected_items if selected_items else self.tree.get_children()
+        
+        # 如果选择了部分记录，则需要确认
+        if selected_items and len(selected_items) < len(self.tree.get_children()):
+            if not messagebox.askyesno("确认导入", f"您选择了 {len(selected_items)} 条记录进行导入，是否继续？\n选择\"否\"将导入所有记录。"):
+                # 用户点击"否"，导入所有记录
+                items_to_import = self.tree.get_children()
+        
         confirmed_data = []
         
-        for item_id in self.tree.get_children():
+        for item_id in items_to_import:
             data = self.tree_data[item_id]
             
             # 数据验证
@@ -435,7 +549,7 @@ class OCRPreviewDialog:
         
         # 调用回调函数
         if self.callback:
-            self.callback(confirmed_data) 
+            self.callback(confirmed_data)
 
     def _on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
@@ -461,4 +575,114 @@ class OCRPreviewDialog:
                 self.tree.item(row_id, tags=current_tags)
                 
         # 更新上一个高亮行的记录
-        self.last_hover_row = row_id if row_id else None 
+        self.last_hover_row = row_id if row_id else None
+
+    def _batch_add_note(self):
+        """批量添加备注"""
+        # 获取选中的项目，如果没有选中，则应用于所有项目
+        selected_items = self.tree.selection()
+        target_items = selected_items if selected_items else self.tree.get_children()
+        
+        if not target_items:
+            messagebox.showinfo("提示", "没有可用的记录")
+            return
+        
+        # 创建一个自定义对话框获取备注文本
+        class BatchNoteDialog(tk.simpledialog.Dialog):
+            def __init__(self, parent, title, bootstyle, chinese_font):
+                self.note_text = ""
+                self.bootstyle = bootstyle
+                self.chinese_font = chinese_font
+                super().__init__(parent, title)
+            
+            def body(self, master):
+                tb.Label(
+                    master,
+                    text="请输入要批量添加的备注内容：",
+                    font=(self.chinese_font, 10),
+                    bootstyle=self.bootstyle
+                ).grid(row=0, column=0, sticky="w", padx=10, pady=5)
+                
+                # 使用普通的tk.Text而不是tb.Text，因为tb.Text不支持bootstyle参数
+                self.note_entry = tk.Text(
+                    master,
+                    width=40,
+                    height=4,
+                    font=(self.chinese_font, 10)
+                )
+                self.note_entry.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+                
+                # 设置提示
+                if selected_items:
+                    item_count = len(selected_items)
+                    tb.Label(
+                        master,
+                        text=f"将应用于已选中的 {item_count} 条记录",
+                        font=(self.chinese_font, 9),
+                        bootstyle="secondary"
+                    ).grid(row=2, column=0, sticky="w", padx=10, pady=5)
+                else:
+                    tb.Label(
+                        master,
+                        text="将应用于所有记录",
+                        font=(self.chinese_font, 9),
+                        bootstyle="secondary"
+                    ).grid(row=2, column=0, sticky="w", padx=10, pady=5)
+                
+                return self.note_entry  # 初始聚焦组件
+            
+            def apply(self):
+                self.note_text = self.note_entry.get("1.0", "end-1c")
+        
+        # 显示对话框
+        dialog = BatchNoteDialog(
+            self.window,
+            "批量添加备注",
+            self.bootstyle,
+            self.chinese_font
+        )
+        
+        if not dialog.note_text:
+            return  # 用户取消或没有输入文本
+        
+        # 更新所有目标记录的备注字段
+        note_column_index = -1
+        
+        # 查找备注列的索引
+        for i, col in enumerate(self.tree['columns']):
+            if '备注' in col or col == 'note':
+                note_column_index = i
+                break
+        
+        # 如果找不到备注列，则尝试查找数据字典中是否有备注字段
+        has_note_field = False
+        if note_column_index == -1:
+            # 检查第一条记录数据结构
+            if target_items and self.tree_data:
+                first_data = self.tree_data[target_items[0]]
+                if isinstance(first_data, dict) and ('note' in first_data or '备注' in first_data):
+                    has_note_field = True
+        
+        # 应用备注到所有目标记录
+        for item_id in target_items:
+            data = self.tree_data[item_id]
+            
+            # 更新树视图中的显示（如果有备注列）
+            if note_column_index >= 0:
+                values = list(self.tree.item(item_id, "values"))
+                values[note_column_index] = dialog.note_text
+                self.tree.item(item_id, values=values)
+            
+            # 更新数据字典
+            if isinstance(data, dict):
+                # 同时更新中文和英文键名
+                data['note'] = dialog.note_text
+                data['备注'] = dialog.note_text
+        
+        # 显示成功消息
+        count = len(target_items)
+        messagebox.showinfo("成功", f"已为 {count} 条记录设置备注")
+
+    def _dummy_method(self):
+        """用于确保文件正确结束"""
+        pass 

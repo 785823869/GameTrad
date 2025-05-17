@@ -5,6 +5,8 @@ import tkinter as tk
 import json
 import threading
 import time
+# 导入操作类型常量
+from src.utils.operation_types import OperationType, TabName
 
 class LogTab:
     def __init__(self, notebook, main_gui):
@@ -17,6 +19,7 @@ class LogTab:
         self.log_jump_var = tk.StringVar()
         self.filter_tab = tk.StringVar(value="全部")
         self.filter_type = tk.StringVar(value="全部")
+        self.filter_category = tk.StringVar(value="全部")  # 新增：操作类别筛选
         self.filter_reverted = tk.StringVar(value="全部")
         
         # 初始化分页变量
@@ -69,12 +72,59 @@ class LogTab:
         button_frame = ttk.Frame(toolbar_frame)
         button_frame.pack(side='right')
         
+        # 添加撤销和恢复按钮
+        ttk.Button(button_frame, text="撤销操作", 
+                  command=self.undo_operation, 
+                  bootstyle="warning-outline").pack(side='left', padx=5)
+        ttk.Button(button_frame, text="恢复操作", 
+                  command=self.redo_operation, 
+                  bootstyle="success-outline").pack(side='left', padx=5)
+        
         ttk.Button(button_frame, text="删除选中", 
                   command=self.delete_log_items, 
                   bootstyle="danger-outline").pack(side='left', padx=5)
         ttk.Button(button_frame, text="导出CSV", 
                   command=self.export_log_csv, 
                   bootstyle="info-outline").pack(side='left', padx=5)
+        
+        # 筛选条件区域（新增）
+        filter_frame = ttk.LabelFrame(log_frame, text="筛选条件", bootstyle="info")
+        filter_frame.pack(fill='x', pady=(0, 10), padx=5)
+        
+        # 使用网格布局来整齐排列筛选条件
+        ttk.Label(filter_frame, text="标签页:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        tab_combo = ttk.Combobox(filter_frame, textvariable=self.filter_tab, 
+                              values=["全部"] + TabName.get_all_tabs(),
+                              width=10, state="readonly")
+        tab_combo.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        tab_combo.bind("<<ComboboxSelected>>", lambda e: self._log_search())
+        
+        ttk.Label(filter_frame, text="操作类型:").grid(row=0, column=2, padx=5, pady=5, sticky='e')
+        type_combo = ttk.Combobox(filter_frame, textvariable=self.filter_type, 
+                               values=["全部"] + OperationType.get_all_types(),
+                               width=10, state="readonly")
+        type_combo.grid(row=0, column=3, padx=5, pady=5, sticky='w')
+        type_combo.bind("<<ComboboxSelected>>", lambda e: self._log_search())
+        
+        ttk.Label(filter_frame, text="操作类别:").grid(row=0, column=4, padx=5, pady=5, sticky='e')
+        categories = ["全部", "添加类", "修改类", "删除类", "查询类", "系统类", "其他类"]
+        category_combo = ttk.Combobox(filter_frame, textvariable=self.filter_category, 
+                                values=categories,
+                                width=10, state="readonly")
+        category_combo.grid(row=0, column=5, padx=5, pady=5, sticky='w')
+        category_combo.bind("<<ComboboxSelected>>", lambda e: self._log_search())
+        
+        ttk.Label(filter_frame, text="已回退:").grid(row=0, column=6, padx=5, pady=5, sticky='e')
+        reverted_combo = ttk.Combobox(filter_frame, textvariable=self.filter_reverted, 
+                                  values=["全部", "是", "否"],
+                                  width=6, state="readonly")
+        reverted_combo.grid(row=0, column=7, padx=5, pady=5, sticky='w')
+        reverted_combo.bind("<<ComboboxSelected>>", lambda e: self._log_search())
+        
+        # 重置按钮
+        ttk.Button(filter_frame, text="重置筛选", 
+                 command=self.reset_filters,
+                 bootstyle="secondary-outline").grid(row=0, column=8, padx=10, pady=5)
         
         # 状态栏和加载指示器
         status_frame = ttk.Frame(log_frame)
@@ -140,7 +190,10 @@ class LogTab:
         self.log_tree.tag_configure('add', foreground='#2980b9')  # 深蓝色
         self.log_tree.tag_configure('delete', foreground='#c0392b')  # 深红色
         self.log_tree.tag_configure('modify', foreground='#27ae60')  # 深绿色
-        self.log_tree.tag_configure('reverted', foreground='#7f8c8d')  # 灰色
+        self.log_tree.tag_configure('query', foreground='#8e44ad')   # 紫色
+        self.log_tree.tag_configure('system', foreground='#d35400')  # 橙色
+        self.log_tree.tag_configure('other', foreground='#7f8c8d')   # 灰色
+        self.log_tree.tag_configure('reverted', foreground='#95a5a6', background='#f5f5f5')  # 灰色带浅灰背景
         
         # 初始隐藏进度条
         self.progress_bar.pack_forget()
@@ -283,6 +336,10 @@ class LogTab:
                 
             op_type = self.filter_type.get() if hasattr(self, 'filter_type') else None
             if op_type == "全部": op_type = None
+            
+            # 处理操作类别筛选
+            category = self.filter_category.get() if hasattr(self, 'filter_category') else None
+            if category == "全部": category = None
                 
             reverted = None
             if hasattr(self, 'filter_reverted'):
@@ -315,6 +372,10 @@ class LogTab:
                 page=self.log_page,
                 page_size=page_size
             )
+            
+            # 如果有操作类别筛选，过滤结果
+            if category:
+                logs = [log for log in logs if log.get('操作类别') == category]
             
             # 记录当前使用的页面大小
             self.log_page_size = page_size
@@ -362,16 +423,21 @@ class LogTab:
                 # 使用交替行颜色
                 row_tags = ('evenrow',) if idx % 2 == 0 else ('oddrow',)
                 
-                # 根据操作类型添加颜色标签
-                if '添加' in log['操作类型']:
+                # 根据操作类别添加颜色标签
+                category = log.get('操作类别', '')
+                if category == "添加类":
                     op_tag = 'add'
-                elif '删除' in log['操作类型']:
+                elif category == "删除类":
                     op_tag = 'delete'
-                elif '修改' in log['操作类型']:
+                elif category == "修改类":
                     op_tag = 'modify'
+                elif category == "查询类":
+                    op_tag = 'query'
+                elif category == "系统类":
+                    op_tag = 'system'
                 else:
-                    op_tag = None
-                    
+                    op_tag = 'other'
+                
                 # 如果已回退，使用灰色
                 if log.get('已回退'):
                     op_tag = 'reverted'
@@ -773,3 +839,23 @@ class LogTab:
             ttk.Label(tree_frame, text=error_msg, font=('Microsoft YaHei', 10)).pack(pady=20)
             
         ttk.Button(main_frame, text="关闭", command=detail_window.destroy).pack(pady=10)
+
+    def reset_filters(self):
+        """重置所有筛选条件"""
+        self.filter_tab.set("全部")
+        self.filter_type.set("全部")
+        self.filter_category.set("全部")
+        self.filter_reverted.set("全部")
+        self.log_search_var.set("")
+        self.log_page = 1
+        self.refresh_log_tab()
+
+    def undo_operation(self):
+        """调用主窗口的撤销操作方法"""
+        if hasattr(self.main_gui, 'undo_last_operation'):
+            self.main_gui.undo_last_operation()
+    
+    def redo_operation(self):
+        """调用主窗口的恢复操作方法"""
+        if hasattr(self.main_gui, 'redo_last_operation'):
+            self.main_gui.redo_last_operation()

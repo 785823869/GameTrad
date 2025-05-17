@@ -1,13 +1,21 @@
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import ttk, messagebox, filedialog as fd
-from PIL import ImageGrab, ImageTk
+# PIL导入，只需基本模块
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    # 如果PIL模块不完整，创建一个占位符
+    PIL_AVAILABLE = False
+    messagebox.showwarning("模块缺失", "PIL图像处理模块不完整，图片粘贴功能将不可用。请确保正确安装Pillow库。")
 import io, base64, requests
 from datetime import datetime
 import tkinter as tk
 import re
 from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
+from src.utils import clipboard_helper
 
 class StockOutTab:
     def __init__(self, notebook, main_gui):
@@ -310,7 +318,16 @@ class StockOutTab:
                 self.main_gui.inventory_tab.refresh_inventory()
                 
             self.main_gui.refresh_inventory()
-            self.main_gui.log_operation('修改', '出库管理')
+            # 使用正确的操作类型常量
+            from src.utils.operation_types import OperationType, TabName
+            self.main_gui.log_operation(OperationType.ADD, TabName.STOCK_OUT, {
+                'item_name': item,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'fee': fee,
+                'total_amount': total_amount,
+                'note': note if note is not None else ''
+            })
             
             messagebox.showinfo("成功", "出库记录添加成功！")
             self.status_var.set(f"已添加: {item} x {quantity}")
@@ -510,7 +527,9 @@ class StockOutTab:
             
             self.refresh_stock_out()
             edit_win.destroy()
-            self.main_gui.log_operation('修改', '出库管理', {'old': values, 'new': new_vals})
+            # 使用正确的操作类型常量
+            from src.utils.operation_types import OperationType, TabName
+            self.main_gui.log_operation(OperationType.MODIFY, TabName.STOCK_OUT, {'old': values, 'new': new_vals})
             self.status_var.set(f"已编辑: {new_vals[0]} 记录")
             
         # 按钮区域
@@ -534,17 +553,67 @@ class StockOutTab:
         msg = "确定要删除以下出库记录吗？\n" + "，".join(str(n) for n in names)
         
         if messagebox.askyesno("确认删除", msg):
+            deleted_data = []  # 用于记录被删除的数据
             for item in selected_items:
                 values = self.stock_out_tree.item(item)['values']
                 if len(values) >= 2:
                     try:
+                        # 获取完整数据用于记录
+                        item_data = {
+                            'item_name': values[0],
+                            'transaction_time': values[1],
+                            'quantity': self._safe_int_convert(values[2]) if len(values) > 2 else 0,
+                            'unit_price': self._safe_float_convert(values[3]) if len(values) > 3 else 0.0,
+                            'fee': self._safe_float_convert(values[4]) if len(values) > 4 else 0.0,
+                            'deposit': 0.0,  # 默认押金值
+                            'total_amount': self._safe_float_convert(values[5]) if len(values) > 5 else 0.0,
+                            'note': values[6] if len(values) > 6 else ''
+                        }
+                        deleted_data.append(item_data)
                         self.db_manager.delete_stock_out(values[0], values[1])
                     except Exception as e:
                         messagebox.showerror("删除失败", f"删除记录时发生错误: {str(e)}")
             
+            # 记录操作日志
+            if deleted_data:
+                from src.utils.operation_types import OperationType, TabName
+                self.main_gui.log_operation(OperationType.DELETE, TabName.STOCK_OUT, deleted_data)
+            
             self.refresh_stock_out()
             self.status_var.set(f"已删除 {len(selected_items)} 条记录")
+    
+    def _safe_int_convert(self, value):
+        """安全地将值转换为整数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                # 移除千位分隔符和其他非数字字符
+                clean_value = ''.join(c for c in value if c.isdigit())
+                return int(clean_value) if clean_value else 0
+            return 0
+        except Exception as e:
+            print(f"整数转换异常: {e}, 值: {value}")
+            return 0
             
+    def _safe_float_convert(self, value):
+        """安全地将值转换为浮点数，处理带有千位分隔符的情况"""
+        try:
+            if isinstance(value, float):
+                return value
+            if isinstance(value, int):
+                return float(value)
+            if isinstance(value, str):
+                # 移除千位分隔符
+                clean_value = value.replace(',', '')
+                return float(clean_value) if clean_value else 0.0
+            return 0.0
+        except Exception as e:
+            print(f"浮点数转换异常: {e}, 值: {value}")
+            return 0.0
+
     def copy_item_name(self):
         """复制选中的物品名称到剪贴板"""
         selected_items = self.stock_out_tree.selection()
@@ -568,11 +637,15 @@ class StockOutTab:
 
     def upload_ocr_import_stock_out(self):
         """上传图片进行OCR识别导入"""
+        if not PIL_AVAILABLE:
+            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片上传功能。请确保正确安装Pillow库。")
+            return
+            
         file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
         if not file_path:
             return
         try:
-            from PIL import Image
+            # 确保Image已正确导入
             img = Image.open(file_path)
             self._pending_ocr_images_out.append(img)
             # 使用refresh_ocr_image_preview_out方法刷新图片显示
@@ -659,25 +732,25 @@ class StockOutTab:
         print(f"OCR预览数据: {ocr_data_list}")  # 调试输出
         
         # 定义列
-        columns = ('物品名称', '数量', '单价', '手续费', '总金额', '备注')
+        columns = ('物品', '出库数量', '出库单价', '手续费', '总金额', '备注')
         
         # 设置列宽和对齐方式
         column_widths = {
-            '物品名称': 180,
-            '数量': 90,
-            '单价': 95,
+            '物品': 180,
+            '出库数量': 90,
+            '出库单价': 95,
             '手续费': 95,
             '总金额': 120,
             '备注': 150
         }
         
         column_aligns = {
-            '物品名称': 'w',  # 文本左对齐
-            '数量': 'e',      # 数字右对齐
-            '单价': 'e',
+            '物品': 'w',  # 文本左对齐
+            '出库数量': 'e',  # 数字右对齐
+            '出库单价': 'e',
             '手续费': 'e',
             '总金额': 'e',
-            '备注': 'w'      # 文本左对齐
+            '备注': 'w'  # 文本左对齐
         }
         
         # 确保每条数据都有必要的字段，并进行字段映射
@@ -689,11 +762,11 @@ class StockOutTab:
                 if '备注' not in data:
                     data['备注'] = data.get('note', '')
                 
-                # 字段映射：确保英文字段名和中文字段名都存在
+                # 字段映射：确保内部字段名和中文字段名都存在
                 field_mappings = {
-                    'item_name': '物品名称',
-                    'quantity': '数量',
-                    'unit_price': '单价',
+                    'item_name': '物品',
+                    'quantity': '出库数量',
+                    'unit_price': '出库单价',
                     'fee': '手续费',
                     'total_amount': '总金额',
                     'note': '备注'
@@ -738,20 +811,20 @@ class StockOutTab:
                     error_messages.append(f"数据格式错误: {data}")
                     continue
                     
-                # 获取必要字段，使用get方法避免KeyError
-                item_name = data.get('item_name')
+                # 获取必要字段，支持中文字段名
+                item_name = data.get('item_name') or data.get('物品')
                 if not item_name:
                     error_count += 1
                     error_messages.append("缺少物品名称")
                     continue
                     
-                quantity = data.get('quantity')
+                quantity = data.get('quantity') or data.get('出库数量')
                 if not quantity:
                     error_count += 1
                     error_messages.append(f"{item_name}: 缺少数量")
                     continue
                     
-                unit_price = data.get('unit_price')
+                unit_price = data.get('unit_price') or data.get('出库单价')
                 if not unit_price:
                     error_count += 1
                     error_messages.append(f"{item_name}: 缺少单价")
@@ -761,14 +834,14 @@ class StockOutTab:
                 try:
                     quantity = int(quantity)
                     unit_price = float(unit_price)
-                    fee = float(data.get('fee', 0))  # 手续费可以为空，默认为0
+                    fee = float(data.get('fee', 0)) or float(data.get('手续费', 0))  # 手续费可以为空，默认为0
                 except (ValueError, TypeError):
                     error_count += 1
                     error_messages.append(f"{item_name}: 数据类型错误")
                     continue
                 
                 # 使用传入的总金额，如果没有则计算
-                total_amount = data.get('total_amount')
+                total_amount = data.get('total_amount') or data.get('总金额')
                 if total_amount is None:
                     total_amount = quantity * unit_price - fee
                 
@@ -789,7 +862,7 @@ class StockOutTab:
                     'fee': fee,
                     'deposit': 0.0,  # 设置押金固定为0
                     'total_amount': total_amount,
-                    'note': data.get('note', '')  # 备注可以为空
+                    'note': data.get('note', '') or data.get('备注', '')  # 支持中文字段名
                 })
                 
                 success_count += 1
@@ -804,7 +877,9 @@ class StockOutTab:
             # 清空图片列表并刷新预览
             self._pending_ocr_images_out.clear()
             self.ocr_preview.clear_images()
-            self.main_gui.log_operation('批量修改', '出库管理', confirmed_data)
+            # 使用正确的操作类型常量
+            from src.utils.operation_types import OperationType, TabName
+            self.main_gui.log_operation(OperationType.BATCH_ADD, TabName.STOCK_OUT, confirmed_data)
         
         # 显示结果消息
         if success_count > 0 and error_count == 0:
@@ -1044,17 +1119,26 @@ class StockOutTab:
 
     def paste_ocr_import_stock_out(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
+        if not PIL_AVAILABLE:
+            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片粘贴功能。请确保正确安装Pillow库。")
+            return
+            
         try:
-            img = ImageGrab.grabclipboard()
-            if isinstance(img, Image.Image):
+            # 使用辅助模块获取剪贴板图片
+            img = clipboard_helper.get_clipboard_image()
+            
+            # 验证获取到的是否为图片
+            if img is not None:
                 self._pending_ocr_images_out.append(img)
                 # 使用refresh_ocr_image_preview_out方法刷新图片显示
                 self.refresh_ocr_image_preview_out()
-                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
+                messagebox.showinfo("提示", "图片已添加并显示在下方OCR预览区，请点击'批量识别粘贴图片'按钮进行识别导入。")
             else:
-                messagebox.showinfo("提示", "剪贴板中没有图片")
+                # 显示详细的错误信息
+                clipboard_helper.show_clipboard_error()
         except Exception as e:
-            messagebox.showerror("错误", f"粘贴图片失败: {e}")
+            print(f"粘贴图片异常: {str(e)}")  # 调试输出
+            messagebox.showerror("错误", f"粘贴图片失败: {str(e)}\n请尝试使用'上传图片'按钮。")
             
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""

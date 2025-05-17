@@ -1,12 +1,20 @@
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import ttk, messagebox, filedialog
-from PIL import ImageGrab, ImageTk
+# PIL导入添加错误处理，但是将ImageGrab移到方法内部导入
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    # 如果PIL模块不完整，创建一个占位符
+    PIL_AVAILABLE = False
+    messagebox.showwarning("模块缺失", "PIL图像处理模块不完整，图片粘贴功能将不可用。请确保正确安装Pillow库。")
 import io, base64, requests
 from datetime import datetime
 import tkinter as tk
 from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
+from src.utils import clipboard_helper
 
 class StockInTab:
     def __init__(self, notebook, main_gui):
@@ -327,6 +335,7 @@ class StockInTab:
             # 格式化数据以提高可读性
             quantity_display = f"{int(quantity):,}" if quantity else "0"
             cost_display = f"{int(round(cost)):,}" if cost else "0"
+            # 将均价显示修改为整数
             avg_cost_display = f"{int(round(avg_cost)):,}" if avg_cost else "0"
             
             self.stock_in_tree.insert('', 'end', values=(
@@ -537,11 +546,15 @@ class StockInTab:
 
     def upload_ocr_import_stock_in(self):
         """上传图片进行OCR识别导入"""
+        if not PIL_AVAILABLE:
+            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片上传功能。请确保正确安装Pillow库。")
+            return
+            
         file_path = filedialog.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
         if not file_path:
             return
         try:
-            from PIL import Image
+            # 确保Image已正确导入
             img = Image.open(file_path)
             self._pending_ocr_images.append(img)
             # 使用refresh_ocr_image_preview方法刷新图片显示
@@ -755,22 +768,22 @@ class StockInTab:
     def show_ocr_preview_dialog(self, ocr_data_list):
         """显示OCR识别数据预览窗口（表格形式）"""
         # 定义列 - 使用与入库管理一致的字段名
-        columns = ('物品名称', '数量', '花费', '均价', '备注')
+        columns = ('物品', '入库数量', '入库花费', '入库均价', '备注')
         
         # 设置列宽和对齐方式
         column_widths = {
-            '物品名称': 180,
-            '数量': 90,
-            '花费': 120,
-            '均价': 120,
+            '物品': 180,
+            '入库数量': 90,
+            '入库花费': 120,
+            '入库均价': 120,
             '备注': 120
         }
         
         column_aligns = {
-            '物品名称': 'w',  # 文本左对齐
-            '数量': 'e',      # 数字右对齐
-            '花费': 'e',
-            '均价': 'e',
+            '物品': 'w',  # 文本左对齐
+            '入库数量': 'e',  # 数字右对齐
+            '入库花费': 'e',
+            '入库均价': 'e',
             '备注': 'w'
         }
         
@@ -799,18 +812,21 @@ class StockInTab:
             # 确保有备注字段
             note = data.get('note', '')
             data['note'] = note
+            
+            # 将均价向下取整为整数
+            avg_cost_int = int(round(avg_cost))
                 
             display_data.append({
-                '物品名称': item_name,
-                '数量': quantity,
-                '花费': cost,  # 确保这是总花费
-                '均价': avg_cost,
+                '物品': item_name,
+                '入库数量': quantity,
+                '入库花费': cost,  # 确保这是总花费
+                '入库均价': avg_cost_int,  # 使用取整后的均价
                 '备注': note,
-                # 同时添加英文键名，确保数据验证能通过
+                # 同时添加内部字段名，确保数据验证能通过
                 'item_name': item_name,
                 'quantity': quantity,
                 'cost': cost,
-                'avg_cost': avg_cost,
+                'avg_cost': avg_cost,  # 保留原始精度用于计算
                 'note': note
             })
         
@@ -845,14 +861,14 @@ class StockInTab:
                     error_messages.append(f"数据格式错误: {data}")
                     continue
                     
-                # 获取必要字段，使用get方法避免KeyError
-                item_name = data.get('item_name')
+                # 获取必要字段，支持新的中文字段名
+                item_name = data.get('item_name') or data.get('物品')
                 if not item_name:
                     error_count += 1
                     error_messages.append("缺少物品名称")
                     continue
                     
-                quantity = data.get('quantity')
+                quantity = data.get('quantity') or data.get('入库数量')
                 if not quantity:
                     error_count += 1
                     error_messages.append(f"{item_name}: 缺少数量")
@@ -866,8 +882,8 @@ class StockInTab:
                     error_messages.append(f"{item_name}: 数量必须是整数")
                     continue
                 
-                # 获取花费 - 必须有cost字段
-                cost = data.get('cost')
+                # 获取花费 - 支持中文字段名
+                cost = data.get('cost') or data.get('入库花费')
                 if cost is None:
                     error_count += 1
                     error_messages.append(f"{item_name}: 缺少花费")
@@ -880,8 +896,8 @@ class StockInTab:
                     error_messages.append(f"{item_name}: 花费必须是数字")
                     continue
                 
-                # 获取均价 - 如果没有则计算
-                avg_cost = data.get('avg_cost')
+                # 获取均价 - 支持中文字段名
+                avg_cost = data.get('avg_cost') or data.get('入库均价')
                 if avg_cost is None:
                     avg_cost = cost / quantity if quantity > 0 else 0
                 else:
@@ -892,8 +908,8 @@ class StockInTab:
                         error_messages.append(f"{item_name}: 均价必须是数字")
                         continue
                 
-                # 获取备注 - 如果没有则使用空字符串
-                note = data.get('note', '')
+                # 获取备注 - 支持中文字段名
+                note = data.get('note') or data.get('备注', '')
                     
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
@@ -948,17 +964,26 @@ class StockInTab:
 
     def paste_ocr_import_stock_in(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
+        if not PIL_AVAILABLE:
+            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片粘贴功能。请确保正确安装Pillow库。")
+            return
+            
         try:
-            img = ImageGrab.grabclipboard()
-            if isinstance(img, Image.Image):
+            # 使用辅助模块获取剪贴板图片
+            img = clipboard_helper.get_clipboard_image()
+            
+            # 验证获取到的是否为图片
+            if img is not None:
                 self._pending_ocr_images.append(img)
                 # 使用refresh_ocr_image_preview方法刷新图片显示
                 self.refresh_ocr_image_preview()
-                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
+                messagebox.showinfo("提示", "图片已添加并显示在下方OCR预览区，请点击'批量识别粘贴图片'按钮进行识别导入。")
             else:
-                messagebox.showinfo("提示", "剪贴板中没有图片")
+                # 显示详细的错误信息
+                clipboard_helper.show_clipboard_error()
         except Exception as e:
-            messagebox.showerror("错误", f"粘贴图片失败: {e}")
+            print(f"粘贴图片异常: {str(e)}")  # 调试输出
+            messagebox.showerror("错误", f"粘贴图片失败: {str(e)}\n请尝试使用'上传图片'按钮。")
             
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""

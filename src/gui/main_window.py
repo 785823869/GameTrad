@@ -50,6 +50,8 @@ from src.utils.sidebar import ModernSidebar
 from src.gui.dialogs.update_dialog import UpdateDialog
 # 导入版本信息
 from src import __version__
+# 导入操作类型常量
+from src.utils.operation_types import OperationType, TabName
 
 def safe_float(val, default=0.0):
     try:
@@ -71,7 +73,6 @@ class GameTradingSystemGUI:
         self.global_bg_color = "#f0f0f0"
         
         self.db_manager = DatabaseManager()
-        self._pending_ocr_images = []
         
         # 设置默认中文字体
         self.chinese_font = 'Microsoft YaHei'
@@ -368,7 +369,9 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
     
     def create_main_interface(self):
         # 创建现代化侧边栏
-        self.sidebar = ModernSidebar(self.root, self.ui_manager)
+        self.sidebar = ModernSidebar(self.root, self.ui_manager, callbacks={
+            'on_tab_changed': self._on_tab_changed_ocr
+        })
         
         # 添加标签页到侧边栏
         self.sidebar.add_tab("仪表盘", "📊", DashboardTab, {"main_gui": self})
@@ -1056,17 +1059,29 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         """打开公式管理窗口"""
         FormulaManagerWindow(self.root, self)
 
-    def _on_tab_changed_ocr(self, event=None):
-        tab = self.notebook.tab(self.notebook.select(), 'text')
+    def _on_tab_changed_ocr(self, event=None, tab_title=None):
+        """处理标签页切换事件，重新绑定OCR相关的快捷键"""
+        if isinstance(event, str):
+            # 如果event是字符串，说明是从ModernSidebar传来的标签页标题
+            tab = event
+        elif tab_title:
+            # 使用传入的标签页标题
+            tab = tab_title
+        else:
+            # 兼容旧代码，从notebook获取标签页标题
+            tab = self.notebook.tab(self.notebook.select(), 'text') if hasattr(self, 'notebook') else None
+            
         # 先解绑所有
         self.root.unbind_all('<Control-v>')
-        if tab == '入库管理':
+        
+        # 根据标签页标题重新绑定
+        if tab == '入库管理' or '入库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_in_tab.paste_ocr_import_stock_in)
             self.current_ocr_tab = 'in'
-        elif tab == '出库管理':
+        elif tab == '出库管理' or '出库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_out_tab.paste_ocr_import_stock_out)
             self.current_ocr_tab = 'out'
-        elif tab == '交易监控':
+        elif tab == '交易监控' or '交易监控' in str(tab):
             self.root.bind_all('<Control-v>', self.trade_monitor_tab.paste_ocr_import_monitor)
             self.current_ocr_tab = 'monitor'
         else:
@@ -1236,7 +1251,7 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
     def show_about(self):
         """显示关于对话框"""
         about_text = """
-GameTrad 游戏交易系统 v2.0.0
+GameTrad 游戏交易系统 v{version}
 
 简介：
 GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存管理、交易监控和数据分析功能，帮助游戏玩家和交易商高效管理游戏物品交易流程，实现利润最大化。
@@ -1261,7 +1276,7 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
 
 版权所有 © 2025 GameTrad团队
 保留所有权利
-        """
+        """.format(version=__version__)
         messagebox.showinfo("关于", about_text)
 
     def log_jump_page(self):
@@ -1486,137 +1501,414 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         pass
 
     def undo_last_operation(self):
+        """回退上一个操作"""
+        # 获取最近一条未回退的可回退操作
         logs = self.db_manager.get_operation_logs(
-            tab_name=None, op_type=None, keyword=None, reverted=False, page=1, page_size=1
+            tab_name=None, op_type=None, keyword=None, reverted=False, page=1, page_size=20
         )
-        if not logs:
+        
+        # 过滤出可回退的操作
+        revertable_logs = [log for log in logs if log.get('可回退', True)]
+        
+        if not revertable_logs:
             messagebox.showinfo("提示", "没有可回退的操作！")
             return
+            
+        last_log = revertable_logs[0]
+        op_type = last_log['操作类型']
+        tab = last_log['标签页']
+        data = last_log['数据']
+        op_category = last_log.get('操作类别', '')
+        
+        # 提示用户确认
+        if not messagebox.askyesno("确认回退", 
+                                 f"确定要回退以下操作吗？\n\n操作类型: {op_type}\n标签页: {tab}\n时间: {last_log['操作时间']}"):
+            return
+        
+        # 回退成功标志
+        success = False
+        error_msg = ""
+        
+        try:
+            # 根据操作类型和标签页执行回退操作
+            if op_category == "添加类" and tab == TabName.STOCK_IN:
+                success = self._undo_add_stock_in(data)
+            elif op_category == "添加类" and tab == TabName.STOCK_OUT:
+                success = self._undo_add_stock_out(data)
+            elif op_category == "添加类" and tab == TabName.TRADE_MONITOR:
+                success = self._undo_add_trade_monitor(data)
+            elif op_category == "删除类" and tab == TabName.STOCK_IN:
+                success = self._undo_delete_stock_in(data)
+            elif op_category == "删除类" and tab == TabName.STOCK_OUT:
+                success = self._undo_delete_stock_out(data)
+            elif op_category == "删除类" and tab == TabName.TRADE_MONITOR:
+                success = self._undo_delete_trade_monitor(data)
+            elif op_category == "修改类" and tab == TabName.STOCK_IN:
+                success = self._undo_modify_stock_in(data)
+            elif op_category == "修改类" and tab == TabName.STOCK_OUT:
+                success = self._undo_modify_stock_out(data)
+            elif op_category == "修改类" and tab == TabName.TRADE_MONITOR:
+                success = self._undo_modify_trade_monitor(data)
+            else:
+                error_msg = f"不支持回退的操作类型: {op_type} - {tab}"
+                messagebox.showwarning("警告", error_msg)
+                return
+        except Exception as e:
+            error_msg = str(e)
+            messagebox.showerror("错误", f"回退操作时出错: {error_msg}")
+            return
+            
+        # 标记日志为已回退
+        if success and 'id' in last_log:
+            self.db_manager.update_operation_log_reverted(last_log['id'], True)
+            self.log_tab.refresh_log_tab()
+            messagebox.showinfo("成功", f"已回退操作: {op_type} - {tab}")
+        else:
+            if not error_msg:
+                error_msg = "未知错误"
+            messagebox.showerror("回退失败", f"回退操作 {op_type} - {tab} 失败: {error_msg}")
+    
+    def _undo_add_stock_in(self, data):
+        """回退添加入库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_stock_in(row['item_name'], row['transaction_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_stock_in(data['item_name'], data['transaction_time'])
+        else:
+            return False
+        self.refresh_stock_in()
+        self.refresh_inventory()
+        return True
+    
+    def _undo_add_stock_out(self, data):
+        """回退添加出库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_stock_out(row['item_name'], row['transaction_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_stock_out(data['item_name'], data['transaction_time'])
+        else:
+            return False
+        self.refresh_stock_out()
+        self.refresh_inventory()
+        return True
+    
+    def _undo_add_trade_monitor(self, data):
+        """回退添加交易监控操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_trade_monitor(row['item_name'], row['monitor_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_trade_monitor(data['item_name'], data['monitor_time'])
+        else:
+            return False
+        self.trade_monitor_tab.refresh_monitor()
+        return True
+    
+    def _undo_delete_stock_in(self, data):
+        """回退删除入库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_stock_in(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_stock_in(data)
+        else:
+            return False
+        self.refresh_stock_in()
+        self.refresh_inventory()
+        return True
+    
+    def _undo_delete_stock_out(self, data):
+        """回退删除出库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_stock_out(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_stock_out(data)
+        else:
+            return False
+        self.refresh_stock_out()
+        self.refresh_inventory()
+        return True
+    
+    def _undo_delete_trade_monitor(self, data):
+        """回退删除交易监控操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_trade_monitor(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_trade_monitor(data)
+        else:
+            return False
+        self.trade_monitor_tab.refresh_monitor()
+        return True
+    
+    def _undo_modify_stock_in(self, data):
+        """回退修改入库操作"""
+        if isinstance(data, dict) and 'old' in data:
+            old = data['old']
+            self.db_manager.delete_stock_in(old[0], old[1])
+            self.db_manager.save_stock_in({
+                'item_name': old[0],
+                'transaction_time': old[1],
+                'quantity': int(old[2]),
+                'cost': float(old[3]),
+                'avg_cost': float(old[4]),
+                'note': old[5] if len(old) > 5 else ''
+            })
+            self.refresh_stock_in()
+            self.refresh_inventory()
+            return True
+        return False
+    
+    def _undo_modify_stock_out(self, data):
+        """回退修改出库操作"""
+        if isinstance(data, dict) and 'old' in data:
+            old = data['old']
+            self.db_manager.delete_stock_out(old[0], old[1])
+            self.db_manager.save_stock_out({
+                'item_name': old[0],
+                'transaction_time': old[1],
+                'quantity': int(old[2]),
+                'unit_price': float(old[3]),
+                'fee': float(old[4]),
+                'deposit': 0.0,
+                'total_amount': float(old[5]),
+                'note': old[6] if len(old) > 6 else ''
+            })
+            self.refresh_stock_out()
+            self.refresh_inventory()
+            return True
+        return False
+    
+    def _undo_modify_trade_monitor(self, data):
+        """回退修改交易监控操作"""
+        if isinstance(data, dict) and 'old' in data:
+            old = data['old']
+            self.db_manager.delete_trade_monitor(old[0], old[1])
+            self.db_manager.save_trade_monitor({
+                'item_name': old[0],
+                'monitor_time': old[1],
+                'quantity': int(old[2]),
+                'market_price': float(old[3]),
+                'target_price': float(old[4]),
+                'planned_price': float(old[5]),
+                'break_even_price': float(old[6]),
+                'profit': float(old[7]),
+                'profit_rate': float(str(old[8]).strip('%')),
+                'strategy': old[9]
+            })
+            self.trade_monitor_tab.refresh_monitor()
+            return True
+        return False
+
+    def redo_last_operation(self):
+        """前进（撤销回退）"""
+        # 获取最近一条已回退的操作
+        logs = self.db_manager.get_operation_logs(
+            tab_name=None, op_type=None, keyword=None, reverted=True, page=1, page_size=1
+        )
+        
+        if not logs:
+            messagebox.showinfo("提示", "没有可恢复的操作！")
+            return
+            
         last_log = logs[0]
         op_type = last_log['操作类型']
         tab = last_log['标签页']
         data = last_log['数据']
-        # 回退逻辑
-        if op_type == '添加' and tab == '入库管理':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.delete_stock_in(row['item_name'], row['transaction_time'])
-            elif isinstance(data, dict):
-                self.db_manager.delete_stock_in(data['item_name'], data['transaction_time'])
-            self.refresh_stock_in()
-            self.refresh_inventory()
-        elif op_type == '添加' and tab == '出库管理':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.delete_stock_out(row['item_name'], row['transaction_time'])
-            elif isinstance(data, dict):
-                self.db_manager.delete_stock_out(data['item_name'], data['transaction_time'])
-            self.refresh_stock_out()
-            self.refresh_inventory()
-        elif op_type == '添加' and tab == '交易监控':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.delete_trade_monitor(row['item_name'], row['monitor_time'])
-            elif isinstance(data, dict):
-                self.db_manager.delete_trade_monitor(data['item_name'], data['monitor_time'])
-            self.trade_monitor_tab.refresh_monitor()
-        elif op_type == '删除' and tab == '入库管理':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.save_stock_in(row)
-            elif isinstance(data, dict):
-                self.db_manager.save_stock_in(data)
-            self.refresh_stock_in()
-            self.refresh_inventory()
-        elif op_type == '删除' and tab == '出库管理':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.save_stock_out(row)
-            elif isinstance(data, dict):
-                self.db_manager.save_stock_out(data)
-            self.refresh_stock_out()
-            self.refresh_inventory()
-        elif op_type == '删除' and tab == '交易监控':
-            if isinstance(data, list):
-                for row in data:
-                    self.db_manager.save_trade_monitor(row)
-            elif isinstance(data, dict):
-                self.db_manager.save_trade_monitor(data)
-            self.trade_monitor_tab.refresh_monitor()
-        elif op_type == '修改' and tab == '入库管理':
-            if isinstance(data, dict) and 'old' in data:
-                old = data['old']
-                self.db_manager.delete_stock_in(old[0], old[1])
+        op_category = last_log.get('操作类别', '')
+        
+        # 提示用户确认
+        if not messagebox.askyesno("确认恢复", 
+                                  f"确定要恢复以下已回退的操作吗？\n\n操作类型: {op_type}\n标签页: {tab}\n时间: {last_log['操作时间']}"):
+            return
+        
+        # 恢复成功标志
+        success = False
+        error_msg = ""
+        
+        try:
+            # 根据操作类型和标签页执行恢复操作
+            if op_category == "添加类" and tab == TabName.STOCK_IN:
+                success = self._redo_add_stock_in(data)
+            elif op_category == "添加类" and tab == TabName.STOCK_OUT:
+                success = self._redo_add_stock_out(data)
+            elif op_category == "添加类" and tab == TabName.TRADE_MONITOR:
+                success = self._redo_add_trade_monitor(data)
+            elif op_category == "删除类" and tab == TabName.STOCK_IN:
+                success = self._redo_delete_stock_in(data)
+            elif op_category == "删除类" and tab == TabName.STOCK_OUT:
+                success = self._redo_delete_stock_out(data)
+            elif op_category == "删除类" and tab == TabName.TRADE_MONITOR:
+                success = self._redo_delete_trade_monitor(data)
+            elif op_category == "修改类" and tab == TabName.STOCK_IN:
+                success = self._redo_modify_stock_in(data)
+            elif op_category == "修改类" and tab == TabName.STOCK_OUT:
+                success = self._redo_modify_stock_out(data)
+            elif op_category == "修改类" and tab == TabName.TRADE_MONITOR:
+                success = self._redo_modify_trade_monitor(data)
+            else:
+                error_msg = f"不支持恢复的操作类型: {op_type} - {tab}"
+                messagebox.showwarning("警告", error_msg)
+                return
+        except Exception as e:
+            error_msg = str(e)
+            messagebox.showerror("错误", f"恢复操作时出错: {error_msg}")
+            return
+            
+        # 标记日志为未回退
+        if success and 'id' in last_log:
+            self.db_manager.update_operation_log_reverted(last_log['id'], False)
+            self.log_tab.refresh_log_tab()
+            messagebox.showinfo("成功", f"已恢复操作: {op_type} - {tab}")
+        else:
+            if not error_msg:
+                error_msg = "未知错误"
+            messagebox.showerror("恢复失败", f"恢复操作 {op_type} - {tab} 失败: {error_msg}")
+    
+    def _redo_add_stock_in(self, data):
+        """恢复添加入库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_stock_in(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_stock_in(data)
+        else:
+            return False
+        self.refresh_stock_in()
+        self.refresh_inventory()
+        return True
+    
+    def _redo_add_stock_out(self, data):
+        """恢复添加出库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_stock_out(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_stock_out(data)
+        else:
+            return False
+        self.refresh_stock_out()
+        self.refresh_inventory()
+        return True
+    
+    def _redo_add_trade_monitor(self, data):
+        """恢复添加交易监控操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.save_trade_monitor(row)
+        elif isinstance(data, dict):
+            self.db_manager.save_trade_monitor(data)
+        else:
+            return False
+        self.trade_monitor_tab.refresh_monitor()
+        return True
+    
+    def _redo_delete_stock_in(self, data):
+        """恢复删除入库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_stock_in(row['item_name'], row['transaction_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_stock_in(data['item_name'], data['transaction_time'])
+        else:
+            return False
+        self.refresh_stock_in()
+        self.refresh_inventory()
+        return True
+    
+    def _redo_delete_stock_out(self, data):
+        """恢复删除出库操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_stock_out(row['item_name'], row['transaction_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_stock_out(data['item_name'], data['transaction_time'])
+        else:
+            return False
+        self.refresh_stock_out()
+        self.refresh_inventory()
+        return True
+    
+    def _redo_delete_trade_monitor(self, data):
+        """恢复删除交易监控操作"""
+        if isinstance(data, list):
+            for row in data:
+                self.db_manager.delete_trade_monitor(row['item_name'], row['monitor_time'])
+        elif isinstance(data, dict):
+            self.db_manager.delete_trade_monitor(data['item_name'], data['monitor_time'])
+        else:
+            return False
+        self.trade_monitor_tab.refresh_monitor()
+        return True
+    
+    def _redo_modify_stock_in(self, data):
+        """恢复修改入库操作"""
+        if isinstance(data, dict) and 'new' in data:
+            new_data = data['new']
+            old_data = data.get('old', [])
+            
+            # 删除旧记录
+            if old_data and len(old_data) >= 2:
+                self.db_manager.delete_stock_in(old_data[0], old_data[1])
+                
+            # 保存新记录
+            if isinstance(new_data, (list, tuple)) and len(new_data) >= 5:
                 self.db_manager.save_stock_in({
-                    'item_name': old[0],
-                    'transaction_time': old[1],
-                    'quantity': int(old[2]),
-                    'cost': float(old[3]),
-                    'avg_cost': float(old[4]),
-                    'note': old[5] if len(old) > 5 else ''
+                    'item_name': new_data[0],
+                    'transaction_time': new_data[1],
+                    'quantity': int(new_data[2]),
+                    'cost': float(new_data[3]),
+                    'avg_cost': float(new_data[4]),
+                    'note': new_data[5] if len(new_data) > 5 else ''
                 })
                 self.refresh_stock_in()
                 self.refresh_inventory()
-        elif op_type == '修改' and tab == '出库管理':
-            if isinstance(data, dict) and 'old' in data:
-                old = data['old']
-                self.db_manager.delete_stock_out(old[0], old[1])
-                self.db_manager.save_stock_out({
-                    'item_name': old[0],
-                    'transaction_time': old[1],
-                    'quantity': int(old[2]),
-                    'unit_price': float(old[3]),
-                    'fee': float(old[4]),
-                    'deposit': 0.0,
-                    'total_amount': float(old[5]),
-                    'note': old[6] if len(old) > 6 else ''
-                })
-                self.refresh_stock_out()
-                self.refresh_inventory()
-        elif op_type == '修改' and tab == '交易监控':
-            if isinstance(data, dict) and 'old' in data:
-                old = data['old']
-                self.db_manager.delete_trade_monitor(old[0], old[1])
-                self.db_manager.save_trade_monitor({
-                    'item_name': old[0],
-                    'monitor_time': old[1],
-                    'quantity': int(old[2]),
-                    'market_price': float(old[3]),
-                    'target_price': float(old[4]),
-                    'planned_price': float(old[5]),
-                    'break_even_price': float(old[6]),
-                    'profit': float(old[7]),
-                    'profit_rate': float(str(old[8]).strip('%')),
-                    'strategy': old[9]
-                })
-                self.trade_monitor_tab.refresh_monitor()
-        # 标记日志为已回退
-        if 'id' in last_log:
-            self.db_manager.update_operation_log_reverted(last_log['id'], True)
-        self.log_tab.refresh_log_tab()
-        messagebox.showinfo("提示", f"已回退操作: {op_type} - {tab}")
-
-    def redo_last_operation(self):
-        """前进（撤销回退）"""
-        messagebox.showinfo("提示", "已恢复操作（示例实现）")
-
-    def log_operation(self, op_type, tab_name, data=None, reverted=False):
-        """记录操作日志，data为被操作的数据内容，reverted为是否已回退"""
-        import json
-        from datetime import datetime
+                return True
+        return False
+    
+    def _redo_modify_stock_out(self, data):
+        """恢复修改出库操作"""
+        if isinstance(data, dict) and 'new' in data:
+            new_data = data['new']
+            old_data = data.get('old', [])
+            
+            # 删除旧记录
+            if old_data and len(old_data) >= 2:
+                self.db_manager.delete_stock_out(old_data[0], old_data[1])
+                
+            # 保存新记录
+                op_type = OperationType.OTHER
+                
+        # 验证标签页是否合法
+        if tab_name not in TabName.get_all_tabs():
+            # 使用一个默认值
+            tab_name = TabName.SYSTEM
+        
+        # 增加操作类别信息
+        category = OperationType.get_category(op_type)
+        can_revert = OperationType.can_revert(op_type)
+        
         log = {
             '操作类型': op_type,
+            '操作类别': category,
             '标签页': tab_name,
             '操作时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             '数据': data,
-            '已回退': reverted
+            '已回退': reverted,
+            '可回退': can_revert
         }
+        
         # 保存到数据库（如有）
         if hasattr(self, 'db_manager') and hasattr(self.db_manager, 'save_operation_log'):
             self.db_manager.save_operation_log(op_type, tab_name, data, reverted)
+            
         # 内存同步（可选，便于撤销/重做等）
         if hasattr(self, 'operation_logs'):
             self.operation_logs.append(log)
+            
         # 日志tab界面同步（如有）
         if hasattr(self, 'log_tab') and hasattr(self.log_tab, 'log_tree'):
             self.log_tab.log_tree.insert('', 'end', values=(
@@ -1636,6 +1928,70 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         active_content = self.sidebar.get_active_tab_content()
         if active_content == self.log_tab:
             self.log_tab.refresh_log_tab()
+
+    def log_operation(self, op_type, tab_name, data=None, reverted=False):
+        """
+        记录操作日志，data为被操作的数据内容，reverted为是否已回退
+        
+        参数:
+            op_type (str): 操作类型，应使用OperationType类中定义的常量
+            tab_name (str): 标签页名称，应使用TabName类中定义的常量
+            data (dict/list): 操作的数据内容
+            reverted (bool): 是否已回退
+            
+        返回:
+            None
+        """
+        import json
+        from datetime import datetime
+        
+        # 验证操作类型是否合法
+        if op_type not in OperationType.get_all_types():
+            # 如果操作类型不在预定义列表中，使用最接近的类型或默认为"其他"
+            if "添加" in op_type:
+                op_type = OperationType.ADD
+            elif "修改" in op_type:
+                op_type = OperationType.MODIFY
+            elif "删除" in op_type:
+                op_type = OperationType.DELETE
+            else:
+                op_type = OperationType.OTHER
+                
+        # 验证标签页是否合法
+        if tab_name not in TabName.get_all_tabs():
+            # 使用一个默认值
+            tab_name = TabName.SYSTEM
+        
+        # 增加操作类别信息
+        category = OperationType.get_category(op_type)
+        can_revert = OperationType.can_revert(op_type)
+        
+        log = {
+            '操作类型': op_type,
+            '操作类别': category,
+            '标签页': tab_name,
+            '操作时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            '数据': data,
+            '已回退': reverted,
+            '可回退': can_revert
+        }
+        
+        # 保存到数据库（如有）
+        if hasattr(self, 'db_manager') and hasattr(self.db_manager, 'save_operation_log'):
+            self.db_manager.save_operation_log(op_type, tab_name, data, reverted)
+            
+        # 内存同步（可选，便于撤销/重做等）
+        if hasattr(self, 'operation_logs'):
+            self.operation_logs.append(log)
+            
+        # 日志tab界面同步（如有）
+        if hasattr(self, 'log_tab') and hasattr(self.log_tab, 'log_tree'):
+            self.log_tab.log_tree.insert('', 'end', values=(
+                log['操作类型'] + ("（已回退）" if reverted else ""),
+                log['标签页'],
+                log['操作时间'],
+                json.dumps(log['数据'], ensure_ascii=False)
+            ))
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 使用flatly主题

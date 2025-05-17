@@ -3,12 +3,13 @@ import ttkbootstrap as tb
 import inspect
 
 class ModernSidebar:
-    def __init__(self, parent, ui_manager, width=220):
+    def __init__(self, parent, ui_manager, width=220, callbacks=None):
         self.parent = parent
         self.ui = ui_manager
         self.active_tab = None
         self.tabs = []
         self.tab_frames = {}
+        self.callbacks = callbacks or {}  # 存储回调函数
         
         # 创建侧边栏容器
         self.sidebar = tb.Frame(parent, bootstyle="dark", width=width)
@@ -128,6 +129,17 @@ class ModernSidebar:
         for tab in self.tabs:
             if tab['id'] == tab_id:
                 tab['button'].configure(style="SidebarActive.TButton")  # 使用自定义激活样式
+                
+        # 执行tab切换回调
+        if 'on_tab_changed' in self.callbacks and callable(self.callbacks['on_tab_changed']):
+            # 查找当前选中的标签页标题
+            tab_title = None
+            for tab in self.tabs:
+                if tab['id'] == tab_id:
+                    tab_title = tab['title']
+                    break
+            # 调用回调并传递标签页标题
+            self.callbacks['on_tab_changed'](tab_title)
     
     def get_active_tab_content(self):
         """获取当前活动选项卡的内容"""

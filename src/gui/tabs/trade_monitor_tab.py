@@ -6,15 +6,19 @@ import threading
 from datetime import datetime
 from PIL import Image
 import json
+import os
 from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
+from src.utils import clipboard_helper
+import pandas as pd
+from src.gui.utils.monitor_ocr_parser import parse_monitor_ocr_text
+from src.utils import ocr
 
 class TradeMonitorTab:
     def __init__(self, notebook, main_gui):
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
         self.notebook = notebook
-        self._pending_ocr_images = []  # 存储待识别的图片
         
         # 设置中文字体
         self.chinese_font = main_gui.chinese_font
@@ -32,13 +36,10 @@ class TradeMonitorTab:
         style.configure("Monitor.Treeview", 
                       rowheight=32,  # 增加行高
                       font=(self.chinese_font, 10),
-                      background="#ffffff",
-                      fieldbackground="#ffffff",
                       foreground="#2c3e50")
                       
         style.configure("Monitor.Treeview.Heading", 
                       font=(self.chinese_font, 10, "bold"),
-                      background="#e0e6ed",
                       foreground="#2c3e50")
         
         # 移除表格行鼠标悬停效果的style.map设置，改为使用标签和事件处理
@@ -57,29 +58,24 @@ class TradeMonitorTab:
         
         # 创建统一的LabelFrame样式，背景色与主窗口背景色匹配
         style.configure("Unified.TLabelframe", 
-                      background="#f0f0f0",  # 与主窗口背景色匹配
                       borderwidth=1)
                       
         style.configure("Unified.TLabelframe.Label", 
                       font=(self.chinese_font, 10, "bold"),
-                      foreground="#2c3e50",
-                      background="#f0f0f0")  # 与主窗口背景色匹配
+                      foreground="#2c3e50")
         
         # 创建统一的标签样式
         style.configure("Unified.TLabel", 
                       font=(self.chinese_font, 10, "bold"),
-                      foreground="#2c3e50",
-                      background="#f0f0f0")  # 与主窗口背景色匹配
+                      foreground="#2c3e50")
         
         # 创建透明LabelFrame样式
         style.configure("Transparent.TLabelframe", 
-                      background="transparent",  # 透明背景
                       borderwidth=1)
                       
         style.configure("Transparent.TLabelframe.Label", 
                       font=(self.chinese_font, 10, "bold"),
-                      foreground="#2c3e50",
-                      background="transparent")  # 透明背景
+                      foreground="#2c3e50")
         
         # 过滤器样式
         style.configure("Filter.TLabel", 
@@ -320,89 +316,198 @@ class TradeMonitorTab:
 
     def upload_ocr_import_monitor(self):
         """上传图片进行OCR识别导入"""
-        file_path = fd.askopenfilename(title="选择图片", filetypes=[("图片文件", "*.png;*.jpg;*.jpeg")])
+        file_path = fd.askopenfilename(
+            title="选择图片", 
+            filetypes=[
+                ("图片文件", "*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tiff"),
+                ("PNG文件", "*.png"),
+                ("JPG文件", "*.jpg;*.jpeg"),
+                ("所有文件", "*.*")
+            ],
+            multiple=True  # 允许多选
+        )
+        
         if not file_path:
             return
-        try:
-            img = Image.open(file_path)
-            self._pending_ocr_images.append(img)
-            # 使用refresh_ocr_image_preview方法刷新图片显示
-            self.refresh_ocr_image_preview()
-            messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
-            self.status_var.set("已添加图片")
-        except Exception as e:
-            messagebox.showerror("错误", f"图片加载失败: {e}")
-            self.status_var.set(f"加载图片失败: {str(e)}")
+            
+        # 如果是单个文件路径，转换为列表
+        if isinstance(file_path, str):
+            file_path = [file_path]
+            
+        success_count = 0
+        error_count = 0
+        error_messages = []
+            
+        for path in file_path:
+            try:
+                img = Image.open(path)
+                # 直接将图片添加到OCR预览组件
+                self.ocr_preview.add_image(img)
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                error_messages.append(f"{os.path.basename(path)}: {str(e)}")
+                
+        # 更新状态和提供反馈
+        if success_count > 0:
+            if error_count > 0:
+                # 部分成功
+                self.status_var.set(f"已添加{success_count}张图片，{error_count}张添加失败")
+                messagebox.showinfo(
+                    "部分图片已添加", 
+                    f"成功添加{success_count}张图片，{error_count}张添加失败。\n\n"
+                    f"请点击'批量识别粘贴图片'按钮进行识别导入。"
+                )
+            else:
+                # 全部成功
+                self.status_var.set(f"已添加{success_count}张图片")
+                messagebox.showinfo(
+                    "图片已添加", 
+                    f"已成功添加{success_count}张图片。\n\n"
+                    f"请点击'批量识别粘贴图片'按钮进行识别导入。"
+                )
+        elif error_count > 0:
+            # 全部失败
+            self.status_var.set("图片加载失败")
+            error_details = "\n".join(error_messages[:5])
+            if len(error_messages) > 5:
+                error_details += f"\n... 等共{len(error_messages)}个错误"
+                
+            messagebox.showerror(
+                "图片加载失败", 
+                f"无法加载所选图片:\n\n{error_details}"
+            )
 
     def batch_ocr_import_monitor(self):
-        """批量识别已添加的图片，弹出预览窗口，确认后批量导入（远程API识别）"""
-        # 从新组件获取图片列表
+        """批量OCR识别导入交易监控数据"""
+        # 从OCR预览组件获取图片列表
         ocr_images = self.ocr_preview.get_images()
         if not ocr_images:
             messagebox.showinfo("提示", "请先添加图片")
             return
             
-        self.status_var.set("正在进行OCR识别...")
-        import io, base64, requests
-        all_data = []
-        for img in ocr_images:
-            try:
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                url = "http://sql.didiba.uk:1224/api/ocr"
-                payload = {
-                    "base64": img_b64,
-                    "options": {
-                        "data.format": "text"
-                    }
-                }
-                headers = {"Content-Type": "application/json"}
-                resp = requests.post(url, json=payload, headers=headers, timeout=20)
-                resp.raise_for_status()
-                ocr_result = resp.json()
-                text = ocr_result.get('data')
-                if not text:
-                    continue
-                data = self.parse_monitor_ocr_text(text)
-                if isinstance(data, list):
-                    all_data.extend(data)
-                elif data:
-                    all_data.append(data)
-            except Exception as e:
-                messagebox.showerror("错误", f"OCR识别失败: {e}")
-                self.status_var.set(f"OCR识别失败: {str(e)}")
+        try:
+            self.status_var.set("正在进行OCR识别...")
+            
+            # 显示进度
+            progress_window = tk.Toplevel(self.notebook)
+            progress_window.title("OCR识别中")
+            progress_window.geometry("300x100")
+            
+            progress_label = tk.Label(progress_window, text="正在处理图片...", font=('SimHei', 10))
+            progress_label.pack(pady=10)
+            
+            progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="determinate")
+            progress.pack(pady=10)
+            
+            total_images = len(ocr_images)
+            
+            all_ocr_data = []
+            
+            def process_images():
+                for i, img in enumerate(ocr_images):
+                    # 更新进度
+                    progress_window.after(10, lambda p=((i+1)/total_images*100): progress.configure(value=p))
+                    progress_window.after(10, lambda idx=i+1, total=total_images: 
+                                         progress_label.configure(text=f"处理图片 {idx}/{total}..."))
+                    
+                    # 进行OCR识别
+                    ocr_text = ocr.recognize_text(img)
+                    print(f"OCR识别结果：\n{ocr_text}")  # 调试输出
+                    
+                    # 解析OCR文本，使用新的专用解析器
+                    item_dict = self.main_gui.load_item_dict()
+                    ocr_data = parse_monitor_ocr_text(ocr_text, item_dict)
+                    
+                    # 将结果添加到列表
+                    if ocr_data:
+                        all_ocr_data.extend(ocr_data)
                 
-        if all_data:
-            # 显示OCR识别数据预览窗口
-            self.show_ocr_preview_dialog(all_data)
-        else:
-            messagebox.showwarning("警告", "未能识别有效的监控记录！")
-            self.status_var.set("未能识别有效记录")
+                # 完成处理
+                progress_window.after(100, progress_window.destroy)
+                
+                # 显示预览对话框
+                if all_ocr_data:
+                    progress_window.after(200, lambda: self.show_ocr_preview_dialog(all_ocr_data))
+                else:
+                    messagebox.showwarning("警告", "OCR识别未提取到有效数据，请检查图片或尝试手动输入。")
+                    self.status_var.set("OCR识别未提取到有效数据")
+            
+            # 在新线程中处理图片
+            threading.Thread(target=process_images, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"OCR识别失败: {str(e)}")
+            self.status_var.set(f"OCR识别失败: {str(e)}")
 
     def show_ocr_preview_dialog(self, ocr_data_list):
         """显示OCR识别数据预览窗口（表格形式）"""
         # 定义列
-        columns = ('物品名称', '数量', '市场价', '目标价', '计划价', '利润')
+        columns = ('物品', '数量', '一口价', '目标买入价', '计划卖出价', '利润')
         
         # 设置列宽和对齐方式
         column_widths = {
-            '物品名称': 180,
+            '物品': 180,
             '数量': 90,
-            '市场价': 95,
-            '目标价': 95,
-            '计划价': 95,
+            '一口价': 95,
+            '目标买入价': 95,
+            '计划卖出价': 95,
             '利润': 120
         }
         
         column_aligns = {
-            '物品名称': 'w',  # 文本左对齐
+            '物品': 'w',  # 文本左对齐
             '数量': 'e',      # 数字右对齐
-            '市场价': 'e',
-            '目标价': 'e',
-            '计划价': 'e',
+            '一口价': 'e',
+            '目标买入价': 'e',
+            '计划卖出价': 'e',
             '利润': 'e'
         }
+        
+        # 转换数据格式，确保与表格列匹配
+        display_data = []
+        for data in ocr_data_list:
+            if isinstance(data, dict):
+                # 获取基本字段，支持英文字段名和中文字段名
+                item_name = data.get('item_name', '') or data.get('物品', '')
+                quantity = data.get('quantity', 0) or data.get('数量', 0)
+                market_price = data.get('market_price', 0) or data.get('一口价', 0)
+                target_price = data.get('target_price', 0) or data.get('目标买入价', 0)
+                planned_price = data.get('planned_price', 0) or data.get('计划卖出价', 0)
+                
+                # 如果目标买入价为0，可以根据一口价设置一个默认值
+                if target_price == 0 and market_price > 0:
+                    target_price = int(market_price * 0.95)  # 默认目标买入价为一口价的95%
+                
+                # 如果计划卖出价为0，可以根据目标买入价设置一个默认值
+                if planned_price == 0 and target_price > 0:
+                    planned_price = int(target_price * 1.1)  # 默认计划卖出价为目标买入价的110%
+                
+                # 计算利润
+                profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+                
+                # 确保有备注字段
+                note = data.get('note', '') or data.get('备注', '')
+                
+                # 构建标准化的数据对象
+                processed_data = {
+                    '物品': item_name,
+                    '数量': quantity,
+                    '一口价': market_price,
+                    '目标买入价': target_price,
+                    '计划卖出价': planned_price,
+                    '利润': profit,
+                    # 同时保留英文字段名，确保数据验证能通过
+                    'item_name': item_name,
+                    'quantity': quantity,
+                    'market_price': market_price,
+                    'target_price': target_price,
+                    'planned_price': planned_price,
+                    'profit': profit,
+                    'note': note
+                }
+                
+                display_data.append(processed_data)
         
         # 使用通用OCR预览对话框组件
         preview_dialog = OCRPreviewDialog(
@@ -413,7 +518,7 @@ class TradeMonitorTab:
         
         # 显示对话框并处理确认后的数据
         preview_dialog.show(
-            data_list=ocr_data_list,
+            data_list=display_data,
             columns=columns,
             column_widths=column_widths,
             column_aligns=column_aligns,
@@ -424,76 +529,179 @@ class TradeMonitorTab:
     def import_confirmed_ocr_data(self, confirmed_data):
         """导入确认后的OCR数据"""
         success_count = 0
+        error_count = 0
+        error_messages = []
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         for data in confirmed_data:
-            item_name = data.get('item_name', '')
-            quantity = data.get('quantity', 0)
-            market_price = data.get('market_price', 0)
-            target_price = data.get('target_price', 0)
-            planned_price = data.get('planned_price', 0)
-            
-            # 计算保本价、利润和利润率
-            break_even_price = round(target_price * 1.03) if target_price else 0
-            profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
-            profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
-            
-            # 保存数据
-            self.db_manager.save_trade_monitor({
-                'item_name': item_name,
-                'monitor_time': now,
-                'quantity': quantity,
-                'market_price': market_price,
-                'target_price': target_price,
-                'planned_price': planned_price,
-                'break_even_price': break_even_price,
-                'profit': profit,
-                'profit_rate': profit_rate,
-                'strategy': data.get('strategy', '')
-            })
-        
-            success_count += 1
+            try:
+                # 确保所有必要的字段都存在
+                if not isinstance(data, dict):
+                    error_count += 1
+                    error_messages.append(f"数据格式错误: {data}")
+                    continue
+                
+                # 获取必要字段，支持英文和中文字段名
+                item_name = data.get('item_name', '') or data.get('物品', '')
+                if not item_name:
+                    error_count += 1
+                    error_messages.append("缺少物品名称")
+                    continue
+                    
+                quantity = data.get('quantity', 0) or data.get('数量', 0)
+                if not quantity:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 缺少数量")
+                    continue
+                
+                # 确保数据类型正确
+                try:
+                    quantity = int(quantity)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 数量必须是整数")
+                    continue
+                
+                # 获取价格字段
+                market_price = data.get('market_price', 0) or data.get('一口价', 0)
+                try:
+                    market_price = int(market_price)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 一口价必须是数字")
+                    continue
+                
+                target_price = data.get('target_price', 0) or data.get('目标买入价', 0)
+                try:
+                    target_price = int(target_price)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 目标买入价必须是数字")
+                    continue
+                
+                planned_price = data.get('planned_price', 0) or data.get('计划卖出价', 0)
+                try:
+                    planned_price = int(planned_price)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 计划卖出价必须是数字")
+                    continue
+                
+                # 计算保本价、利润和利润率
+                break_even_price = round(target_price * 1.03) if target_price else 0
+                profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
+                profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
+                
+                # 备注/策略
+                strategy = data.get('strategy', '') or data.get('出库策略', '') or data.get('note', '') or data.get('备注', '')
+                
+                # 保存数据
+                saved_data = {
+                    'item_name': item_name,
+                    'monitor_time': now,
+                    'quantity': quantity,
+                    'market_price': market_price,
+                    'target_price': target_price,
+                    'planned_price': planned_price,
+                    'break_even_price': break_even_price,
+                    'profit': profit,
+                    'profit_rate': profit_rate,
+                    'strategy': strategy
+                }
+                
+                # 调试输出
+                print(f"保存交易监控数据: {saved_data}")
+                
+                # 保存到数据库
+                self.db_manager.save_trade_monitor(saved_data)
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                error_message = f"{data.get('item_name', '未知物品')}: {str(e)}"
+                error_messages.append(error_message)
+                print(f"保存交易监控数据错误: {error_message}")
         
         if success_count > 0:
             self.refresh_monitor()
-            self.main_gui.log_operation('修改', '交易监控')
+            self.main_gui.log_operation('批量修改', '交易监控', confirmed_data)
             messagebox.showinfo("成功", f"成功导入 {success_count} 条监控记录")
             self.status_var.set(f"已导入 {success_count} 条记录")
             
             # 清空已处理的图片
-            self._pending_ocr_images = []
             self.ocr_preview.clear_images()
         else:
-            messagebox.showwarning("警告", "没有成功导入任何记录！")
+            error_details = "\n".join(error_messages[:5])
+            if len(error_messages) > 5:
+                error_details += f"\n... 等共{len(error_messages)}个错误"
+                
+            messagebox.showerror("导入失败", 
+                               f"所有记录导入失败。\n\n错误详情:\n{error_details}")
             self.status_var.set("未导入任何记录")
 
     def paste_ocr_import_monitor(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
         try:
-            img = ImageGrab.grabclipboard()
-            if isinstance(img, Image.Image):
-                self._pending_ocr_images.append(img)
-                # 使用refresh_ocr_image_preview方法刷新图片显示
-                self.refresh_ocr_image_preview()
-                messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
-                self.status_var.set("已粘贴图片")
+            # 使用辅助模块获取剪贴板图片
+            img = clipboard_helper.get_clipboard_image()
+            
+            # 验证获取到的是否为图片
+            if img is not None:
+                # 直接将图片添加到OCR预览组件
+                self.ocr_preview.add_image(img)
+                
+                # 提示用户下一步操作
+                self.status_var.set("已粘贴图片到预览区")
+                
+                # 显示更友好的提示信息
+                messagebox.showinfo("提示", 
+                                   "图片已添加并显示在下方OCR预览区。\n\n"
+                                   "请点击'批量识别粘贴图片'按钮进行识别导入，\n"
+                                   "或继续粘贴更多图片进行批量处理。")
             else:
-                messagebox.showinfo("提示", "剪贴板中没有图片")
+                # 详细诊断剪贴板问题
+                report = clipboard_helper.diagnose_clipboard()
+                formats = report.get('clipboard_state', {}).get('available_formats', [])
+                
+                if formats:
+                    # 剪贴板有内容，但不是图片
+                    messagebox.showwarning("剪贴板内容不是图片", 
+                                     f"剪贴板中没有可识别的图片。\n"
+                                     f"当前剪贴板内容类型: {', '.join(formats)}\n\n"
+                                     f"请确保已复制图片到剪贴板，或使用'上传图片'按钮。")
+                else:
+                    # 剪贴板为空或无法访问
+                    messagebox.showwarning("剪贴板为空", 
+                                     "剪贴板中没有内容或无法访问剪贴板。\n\n"
+                                     "请先复制图片到剪贴板，或使用'上传图片'按钮。")
+                
+                self.status_var.set("粘贴图片失败：剪贴板中没有图片")
         except Exception as e:
-            messagebox.showerror("错误", f"粘贴图片失败: {e}")
-            self.status_var.set(f"粘贴图片失败: {str(e)}")
+            error_msg = str(e)
+            print(f"粘贴图片异常: {error_msg}")  # 调试输出
+            
+            # 提供更详细的错误信息和解决建议
+            if "access" in error_msg.lower() or "permission" in error_msg.lower():
+                messagebox.showerror("访问错误", 
+                                  f"无法访问剪贴板: {error_msg}\n\n"
+                                  f"可能的解决方案:\n"
+                                  f"1. 重新启动应用程序\n"
+                                  f"2. 检查是否有其他程序锁定了剪贴板\n"
+                                  f"3. 使用'上传图片'按钮作为替代方法")
+            else:
+                messagebox.showerror("错误", 
+                                  f"粘贴图片失败: {error_msg}\n\n"
+                                  f"请尝试使用'上传图片'按钮。")
+            
+            self.status_var.set(f"粘贴图片失败: {error_msg}")
 
     def refresh_ocr_image_preview(self):
-        """刷新OCR图片预览"""
-        self.ocr_preview.clear_images()
-        for img in self._pending_ocr_images:
-            self.ocr_preview.add_image(img)
+        """刷新OCR图片预览 - 此方法不再需要，因为OCR预览组件会自动管理图片显示"""
+        pass
 
     def delete_ocr_image(self, idx):
-        """删除待识别的图片"""
-        if 0 <= idx < len(self._pending_ocr_images):
-            del self._pending_ocr_images[idx]
-            self.refresh_ocr_image_preview()
+        """删除待识别的图片 - 此方法不再需要，因为OCR预览组件会处理图片删除"""
+        pass
 
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
@@ -522,9 +730,15 @@ class TradeMonitorTab:
         self.last_hover_row = row_id if row_id else None
 
     def parse_monitor_ocr_text(self, text):
-        """解析OCR识别后的文本，提取监控相关信息"""
-        # 已有的解析代码保持不变
-        return None
+        """
+        解析OCR识别后的文本，提取监控相关信息
+        
+        注意：此方法已被替换为使用专用解析器
+        """
+        # 使用专用的交易监控OCR解析器
+        from src.gui.utils.monitor_ocr_parser import parse_monitor_ocr_text
+        item_dict = self.main_gui.load_item_dict()
+        return parse_monitor_ocr_text(text, item_dict)
 
     def show_monitor_menu(self, event):
         """显示右键菜单"""
@@ -591,14 +805,14 @@ class TradeMonitorTab:
         edit_win.iconbitmap(self.main_gui.root.iconbitmap()) if hasattr(self.main_gui.root, 'iconbitmap') and callable(self.main_gui.root.iconbitmap) else None
         
         style = tb.Style()
-        style.configure('Edit.TLabel', font=(self.chinese_font, 11), background='#f0f0f0')
+        style.configure('Edit.TLabel', font=(self.chinese_font, 11))
         style.configure('Edit.TEntry', font=(self.chinese_font, 11))
-        style.configure('Edit.TButton', font=(self.chinese_font, 12, 'bold'), background='#3f51b5', foreground='#fff', padding=10)
-        style.map('Edit.TButton', background=[('active', '#5c6bc0')], foreground=[('active', '#ffffff')])
-        style.configure('Edit.TFrame', background='#f0f0f0')
+        style.configure('Edit.TButton', font=(self.chinese_font, 12, 'bold'), padding=10)
+        style.map('Edit.TButton', foreground=[('active', '#ffffff')])
+        style.configure('Edit.TFrame', bootstyle="light")
         
         # 创建内容框架
-        content_frame = tb.Frame(edit_win, style='Edit.TFrame')
+        content_frame = tb.Frame(edit_win, bootstyle="light")
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
         
         # 字段标题和数据类型

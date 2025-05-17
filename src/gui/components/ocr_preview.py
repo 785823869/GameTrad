@@ -41,7 +41,7 @@ class OCRPreview(ttk.Frame):
         self.scrollbar.pack(side="bottom", fill="x")
         
         # 初始提示标签
-        self.empty_label = ttk.Label(self.scrollable_frame, text="暂无图片，请添加或粘贴图片")
+        self.empty_label = ttk.Label(self.scrollable_frame, text="▶ 暂无图片，请添加或粘贴图片后在此处查看 ◀", font=("", 10, "bold"))
         self.empty_label.pack(pady=10)
         
         # 绑定鼠标滚轮事件
@@ -70,6 +70,36 @@ class OCRPreview(ttk.Frame):
             
         # 刷新显示
         self.refresh()
+        
+        # 添加视觉高亮效果，使新添加的图片更加明显
+        self.after(100, self._highlight_last_image)
+        
+    def _highlight_last_image(self):
+        """为最后添加的图片添加高亮效果"""
+        if not self.images:
+            return
+            
+        # 获取最后一个图片的框架
+        children = [child for child in self.scrollable_frame.winfo_children() 
+                   if child != self.empty_label]
+        if not children:
+            return
+            
+        last_frame = children[-1]
+        orig_bg = last_frame.cget("background")
+        
+        # 闪烁效果
+        def blink(frame, count=0, is_highlighted=True):
+            if count >= 6:  # 闪烁3次
+                frame.configure(background=orig_bg)
+                return
+                
+            bg_color = "#ffcc00" if is_highlighted else orig_bg
+            frame.configure(background=bg_color)
+            self.after(300, lambda: blink(frame, count+1, not is_highlighted))
+            
+        # 开始闪烁
+        blink(last_frame)
         
     def delete_image(self, idx):
         """删除指定索引的图片"""

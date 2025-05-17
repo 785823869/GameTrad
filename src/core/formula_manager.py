@@ -141,8 +141,8 @@ class FormulaManagerWindow(tb.Toplevel):
         columns = ("备注值", "用户名")
         self.rules_tree = ttk.Treeview(rules_frame, columns=columns, show='headings', height=10)
         for col in columns:
-            self.rules_tree.heading(col, text=col)
-            self.rules_tree.column(col, width=100)
+            self.rules_tree.heading(col, text=col, anchor='center')  # 设置列标题居中
+            self.rules_tree.column(col, width=100, anchor='center')  # 设置列内容居中
         
         # 添加滚动条
         scrollbar = ttk.Scrollbar(rules_frame, orient="vertical", command=self.rules_tree.yview)

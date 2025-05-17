@@ -71,8 +71,14 @@ class ModalInputDialog:
             # 使用place布局来精确定位每个元素
             label_y = i * 60 + 10
             
-            # 标签
-            label_widget = ttk.Label(content_frame, text=f"{label}:", style='Dialog.TLabel')
+            # 标签 - 使用原生tk.Label以支持透明背景
+            label_widget = tk.Label(
+                content_frame, 
+                text=f"{label}:", 
+                font=('微软雅黑', 11),
+                bg='#f4f8fb',  # 与对话框背景色相同
+                anchor='e'  # 右对齐文本
+            )
             label_widget.place(x=10, y=label_y, width=80, height=30)
             
             # 设置输入验证
@@ -99,7 +105,7 @@ class ModalInputDialog:
             self.entries[field_name] = entry
             
             # 错误提示标签
-            err_label = ttk.Label(
+            err_label = tk.Label(
                 content_frame, 
                 text="", 
                 foreground="red", 

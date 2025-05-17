@@ -53,7 +53,17 @@ class StockInTab:
         style.configure("StockIn.TLabel", 
                       font=(self.chinese_font, 10),
                       foreground="#2c3e50")
+        
+        # 创建透明LabelFrame样式
+        style.configure("Transparent.TLabelframe", 
+                      background="#ffffff",  # 与主背景色匹配
+                      borderwidth=1)
                       
+        style.configure("Transparent.TLabelframe.Label", 
+                      font=(self.chinese_font, 10, "bold"),
+                      foreground="#2c3e50",
+                      background="#ffffff")  # 与主背景色匹配
+        
         # 过滤器样式
         style.configure("Filter.TLabel", 
                       font=(self.chinese_font, 10, "bold"),
@@ -172,8 +182,8 @@ class StockInTab:
         tb.Button(actions_frame, text="刷新入库记录", command=self.refresh_stock_in, 
                 bootstyle="success-outline").pack(fill='x', pady=2, ipady=2)
         
-        # OCR工具区域
-        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", bootstyle="info", padding=5)
+        # OCR工具区域 - 使用透明样式
+        ocr_tools_frame = tb.LabelFrame(right_panel, text="OCR工具", style="Transparent.TLabelframe", padding=5)
         ocr_tools_frame.pack(fill='x', pady=(0, 10))
         
         tb.Button(ocr_tools_frame, text="上传图片自动入库", command=self.upload_ocr_import_stock_in,
@@ -188,8 +198,8 @@ class StockInTab:
         
         tb.Label(shortcut_frame, text="快捷键: Ctrl+V 粘贴图片", bootstyle="secondary").pack(anchor='w')
         
-        # OCR预览区域
-        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", bootstyle="secondary", padding=5)
+        # OCR预览区域 - 使用透明样式
+        ocr_frame = tb.LabelFrame(right_panel, text="OCR图片预览", style="Transparent.TLabelframe", padding=5)
         ocr_frame.pack(fill='x', pady=5, padx=2)
         
         # 创建OCR预览组件
@@ -348,20 +358,21 @@ class StockInTab:
         # 使用ttkbootstrap创建更美观的编辑窗口
         edit_win = tb.Toplevel(self.main_gui.root)
         edit_win.title("编辑入库记录")
-        edit_win.minsize(420, 420)
-        edit_win.configure(bg='#f4f8fb')
+        edit_win.minsize(420, 500)
+        edit_win.configure(bg='#f0f0f0')
         
         # 设置窗口图标和样式
         edit_win.iconbitmap(self.main_gui.root.iconbitmap()) if hasattr(self.main_gui.root, 'iconbitmap') and callable(self.main_gui.root.iconbitmap) else None
         
         style = tb.Style()
-        style.configure('Edit.TLabel', font=(self.chinese_font, 11), background='#f4f8fb')
+        style.configure('Edit.TLabel', font=(self.chinese_font, 11), background='#f0f0f0')
         style.configure('Edit.TEntry', font=(self.chinese_font, 11))
         style.configure('Edit.TButton', font=(self.chinese_font, 12, 'bold'), background='#3399ff', foreground='#fff', padding=10)
         style.map('Edit.TButton', background=[('active', '#66c2ff')], foreground=[('active', '#003366')])
+        style.configure('Edit.TFrame', background='#f0f0f0')
         
         # 创建内容框架
-        content_frame = tb.Frame(edit_win, bootstyle="light")
+        content_frame = tb.Frame(edit_win, style='Edit.TFrame')
         content_frame.pack(side='top', fill='both', expand=True, padx=10, pady=10)
         
         # 字段标题和数据类型
@@ -372,7 +383,15 @@ class StockInTab:
         
         # 创建字段
         for i, (label, val, typ) in enumerate(zip(labels, values, types)):
-            tb.Label(content_frame, text=label+":", bootstyle="info").grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
+            # 使用ttkbootstrap的标签，确保背景色一致
+            tb.Label(
+                content_frame, 
+                text=label+":", 
+                font=(self.chinese_font, 11),
+                bootstyle="default",
+                style='Edit.TLabel',
+                anchor='e'  # 右对齐文本
+            ).grid(row=i*2, column=0, padx=12, pady=4, sticky='e')
             
             vcmd = None
             if typ is int:
@@ -385,7 +404,14 @@ class StockInTab:
             entry.grid(row=i*2, column=1, padx=12, pady=4, sticky='ew')
             entries.append(entry)
             
-            err = tb.Label(content_frame, text="", foreground="red", bootstyle="danger")
+            # 使用ttkbootstrap的标签作为错误提示，确保背景色一致
+            err = tb.Label(
+                content_frame, 
+                text="", 
+                bootstyle="danger",
+                style='Edit.TLabel',
+                font=(self.chinese_font, 10)
+            )
             err.grid(row=i*2+1, column=0, columnspan=2, sticky='w', padx=12)
             error_labels.append(err)
             

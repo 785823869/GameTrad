@@ -558,8 +558,8 @@ class StockOutTab:
 
     def refresh_ocr_image_preview_out(self):
         self.ocr_preview.clear_images()
-        for i, img in enumerate(self._pending_ocr_images_out):
-            self.ocr_preview.add_image(img, index=i)
+        for img in self._pending_ocr_images_out:
+            self.ocr_preview.add_image(img)
 
     def delete_ocr_image_out(self, idx):
         if 0 <= idx < len(self._pending_ocr_images_out):
@@ -575,8 +575,8 @@ class StockOutTab:
             from PIL import Image
             img = Image.open(file_path)
             self._pending_ocr_images_out.append(img)
-            # 使用新组件添加图片
-            self.ocr_preview.add_image(img)
+            # 使用refresh_ocr_image_preview_out方法刷新图片显示
+            self.refresh_ocr_image_preview_out()
             messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
@@ -610,18 +610,45 @@ class StockOutTab:
                 if not text:
                     continue
                 
-                # 首先尝试使用新的解析方法
-                data = self.parse_stock_out_ocr_text_v2(text)
-                # 如果新方法失败，回退到旧方法
+                # 首先尝试使用最新的V3解析方法
+                data = self.parse_stock_out_ocr_text_v3(text)
+                # 如果V3方法失败，尝试V2方法
+                if not data:
+                    data = self.parse_stock_out_ocr_text_v2(text)
+                # 如果V2方法也失败，回退到通用方法
                 if not data:
                     data = self.parse_stock_out_ocr_text(text)
                     
                 if data:
+                    # 确保数据包含所有必要字段
+                    if 'note' not in data:
+                        data['note'] = ''
+                    if 'fee' not in data:
+                        data['fee'] = 0
+                    if 'total_amount' not in data:
+                        data['total_amount'] = data['quantity'] * data['unit_price'] - data.get('fee', 0)
+                    
+                    # 确保数据包含预览对话框期望的字段名
+                    if 'item_name' in data and '物品名称' not in data:
+                        data['物品名称'] = data['item_name']
+                    if 'quantity' in data and '数量' not in data:
+                        data['数量'] = data['quantity']
+                    if 'unit_price' in data and '单价' not in data:
+                        data['单价'] = data['unit_price']
+                    if 'fee' in data and '手续费' not in data:
+                        data['手续费'] = data['fee']
+                    if 'total_amount' in data and '总金额' not in data:
+                        data['总金额'] = data['total_amount']
+                    if 'note' in data and '备注' not in data:
+                        data['备注'] = data['note']
+                        
+                    print(f"添加到预览的数据: {data}")  # 调试输出
                     all_data.append(data)
             except Exception as e:
                 messagebox.showerror("错误", f"OCR识别失败: {e}")
                 
         if all_data:
+            print(f"预览数据列表: {all_data}")  # 调试输出
             # 显示OCR识别数据预览窗口
             self.show_ocr_preview_dialog(all_data)
         else:
@@ -629,8 +656,10 @@ class StockOutTab:
 
     def show_ocr_preview_dialog(self, ocr_data_list):
         """显示OCR识别数据预览窗口（表格形式）"""
+        print(f"OCR预览数据: {ocr_data_list}")  # 调试输出
+        
         # 定义列
-        columns = ('物品名称', '数量', '单价', '手续费', '总金额')
+        columns = ('物品名称', '数量', '单价', '手续费', '总金额', '备注')
         
         # 设置列宽和对齐方式
         column_widths = {
@@ -638,7 +667,8 @@ class StockOutTab:
             '数量': 90,
             '单价': 95,
             '手续费': 95,
-            '总金额': 120
+            '总金额': 120,
+            '备注': 150
         }
         
         column_aligns = {
@@ -646,8 +676,36 @@ class StockOutTab:
             '数量': 'e',      # 数字右对齐
             '单价': 'e',
             '手续费': 'e',
-            '总金额': 'e'
+            '总金额': 'e',
+            '备注': 'w'      # 文本左对齐
         }
+        
+        # 确保每条数据都有必要的字段，并进行字段映射
+        for data in ocr_data_list:
+            if isinstance(data, dict):
+                # 确保有备注字段
+                if 'note' not in data:
+                    data['note'] = ''
+                if '备注' not in data:
+                    data['备注'] = data.get('note', '')
+                
+                # 字段映射：确保英文字段名和中文字段名都存在
+                field_mappings = {
+                    'item_name': '物品名称',
+                    'quantity': '数量',
+                    'unit_price': '单价',
+                    'fee': '手续费',
+                    'total_amount': '总金额',
+                    'note': '备注'
+                }
+                
+                for eng_key, cn_key in field_mappings.items():
+                    if eng_key in data and cn_key not in data:
+                        data[cn_key] = data[eng_key]
+                    elif cn_key in data and eng_key not in data:
+                        data[eng_key] = data[cn_key]
+                
+                print(f"映射后的数据: {data}")  # 调试输出
         
         # 使用通用OCR预览对话框组件
         preview_dialog = OCRPreviewDialog(
@@ -669,35 +727,77 @@ class StockOutTab:
     def import_confirmed_ocr_data(self, confirmed_data):
         """导入确认后的OCR数据"""
         success_count = 0
+        error_count = 0
+        error_messages = []
         
         for data in confirmed_data:
-            item_name = data['item_name']
-            quantity = data['quantity']
-            unit_price = data['unit_price']
-            fee = data['fee']
-            # 使用传入的总金额，而不是重新计算
-            total_amount = data.get('total_amount', quantity * unit_price - fee)
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # 自动减少库存
-            success = self.db_manager.decrease_inventory(item_name, quantity)
-            if not success:
-                messagebox.showerror("错误", f"库存不足，无法出库 {item_name} 数量 {quantity}")
-                continue
+            try:
+                # 确保所有必要的字段都存在
+                if not isinstance(data, dict):
+                    error_count += 1
+                    error_messages.append(f"数据格式错误: {data}")
+                    continue
+                    
+                # 获取必要字段，使用get方法避免KeyError
+                item_name = data.get('item_name')
+                if not item_name:
+                    error_count += 1
+                    error_messages.append("缺少物品名称")
+                    continue
+                    
+                quantity = data.get('quantity')
+                if not quantity:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 缺少数量")
+                    continue
+                    
+                unit_price = data.get('unit_price')
+                if not unit_price:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 缺少单价")
+                    continue
                 
-            self.db_manager.save_stock_out({
-                'item_name': item_name,
-                'transaction_time': now,
-                'quantity': quantity,
-                'unit_price': unit_price,
-                'fee': fee,
-                'deposit': 0.0,  # 设置押金默认值为0
-                'total_amount': total_amount,
-                'note': ''
-            })
-            
-            success_count += 1
+                # 确保数据类型正确
+                try:
+                    quantity = int(quantity)
+                    unit_price = float(unit_price)
+                    fee = float(data.get('fee', 0))  # 手续费可以为空，默认为0
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 数据类型错误")
+                    continue
+                
+                # 使用传入的总金额，如果没有则计算
+                total_amount = data.get('total_amount')
+                if total_amount is None:
+                    total_amount = quantity * unit_price - fee
+                
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 自动减少库存
+                success = self.db_manager.decrease_inventory(item_name, quantity)
+                if not success:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 库存不足，无法出库数量 {quantity}")
+                    continue
+                    
+                self.db_manager.save_stock_out({
+                    'item_name': item_name,
+                    'transaction_time': now,
+                    'quantity': quantity,
+                    'unit_price': unit_price,
+                    'fee': fee,
+                    'deposit': 0.0,  # 设置押金固定为0
+                    'total_amount': total_amount,
+                    'note': data.get('note', '')  # 备注可以为空
+                })
+                
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                error_messages.append(f"处理记录时出错: {str(e)}")
         
+        # 刷新界面
         if success_count > 0:
             self.refresh_stock_out()
             self.main_gui.refresh_inventory()
@@ -705,9 +805,20 @@ class StockOutTab:
             self._pending_ocr_images_out.clear()
             self.ocr_preview.clear_images()
             self.main_gui.log_operation('批量修改', '出库管理', confirmed_data)
+        
+        # 显示结果消息
+        if success_count > 0 and error_count == 0:
             messagebox.showinfo("成功", f"已成功导入{success_count}条出库记录！")
-        else:
-            messagebox.showwarning("警告", "没有成功导入任何记录！")
+        elif success_count > 0 and error_count > 0:
+            messagebox.showwarning("部分成功", 
+                                  f"成功导入{success_count}条记录，{error_count}条记录导入失败。\n\n错误详情:\n" + 
+                                  "\n".join(error_messages[:5]) + 
+                                  (f"\n... 等共{len(error_messages)}个错误" if len(error_messages) > 5 else ""))
+        elif success_count == 0:
+            messagebox.showerror("导入失败", 
+                               f"所有记录导入失败。\n\n错误详情:\n" + 
+                               "\n".join(error_messages[:5]) + 
+                               (f"\n... 等共{len(error_messages)}个错误" if len(error_messages) > 5 else ""))
 
     def parse_stock_out_ocr_text(self, text):
         """解析OCR识别后的文本，提取出库相关信息"""
@@ -815,11 +926,16 @@ class StockOutTab:
                         print(f"备选单价：{unit_price}")  # 调试输出
         
         if item_name and quantity and unit_price:
+            # 计算总金额
+            total_amount = quantity * unit_price - fee
+            
             result = {
                 'item_name': item_name,
                 'quantity': quantity,
                 'unit_price': unit_price,
-                'fee': fee
+                'fee': fee,
+                'total_amount': total_amount,
+                'note': ''  # 添加空备注字段
             }
             print(f"OCR识别结果：{result}")  # 调试输出
             return result
@@ -853,21 +969,70 @@ class StockOutTab:
         price_match = re.search(r'售出单价[：:]\s*(\d+)银两', text)
         unit_price = int(price_match.group(1)) if price_match else 0
         
-        # 提取手续费
+        # 提取手续费 - 手续费可以为空
         fee_match = re.search(r'手续费[：:]\s*(\d+)银两', text)
         fee = int(fee_match.group(1)) if fee_match else 0
         
         if item_name and quantity and unit_price:
+            # 计算总金额
+            total_amount = quantity * unit_price - fee
+            
             result = {
                 'item_name': item_name,
                 'quantity': quantity,
                 'unit_price': unit_price,
-                'fee': fee
+                'fee': fee,
+                'total_amount': total_amount,
+                'note': ''  # 添加空备注字段
             }
             print(f"OCR识别结果(V2)：{result}")  # 调试输出
             return result
         
         print("OCR识别失败(V2)，缺少必要信息")  # 调试输出
+        return None
+
+    def parse_stock_out_ocr_text_v3(self, text):
+        """
+        第三种出库OCR文本解析方法，专门用于处理新格式的出库数据
+        格式示例：
+        已成功售出60诛仙古玉，请在附件中领取已计算相关费用后的收益。 136116
+        """
+        if not text or not text.strip():
+            print("OCR识别文本为空")
+            return None
+            
+        print(f"OCR识别文本(V3)：\n{text}")  # 调试输出
+        
+        # 提取物品名称和数量
+        # 模式: 已成功售出[数量][物品名]，请在附件中领取...
+        item_match = re.search(r'已成功售出(\d+)([^，,。]+)[，,。]', text)
+        if not item_match:
+            print("未匹配到V3格式的物品名称和数量")
+            return None
+        
+        quantity = int(item_match.group(1))
+        item_name = item_match.group(2).strip()
+        
+        # 提取总金额 - 通常是文本末尾的数字
+        amount_match = re.search(r'(\d+)\s*$', text)
+        total_amount = int(amount_match.group(1)) if amount_match else 0
+        
+        if item_name and quantity and total_amount:
+            # 计算单价（总金额除以数量）
+            unit_price = total_amount / quantity if quantity > 0 else 0
+            
+            result = {
+                'item_name': item_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'fee': 0,  # 手续费默认为0
+                'total_amount': total_amount,
+                'note': ''  # 备注默认为空
+            }
+            print(f"OCR识别结果(V3)：{result}")  # 调试输出
+            return result
+        
+        print("OCR识别失败(V3)，缺少必要信息")  # 调试输出
         return None
 
     def show_stock_out_menu(self, event):
@@ -883,8 +1048,8 @@ class StockOutTab:
             img = ImageGrab.grabclipboard()
             if isinstance(img, Image.Image):
                 self._pending_ocr_images_out.append(img)
-                # 使用新组件添加图片
-                self.ocr_preview.add_image(img)
+                # 使用refresh_ocr_image_preview_out方法刷新图片显示
+                self.refresh_ocr_image_preview_out()
                 messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
             else:
                 messagebox.showinfo("提示", "剪贴板中没有图片")
@@ -899,20 +1064,32 @@ class StockOutTab:
         # 如果鼠标离开了上一个高亮行，恢复其原始样式
         if self.last_hover_row and self.last_hover_row != row_id:
             # 获取行的当前标签
-            current_tags = list(self.stock_out_tree.item(self.last_hover_row, 'tags'))
-            # 移除悬停标签
-            if 'hovering' in current_tags:
-                current_tags.remove('hovering')
-                self.stock_out_tree.item(self.last_hover_row, tags=current_tags)
+            try:
+                # 检查行是否仍然存在
+                if self.last_hover_row in self.stock_out_tree.get_children():
+                    current_tags = list(self.stock_out_tree.item(self.last_hover_row, 'tags'))
+                    # 移除悬停标签
+                    if 'hovering' in current_tags:
+                        current_tags.remove('hovering')
+                        self.stock_out_tree.item(self.last_hover_row, tags=current_tags)
+            except Exception:
+                # 如果行不存在，忽略错误
+                pass
                 
         # 如果鼠标位于一个有效行上，应用悬停高亮效果
         if row_id and row_id != self.last_hover_row:
-            # 获取行的当前标签
-            current_tags = list(self.stock_out_tree.item(row_id, 'tags'))
-            # 添加悬停标签
-            if 'hovering' not in current_tags:
-                current_tags.append('hovering')
-                self.stock_out_tree.item(row_id, tags=current_tags)
+            try:
+                # 确保行存在
+                if row_id in self.stock_out_tree.get_children():
+                    # 获取行的当前标签
+                    current_tags = list(self.stock_out_tree.item(row_id, 'tags'))
+                    # 添加悬停标签
+                    if 'hovering' not in current_tags:
+                        current_tags.append('hovering')
+                        self.stock_out_tree.item(row_id, tags=current_tags)
+            except Exception:
+                # 如果行不存在，忽略错误
+                pass
                 
         # 更新上一个高亮行的记录
         self.last_hover_row = row_id if row_id else None

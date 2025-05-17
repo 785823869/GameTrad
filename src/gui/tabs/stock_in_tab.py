@@ -208,10 +208,6 @@ class StockInTab:
         tb.Button(ocr_tools_frame, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_in,
                 bootstyle="info-outline").pack(fill='x', pady=2, ipady=2)
         
-        # 添加测试按钮
-        tb.Button(ocr_tools_frame, text="测试OCR识别规则", command=self.test_parse_stock_in_ocr_text_v2,
-                bootstyle="secondary").pack(fill='x', pady=2, ipady=2)
-        
         # 使用键盘快捷键提示
         shortcut_frame = tb.Frame(right_panel, bootstyle="light")
         shortcut_frame.pack(fill='x', pady=(0, 5))
@@ -531,8 +527,8 @@ class StockInTab:
 
     def refresh_ocr_image_preview(self):
         self.ocr_preview.clear_images()
-        for i, img in enumerate(self._pending_ocr_images):
-            self.ocr_preview.add_image(img, index=i)
+        for img in self._pending_ocr_images:
+            self.ocr_preview.add_image(img)
 
     def delete_ocr_image(self, idx):
         if 0 <= idx < len(self._pending_ocr_images):
@@ -548,8 +544,8 @@ class StockInTab:
             from PIL import Image
             img = Image.open(file_path)
             self._pending_ocr_images.append(img)
-            # 使用新组件添加图片
-            self.ocr_preview.add_image(img)
+            # 使用refresh_ocr_image_preview方法刷新图片显示
+            self.refresh_ocr_image_preview()
             messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
         except Exception as e:
             messagebox.showerror("错误", f"图片加载失败: {e}")
@@ -606,37 +602,52 @@ class StockInTab:
         
         # 提取所有银两×后面的数值（支持多种格式）
         cost_patterns = [
+            r'失去了银两×(\d+)',  # 先匹配最长的模式
             r'银两×(\d+)',
-            r'失去了银两×(\d+)',
             r'失去了(\d+)银两',
-            r'失去(\d+)银两',
             r'花费(\d+)银两',
             r'花费了(\d+)银两'
         ]
         
         cost_matches = []
+        # 创建一个集合来跟踪已经匹配到的花费值，避免重复
+        matched_costs = set()
         for pattern in cost_patterns:
             matches = re.findall(pattern, text)
-            if matches:
-                cost_matches.extend(matches)
-                print(f"匹配到花费: {matches}")
+            for match in matches:
+                if match not in matched_costs:  # 只添加未匹配过的值
+                    matched_costs.add(match)
+                    cost_matches.append(match)
+                    print(f"匹配到花费: {match}")
+        
+        # 如果没有匹配到任何花费，打印一条调试信息
+        if not cost_matches:
+            print("未匹配到任何花费值")
         
         # 提取所有至纯精华×后面的数值（支持多种格式）
         item_name = "至纯精华"  # 固定物品名称
         item_patterns = [
+            f"获得了{item_name}×(\\d+)",  # 先匹配最长的模式
             f"{item_name}×(\\d+)",
-            f"获得了{item_name}×(\\d+)",
             f"获得{item_name}×(\\d+)",
             f"获得了{item_name}(\\d+)",
             f"获得{item_name}(\\d+)"
         ]
         
         item_matches = []
+        # 创建一个集合来跟踪已经匹配到的数量值，避免重复
+        matched_quantities = set()
         for pattern in item_patterns:
             matches = re.findall(pattern, text)
-            if matches:
-                item_matches.extend(matches)
-                print(f"匹配到物品数量: {matches}")
+            for match in matches:
+                if match not in matched_quantities:  # 只添加未匹配过的值
+                    matched_quantities.add(match)
+                    item_matches.append(match)
+                    print(f"匹配到物品数量: {match}")
+        
+        # 如果没有匹配到任何物品数量，打印一条调试信息
+        if not item_matches:
+            print("未匹配到任何物品数量")
         
         # 如果没有找到物品或花费，返回None
         if not cost_matches or not item_matches:
@@ -645,31 +656,15 @@ class StockInTab:
         
         try:
             # 计算总花费 - 所有银两×后面数值的总和
-            raw_total_cost = sum(int(cost) for cost in cost_matches)
+            total_cost = sum(int(cost) for cost in cost_matches)
             
             # 计算总数量 - 所有至纯精华×后面数值的总和
             total_quantity = sum(int(qty) for qty in item_matches)
             
-            # 根据示例分析花费计算规则
-            # 示例中的原始银两总和是: 262164 + 33314 + 24598 + 4600 = 324676
-            # 但实际花费显示为: 649352，约为原始总和的2倍
-            
-            # 分析示例中的规则：649352 / 324676 ≈ 2.0
-            # 应用这个系数到所有情况
-            total_cost = raw_total_cost * 2
-            
-            # 检查是否匹配示例中的特定模式，如果是则使用确切的值
-            if "失去了银两×262164" in text and "失去了银两×33314" in text and \
-               "失去了银两×24598" in text and "失去了银两×4600" in text and \
-               "至纯精华×121" in text and "至纯精华×15" in text and \
-               "至纯精华×11" in text and "至纯精华×2" in text:
-                # 这是与示例完全匹配的情况，直接使用示例中的花费值
-                total_cost = 649352
-            
             # 计算均价
             avg_price = total_cost / total_quantity if total_quantity > 0 else 0
             
-            print(f"解析结果: 物品={item_name}, 数量={total_quantity}, 原始花费={raw_total_cost}, 调整后花费={total_cost}, 均价={avg_price}")
+            print(f"解析结果: 物品={item_name}, 数量={total_quantity}, 花费={total_cost}, 均价={avg_price}")
             
             # 返回结构化数据，确保与OCRPreviewDialog兼容
             result = {
@@ -759,22 +754,24 @@ class StockInTab:
 
     def show_ocr_preview_dialog(self, ocr_data_list):
         """显示OCR识别数据预览窗口（表格形式）"""
-        # 定义列
-        columns = ('物品名称', '数量', '花费', '均价')
+        # 定义列 - 使用与入库管理一致的字段名
+        columns = ('物品名称', '数量', '花费', '均价', '备注')
         
         # 设置列宽和对齐方式
         column_widths = {
             '物品名称': 180,
             '数量': 90,
             '花费': 120,
-            '均价': 120
+            '均价': 120,
+            '备注': 120
         }
         
         column_aligns = {
             '物品名称': 'w',  # 文本左对齐
             '数量': 'e',      # 数字右对齐
             '花费': 'e',
-            '均价': 'e'
+            '均价': 'e',
+            '备注': 'w'
         }
         
         # 转换数据格式，确保与表格列匹配
@@ -799,11 +796,22 @@ class StockInTab:
                 avg_cost = cost / quantity
                 data['avg_cost'] = avg_cost
                 
+            # 确保有备注字段
+            note = data.get('note', '')
+            data['note'] = note
+                
             display_data.append({
                 '物品名称': item_name,
                 '数量': quantity,
                 '花费': cost,  # 确保这是总花费
-                '均价': avg_cost
+                '均价': avg_cost,
+                '备注': note,
+                # 同时添加英文键名，确保数据验证能通过
+                'item_name': item_name,
+                'quantity': quantity,
+                'cost': cost,
+                'avg_cost': avg_cost,
+                'note': note
             })
         
         # 使用通用OCR预览对话框组件
@@ -826,42 +834,89 @@ class StockInTab:
     def import_confirmed_ocr_data(self, confirmed_data):
         """导入确认后的OCR数据"""
         success_count = 0
+        error_count = 0
+        error_messages = []
         
         for data in confirmed_data:
-            item_name = data.get('item_name', '')
-            quantity = data.get('quantity', 0)
-            
-            # 支持新的OCR数据结构
-            cost = data.get('cost', 0)
-            if cost == 0:
-                # 如果没有直接的cost字段，尝试从unit_price计算总花费
-                unit_price = data.get('unit_price', 0)
-                cost = unit_price * quantity
-            
-            # 支持新的OCR数据结构中的avg_cost字段
-            avg_cost = data.get('avg_cost', 0)
-            if avg_cost == 0:
-                # 如果没有直接的avg_cost字段，计算均价
-                avg_cost = cost / quantity if quantity > 0 else 0
+            try:
+                # 确保所有必要的字段都存在
+                if not isinstance(data, dict):
+                    error_count += 1
+                    error_messages.append(f"数据格式错误: {data}")
+                    continue
+                    
+                # 获取必要字段，使用get方法避免KeyError
+                item_name = data.get('item_name')
+                if not item_name:
+                    error_count += 1
+                    error_messages.append("缺少物品名称")
+                    continue
+                    
+                quantity = data.get('quantity')
+                if not quantity:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 缺少数量")
+                    continue
                 
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # 保存入库记录
-            self.db_manager.save_stock_in({
-                'item_name': item_name,
-                'transaction_time': now,
-                'quantity': quantity,
-                'cost': int(cost),  # 确保花费是整数
-                'avg_cost': avg_cost,
-                'deposit': 0.00,
-                'note': ''
-            })
-            
-            # 更新库存
-            self.db_manager.increase_inventory(item_name, quantity, avg_cost)
-            
-            success_count += 1
+                # 确保数据类型正确
+                try:
+                    quantity = int(quantity)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 数量必须是整数")
+                    continue
+                
+                # 获取花费 - 必须有cost字段
+                cost = data.get('cost')
+                if cost is None:
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 缺少花费")
+                    continue
+                
+                try:
+                    cost = float(cost)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    error_messages.append(f"{item_name}: 花费必须是数字")
+                    continue
+                
+                # 获取均价 - 如果没有则计算
+                avg_cost = data.get('avg_cost')
+                if avg_cost is None:
+                    avg_cost = cost / quantity if quantity > 0 else 0
+                else:
+                    try:
+                        avg_cost = float(avg_cost)
+                    except (ValueError, TypeError):
+                        error_count += 1
+                        error_messages.append(f"{item_name}: 均价必须是数字")
+                        continue
+                
+                # 获取备注 - 如果没有则使用空字符串
+                note = data.get('note', '')
+                    
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 保存入库记录
+                self.db_manager.save_stock_in({
+                    'item_name': item_name,
+                    'transaction_time': now,
+                    'quantity': quantity,
+                    'cost': int(cost),  # 确保花费是整数
+                    'avg_cost': avg_cost,
+                    'deposit': data.get('deposit', 0.00),
+                    'note': note
+                })
+                
+                # 更新库存
+                self.db_manager.increase_inventory(item_name, quantity, avg_cost)
+                
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                error_messages.append(f"处理记录时出错: {str(e)}")
         
+        # 刷新界面
         if success_count > 0:
             self.refresh_stock_in()
             self.main_gui.refresh_inventory()
@@ -869,9 +924,20 @@ class StockInTab:
             self._pending_ocr_images.clear()
             self.ocr_preview.clear_images()
             self.main_gui.log_operation('批量修改', '入库管理', confirmed_data)
+        
+        # 显示结果消息
+        if success_count > 0 and error_count == 0:
             messagebox.showinfo("成功", f"已成功导入{success_count}条入库记录！")
-        else:
-            messagebox.showwarning("警告", "没有成功导入任何记录！")
+        elif success_count > 0 and error_count > 0:
+            messagebox.showwarning("部分成功", 
+                                  f"成功导入{success_count}条记录，{error_count}条记录导入失败。\n\n错误详情:\n" + 
+                                  "\n".join(error_messages[:5]) + 
+                                  (f"\n... 等共{len(error_messages)}个错误" if len(error_messages) > 5 else ""))
+        elif success_count == 0:
+            messagebox.showerror("导入失败", 
+                               f"所有记录导入失败。\n\n错误详情:\n" + 
+                               "\n".join(error_messages[:5]) + 
+                               (f"\n... 等共{len(error_messages)}个错误" if len(error_messages) > 5 else ""))
 
     def show_stock_in_menu(self, event):
         item = self.stock_in_tree.identify_row(event.y)
@@ -886,8 +952,8 @@ class StockInTab:
             img = ImageGrab.grabclipboard()
             if isinstance(img, Image.Image):
                 self._pending_ocr_images.append(img)
-                # 使用新组件添加图片
-                self.ocr_preview.add_image(img)
+                # 使用refresh_ocr_image_preview方法刷新图片显示
+                self.refresh_ocr_image_preview()
                 messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
             else:
                 messagebox.showinfo("提示", "剪贴板中没有图片")
@@ -919,55 +985,4 @@ class StockInTab:
                 
         # 更新上一个高亮行的记录
         self.last_hover_row = row_id if row_id else None
-
-    def test_parse_stock_in_ocr_text_v2(self, text=None):
-        """
-        测试OCR识别规则
-        """
-        if text is None:
-            text = """系统系统系统系统系统系统系统系统
-失去了银两×262164 失去了银两×33314 失去了银两×24598 失去了银两×4600
-获得了获得了获得了
-至纯精华×121 至纯精华×15 至纯精华×11
-获得了
-至纯精华×2"""
-            
-        print("======= 开始OCR识别测试 =======")
-        print(f"测试文本:\n{text}")
-        
-        # 调用解析方法
-        result = self.parse_stock_in_ocr_text_v2(text)
-        
-        if result:
-            # 计算原始银两总和
-            raw_cost = 262164 + 33314 + 24598 + 4600
-            # 计算预期的总数量
-            expected_quantity = 121 + 15 + 11 + 2
-            # 计算系数
-            cost_factor = 649352 / raw_cost
-            
-            print(f"解析结果:")
-            print(f"物品名称: {result['item_name']}")
-            print(f"数量: {result['quantity']} (预期: {expected_quantity})")
-            print(f"原始花费总和: {raw_cost:,}")
-            print(f"调整后花费: {int(result['cost']):,} (预期: 649,352)")
-            print(f"花费系数: {cost_factor:.2f} (约为原始总和的2倍)")
-            print(f"均价: {result['avg_cost']:.2f} (预期: {649352/expected_quantity:.2f})")
-            
-            # 显示结果对话框
-            messagebox.showinfo(
-                "OCR识别测试结果", 
-                f"物品名称: {result['item_name']}\n"
-                f"数量: {result['quantity']} (预期: {expected_quantity})\n"
-                f"原始花费总和: {raw_cost:,}\n"
-                f"调整后花费: {int(result['cost']):,} (预期: 649,352)\n"
-                f"花费系数: {cost_factor:.2f}\n"
-                f"均价: {result['avg_cost']:.2f}"
-            )
-        else:
-            print("OCR识别测试失败: 无法解析OCR文本")
-            messagebox.showerror("OCR识别测试失败", "无法解析OCR文本")
-            
-        print("======= 结束OCR识别测试 =======")
-        return result
     # ...后续补全所有入库管理相关方法... 

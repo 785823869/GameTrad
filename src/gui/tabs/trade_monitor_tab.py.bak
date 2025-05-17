@@ -326,8 +326,8 @@ class TradeMonitorTab:
         try:
             img = Image.open(file_path)
             self._pending_ocr_images.append(img)
-            # 使用refresh_ocr_image_preview方法刷新图片显示
-            self.refresh_ocr_image_preview()
+            # 使用新组件添加图片
+            self.ocr_preview.add_image(img)
             messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
             self.status_var.set("已添加图片")
         except Exception as e:
@@ -473,8 +473,8 @@ class TradeMonitorTab:
             img = ImageGrab.grabclipboard()
             if isinstance(img, Image.Image):
                 self._pending_ocr_images.append(img)
-                # 使用refresh_ocr_image_preview方法刷新图片显示
-                self.refresh_ocr_image_preview()
+                # 使用新组件添加图片
+                self.ocr_preview.add_image(img)
                 messagebox.showinfo("提示", "图片已添加，请点击'批量识别粘贴图片'按钮进行识别导入。")
                 self.status_var.set("已粘贴图片")
             else:
@@ -486,8 +486,8 @@ class TradeMonitorTab:
     def refresh_ocr_image_preview(self):
         """刷新OCR图片预览"""
         self.ocr_preview.clear_images()
-        for img in self._pending_ocr_images:
-            self.ocr_preview.add_image(img)
+        for i, img in enumerate(self._pending_ocr_images):
+            self.ocr_preview.add_image(img, index=i)
 
     def delete_ocr_image(self, idx):
         """删除待识别的图片"""

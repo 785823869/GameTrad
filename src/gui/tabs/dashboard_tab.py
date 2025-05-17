@@ -610,44 +610,30 @@ class DashboardTab(Frame):
         # 初始绘制图表
         self.draw_trend_chart(chart_frame, 'day')
 
-        # 用户列表
-        user_frame = LabelFrame(main_frame, text="最近活跃用户", bootstyle="primary")
+        # 用户库存监控 (之前是最近活跃用户)
+        user_frame = LabelFrame(main_frame, text="用户库存监控", bootstyle="primary")
         user_frame.pack(side='left', pady=10, fill='y')
         
-        # 使用树形视图替代简单标签
-        user_tree = ttk.Treeview(user_frame, columns=("name", "email", "last_active"), 
+        # 使用树形视图
+        user_tree = ttk.Treeview(user_frame, columns=("name", "item", "inventory"), 
                                  show="headings", height=10, style="Dashboard.Treeview")
         user_tree.heading("name", text="用户名")
-        user_tree.heading("email", text="邮箱")
-        user_tree.heading("last_active", text="最近活动")
+        user_tree.heading("item", text="物品")
+        user_tree.heading("inventory", text="库存数")
         
-        user_tree.column("name", width=100)
-        user_tree.column("email", width=180)
-        user_tree.column("last_active", width=100)
+        user_tree.column("name", width=120)
+        user_tree.column("item", width=160)
+        user_tree.column("inventory", width=100)
         
         user_tree.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        # 添加用户数据
-        user_data = [
-            ("Helena", "email@figmasfakedomain.net", "今天"),
-            ("Oscar", "email@figmasfakedomain.net", "昨天"),
-            ("Daniel", "email@figmasfakedomain.net", "2天前"),
-            ("Daniel Jay Park", "email@figmasfakedomain.net", "3天前"),
-            ("Mark Rojas", "email@figmasfakedomain.net", "1周前"),
-            ("李明", "email@figmasfakedomain.net", "1周前"),
-            ("王芳", "email@figmasfakedomain.net", "2周前"),
-            ("张伟", "email@figmasfakedomain.net", "2周前"),
-            ("刘洋", "email@figmasfakedomain.net", "1个月前"),
-            ("陈晓", "email@figmasfakedomain.net", "1个月前"),
-        ]
-        
-        for user in user_data:
-            user_tree.insert("", "end", values=user)
         
         # 添加滚动条
         user_scrollbar = ttk.Scrollbar(user_frame, orient="vertical", command=user_tree.yview)
         user_tree.configure(yscrollcommand=user_scrollbar.set)
         user_scrollbar.pack(side='right', fill='y')
+        
+        # 保存引用以便更新数据
+        self.user_inventory_tree = user_tree
 
         # 下方区域
         bottom_frame = Frame(self, bootstyle="light")
@@ -824,6 +810,10 @@ class DashboardTab(Frame):
                     self.low_stock_var.set(f"{len(zero_inventory)}项")
                 else:
                     self.low_stock_var.set("0项")
+            
+            # 更新用户库存监控
+            if hasattr(self, 'user_inventory_tree'):
+                self.update_user_inventory_monitor()
                 
             # 获取最近交易记录
             recent_transactions = self.db_manager.get_recent_transactions(5)
@@ -1295,4 +1285,91 @@ class DashboardTab(Frame):
         result.sort(key=lambda x: (-1 if float(x[1].replace(',', '')) > 0 else 1, -float(x[1].replace(',', '').replace('-', ''))))
         
         # 取所有项，但最多显示7项
-        return result[:7] 
+        return result[:7]
+
+    def update_user_inventory_monitor(self):
+        """更新用户库存监控数据"""
+        # 清空现有数据
+        for item in self.user_inventory_tree.get_children():
+            self.user_inventory_tree.delete(item)
+            
+        # 加载备注规则配置
+        note_rules = self.load_note_rules()
+        if not note_rules:
+            # 如果没有规则，显示一条提示信息
+            self.user_inventory_tree.insert("", "end", values=("未设置规则", "请在设置->公式管理中配置", ""))
+            return
+            
+        # 获取入库和出库数据
+        try:
+            stock_in_data = self.db_manager.get_stock_in()
+            stock_out_data = self.db_manager.get_stock_out()
+            
+            # 遍历每个备注规则
+            for note_value, username in note_rules.items():
+                # 查找所有该备注值对应的物品
+                items_with_note = {}
+                
+                # 处理入库数据
+                for row in stock_in_data:
+                    try:
+                        _, item_name, _, qty, _, _, note, *_ = row
+                        if note and str(note).strip() == note_value:
+                            if item_name not in items_with_note:
+                                items_with_note[item_name] = {'in': 0, 'out': 0}
+                            items_with_note[item_name]['in'] += float(qty)
+                    except Exception as e:
+                        continue
+                        
+                # 处理出库数据
+                for row in stock_out_data:
+                    try:
+                        _, item_name, _, qty, _, _, _, _, note, *_ = row
+                        if note and str(note).strip() == note_value:
+                            if item_name not in items_with_note:
+                                items_with_note[item_name] = {'in': 0, 'out': 0}
+                            items_with_note[item_name]['out'] += float(qty)
+                    except Exception as e:
+                        continue
+                
+                # 计算每个物品的库存数量并添加到表格
+                for item_name, quantities in items_with_note.items():
+                    inventory = quantities['in'] - quantities['out']
+                    if inventory > 0:  # 只显示有库存的物品
+                        self.user_inventory_tree.insert("", "end", values=(
+                            username,
+                            item_name,
+                            f"{int(inventory):,}"
+                        ))
+                        
+            # 设置交替行颜色
+            for i, item_id in enumerate(self.user_inventory_tree.get_children()):
+                if i % 2 == 0:
+                    self.user_inventory_tree.item(item_id, tags=('evenrow',))
+                else:
+                    self.user_inventory_tree.item(item_id, tags=('oddrow',))
+                    
+            # 如果没有数据，显示提示信息
+            if not self.user_inventory_tree.get_children():
+                self.user_inventory_tree.insert("", "end", values=("无匹配数据", "请检查备注规则设置", ""))
+                
+        except Exception as e:
+            print(f"更新用户库存监控失败: {e}")
+            self.user_inventory_tree.insert("", "end", values=("加载失败", str(e), ""))
+            
+    def load_note_rules(self):
+        """加载备注规则配置"""
+        try:
+            import os
+            import json
+            note_rules_path = os.path.join("data", "config", "note_rules.json")
+            if os.path.exists(note_rules_path):
+                with open(note_rules_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            else:
+                # 返回默认规则
+                return {"41": "柒柒柒嗷"}
+        except Exception as e:
+            print(f"加载备注规则失败: {e}")
+            # 返回默认规则
+            return {"41": "柒柒柒嗷"} 

@@ -646,13 +646,13 @@ class DatabaseManager:
     def get_inventory_stats(self):
         """获取库存统计数据：总物品数、总数量、总价值"""
         query = "SELECT COUNT(*), SUM(quantity), SUM(inventory_value) FROM inventory"
-        return self._fetch_one(query)
+        return self.fetch_one(query)
         
     def get_zero_inventory_items(self):
         """获取零库存或负库存的物品"""
         query = "SELECT id, item_name, quantity FROM inventory WHERE quantity <= 0 ORDER BY quantity ASC"
-        return self._fetch_all(query)
+        return self.fetch_all(query)
     
     def get_recent_transactions(self, limit=5):
         query = "SELECT * FROM stock_out ORDER BY transaction_time DESC LIMIT %s"
-        return self._fetch_all(query, (limit,)) 
+        return self.fetch_all(query, (limit,)) 

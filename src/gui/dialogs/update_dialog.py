@@ -47,6 +47,16 @@ class UpdateDialog:
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
         
+        # 设置对话框图标
+        icon_path = os.path.join("data", "icon.ico")
+        if os.path.exists(icon_path):
+            self.dialog.iconbitmap(icon_path)
+        elif hasattr(self.parent, 'iconbitmap') and callable(getattr(self.parent, 'iconbitmap', None)):
+            try:
+                self.dialog.iconbitmap(self.parent.iconbitmap())
+            except:
+                pass  # 如果继承失败，忽略错误
+        
         # 居中显示
         self.dialog.update_idletasks()
         width = self.dialog.winfo_width()

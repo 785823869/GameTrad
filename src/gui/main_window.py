@@ -66,6 +66,11 @@ class GameTradingSystemGUI:
         self.root.geometry("1713x852")
         self.root.resizable(True, True)  # 允许调整窗口大小
         
+        # 设置窗口图标 - 使用项目中的icon.ico文件
+        icon_path = os.path.join("data", "icon.ico")
+        if os.path.exists(icon_path):
+            self.root.iconbitmap(icon_path)
+        
         # 不能像这样设置主题，应该在创建窗口时指定
         # self.root.style = tb.Style(theme="flatly")
         
@@ -2059,5 +2064,11 @@ if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 使用flatly主题
     root.title("GameTrad交易管理系统")
     root.geometry("1280x800")
+    
+    # 设置窗口图标
+    icon_path = os.path.join("data", "icon.ico")
+    if os.path.exists(icon_path):
+        root.iconbitmap(icon_path)
+        
     app = GameTradingSystemGUI(root)
     root.mainloop() 

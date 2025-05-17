@@ -2,6 +2,7 @@ import tkinter as tk
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import ttk, messagebox
+import os
 
 class ModalInputDialog:
     """
@@ -41,6 +42,16 @@ class ModalInputDialog:
         self.dialog.configure(bg='#f4f8fb')
         self.dialog.transient(self.parent)  # 设置为父窗口的临时窗口
         self.dialog.grab_set()  # 模态
+        
+        # 设置对话框图标
+        icon_path = os.path.join("data", "icon.ico")
+        if os.path.exists(icon_path):
+            self.dialog.iconbitmap(icon_path)
+        elif hasattr(self.parent, 'iconbitmap') and callable(getattr(self.parent, 'iconbitmap', None)):
+            try:
+                self.dialog.iconbitmap(self.parent.iconbitmap())
+            except:
+                pass  # 如果继承失败，忽略错误
         
         # 窗口居中
         w = 480  # 增大默认宽度

@@ -1,0 +1,770 @@
+-- MySQL dump by Python MySQLdb
+-- Database: OcrTrade
+-- Generated on: 2025-05-18 19:58:41
+
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS=0;
+
+
+-- Table structure for inventory
+DROP TABLE IF EXISTS `inventory`;
+CREATE TABLE `inventory` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `quantity` int NOT NULL DEFAULT '0',
+  `avg_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `break_even_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `selling_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `profit` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `profit_rate` decimal(5,2) NOT NULL DEFAULT '0.00',
+  `total_profit` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `inventory_value` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `min_stock` int DEFAULT '10',
+  `max_stock` int DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Data for inventory
+LOCK TABLES `inventory` WRITE;
+INSERT INTO `inventory` VALUES (1, '至纯精华', 0, '1652.29', '1652.29', '1988.37', '12608038.00', '20.34', '12608038.00', '0.00', '2025-05-18 15:41:32', '2025-05-18 15:41:32', 10, 0);
+INSERT INTO `inventory` VALUES (2, '古玉', -4094, '1699.89', '1699.89', '1977.62', '8853859.58', '16.34', '8853859.58', '0.00', '2025-05-18 15:41:32', '2025-05-18 15:41:32', 10, 0);
+INSERT INTO `inventory` VALUES (3, '灵之精火', 2793, '1748.81', '1748.81', '1493.07', '-14994022.42', '-14.62', '-14994022.42', '4884429.58', '2025-05-18 15:41:32', '2025-05-18 15:41:32', 10, 0);
+INSERT INTO `inventory` VALUES (4, '灵草华', -4, '900.00', '900.00', '1170.36', '2740688.00', '30.04', '2740688.00', '0.00', '2025-05-18 15:41:32', '2025-05-18 15:41:32', 10, 0);
+INSERT INTO `inventory` VALUES (5, '灵矿髓', 0, '1166.00', '1166.00', '1710.00', '2720000.00', '46.66', '2720000.00', '0.00', '2025-05-18 15:41:32', '2025-05-18 15:41:32', 10, 0);
+UNLOCK TABLES;
+
+
+-- Table structure for item_dict
+DROP TABLE IF EXISTS `item_dict`;
+CREATE TABLE `item_dict` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `item_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `item_name` (`item_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Data for item_dict
+LOCK TABLES `item_dict` WRITE;
+INSERT INTO `item_dict` VALUES (1, '物品1', '默认物品1描述');
+INSERT INTO `item_dict` VALUES (2, '物品2', '默认物品2描述');
+UNLOCK TABLES;
+
+
+-- Table structure for nvwa_monitor
+DROP TABLE IF EXISTS `nvwa_monitor`;
+CREATE TABLE `nvwa_monitor` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `server` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `series` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `price` decimal(18,2) NOT NULL,
+  `ma_price` decimal(18,2) NOT NULL,
+  `timestamp` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- Table structure for operation_logs
+DROP TABLE IF EXISTS `operation_logs`;
+CREATE TABLE `operation_logs` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `operation_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `operation_category` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `tab_name` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `operation_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `operation_data` text COLLATE utf8mb4_general_ci,
+  `reverted` tinyint(1) DEFAULT '0',
+  `can_revert` tinyint(1) DEFAULT '1',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=70 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Data for operation_logs
+LOCK TABLES `operation_logs` WRITE;
+INSERT INTO `operation_logs` VALUES (27, '修改', NULL, '出库管理', '2025-05-14 15:01:34', '{"old": ["至纯精华", "2025-05-13 15:13:14", 9, 1188, 535, 10157, "OCR导入"], "new": ["至纯精华", "2025-05-13 15:13:14", 10, 1188.0, 535.0, 10157.0, "OCR导入"]}', 1, 1, '2025-05-14 15:44:49');
+INSERT INTO `operation_logs` VALUES (28, '删除', NULL, '出库管理', '2025-05-15 10:01:10', '[["诛仙古玉", "2025-05-15 10:00:49", 60, 2268, 0, 136080, "OCR导入"]]', 1, 1, '2025-05-15 10:02:30');
+INSERT INTO `operation_logs` VALUES (29, '删除', NULL, '出库管理', '2025-05-15 10:03:43', '[["诛仙古玉", "2025-05-15 10:00:49", 60, 2268, 0, 136080, "OCR导入"]]', 1, 1, '2025-05-15 10:04:58');
+INSERT INTO `operation_logs` VALUES (30, '删除', NULL, '出库管理', '2025-05-15 10:06:37', '[["诛仙古玉", "2025-05-15 10:00:49", 60, 2268, 0, 136080, "OCR导入"]]', 0, 1, '2025-05-15 10:06:37');
+INSERT INTO `operation_logs` VALUES (31, '删除', NULL, '出库管理', '2025-05-15 10:09:58', '[["古玉", "2025-05-15 10:09:53", 60, 2268, 0, 136080, "OCR导入"]]', 0, 1, '2025-05-15 10:09:58');
+INSERT INTO `operation_logs` VALUES (32, '删除', NULL, '出库管理', '2025-05-15 10:10:14', '[["灵之精火", "2025-05-15 10:10:10", 1, 1269, 64, 1206, "OCR导入"]]', 0, 1, '2025-05-15 10:10:14');
+INSERT INTO `operation_logs` VALUES (33, '删除', NULL, '入库管理', '2025-05-15 10:31:44', '[["至纯精华", "2025-05-15 10:31:36", 149, 324676, 2179, "OCR导入"]]', 0, 1, '2025-05-15 10:31:44');
+INSERT INTO `operation_logs` VALUES (35, '添加', NULL, '出库管理', '2025-05-15 10:48:55', '[{"item_name": "古玉", "quantity": 60, "unit_price": 2268, "fee": 0, "deposit": 0.0, "total_amount": 136116, "note": "OCR导入"}]', 0, 1, '2025-05-15 10:48:55');
+INSERT INTO `operation_logs` VALUES (36, '删除', NULL, '出库管理', '2025-05-15 10:49:02', '[["古玉", "2025-05-15 10:48:57", 60, 2268, 0, 136080, "OCR导入"]]', 0, 1, '2025-05-15 10:49:02');
+INSERT INTO `operation_logs` VALUES (37, '添加', NULL, '交易监控', '2025-05-15 11:22:41', '[{"item_name": "灵矿髓", "quantity": 3293, "market_price": 1947, "note": "OCR导入"}, {"item_name": "灵草华", "quantity": 8339, "market_price": 1095, "note": "OCR导入"}, {"item_name": "至纯精华", "quantity": 1039, "market_price": 1085, "note": "OCR导入"}, {"item_name": "灵之精火", "quantity": 10330, "market_price": 1276, "note": "OCR导入"}]', 0, 1, '2025-05-15 11:22:41');
+INSERT INTO `operation_logs` VALUES (38, '修改', NULL, '出库管理', '2025-05-15 11:51:43', '{"old": ["灵之精火", "2025-05-15 10:48:08", 77, 1388, 4581, 102295, "OCR导入"], "new": ["灵之精火", "2025-05-15 10:48:08", 66, 1388.0, 4581.0, 102295.0, "OCR导入"]}', 1, 1, '2025-05-15 11:55:44');
+INSERT INTO `operation_logs` VALUES (39, '修改', NULL, '出库管理', '2025-05-15 11:57:12', '{"old": ["灵之精火", "2025-05-15 10:48:08", 77, 1388, 4581, 102295, "OCR导入"], "new": ["灵之精火", "2025-05-15 10:48:08", 66, 1388.0, 4581.0, 102295.0, "OCR导入"]}', 1, 1, '2025-05-15 11:57:16');
+INSERT INTO `operation_logs` VALUES (40, '修改', NULL, '出库管理', '2025-05-15 11:57:25', '{"old": ["灵之精火", "2025-05-15 10:48:08", 77, 1388, 4581, 102295, "OCR导入"], "new": ["灵之精火", "2025-05-15 10:48:08", 66, 1388.0, 4581.0, 102295.0, "OCR导入"]}', 0, 1, '2025-05-15 11:57:25');
+INSERT INTO `operation_logs` VALUES (41, '修改', NULL, '入库管理', '2025-05-15 11:57:35', '{"old": ["灵之精火", "2025-05-11 11:17:07", 999, 88888, 89, ""], "new": ["灵之精火", "2025-05-11 11:17:07", 998, 88888.0, 89.0, ""]}', 1, 1, '2025-05-15 11:57:39');
+INSERT INTO `operation_logs` VALUES (42, '添加', NULL, '出库管理', '2025-05-16 11:26:07', '[{"item_name": "灵之精火", "quantity": 66, "unit_price": 1388, "fee": 4581, "deposit": 106.0, "total_amount": 87133, "note": "OCR导入"}]', 0, 1, '2025-05-16 11:26:07');
+INSERT INTO `operation_logs` VALUES (43, '添加', NULL, '出库管理', '2025-05-16 15:20:13', '[{"item_name": "古玉", "quantity": 90, "unit_price": 2017, "fee": 0, "deposit": 0.0, "total_amount": 181602, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 71, "unit_price": 2017, "fee": 0, "deposit": 0.0, "total_amount": 143263, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 100, "unit_price": 2017, "fee": 0, "deposit": 0.0, "total_amount": 201780, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 10, "unit_price": 2038, "fee": 0, "deposit": 0.0, "total_amount": 20387, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 6, "unit_price": 2038, "fee": 0, "deposit": 0.0, "total_amount": 12232, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 162, "unit_price": 2038, "fee": 0, "deposit": 0.0, "total_amount": 330269, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 10, "unit_price": 2038, "fee": 0, "deposit": 0.0, "total_amount": 20387, "note": "OCR导入"}, {"item_name": "古玉", "quantity": 63, "unit_price": 2038, "fee": 0, "deposit": 0.0, "total_amount": 128438, "note": "OCR导入"}]', 0, 1, '2025-05-16 15:20:13');
+INSERT INTO `operation_logs` VALUES (46, '删除', NULL, '入库管理', '2025-05-16 19:16:50', '[["古玉", "2025-05-16 19:16:12", 3560, 6052000, 1700, ""]]', 0, 1, '2025-05-16 19:16:50');
+INSERT INTO `operation_logs` VALUES (47, '删除', NULL, '入库管理', '2025-05-16 19:17:01', '[["古玉", "2025-05-16 19:15:52", 22770, 38709000, 1700, ""]]', 0, 1, '2025-05-16 19:17:01');
+INSERT INTO `operation_logs` VALUES (48, '增加库存', NULL, '库存管理', '2025-05-16 19:29:08', '"物品:灵矿髓,数量:1000,均价:1166"', 0, 1, '2025-05-16 19:29:08');
+INSERT INTO `operation_logs` VALUES (49, '增加库存', NULL, '库存管理', '2025-05-16 19:29:08', '"物品:灵矿髓,数量:1000,均价:1166"', 0, 1, '2025-05-16 19:29:08');
+INSERT INTO `operation_logs` VALUES (50, '增加库存', NULL, '库存管理', '2025-05-16 19:29:08', '"物品:灵矿髓,数量:1000,均价:1166"', 0, 1, '2025-05-16 19:29:08');
+INSERT INTO `operation_logs` VALUES (51, '增加库存', NULL, '库存管理', '2025-05-16 19:29:08', '"物品:灵矿髓,数量:1000,均价:1166"', 0, 1, '2025-05-16 19:29:08');
+INSERT INTO `operation_logs` VALUES (52, '增加库存', NULL, '库存管理', '2025-05-16 19:29:08', '"物品:灵矿髓,数量:1000,均价:1166"', 0, 1, '2025-05-16 19:29:08');
+INSERT INTO `operation_logs` VALUES (53, '批量修改', NULL, '出库管理', '2025-05-17 16:18:44', '[{"item_name": "已成功售出灵之精火（66）。", "quantity": 66, "unit_price": 1388.0, "fee": 0}]', 0, 1, '2025-05-17 16:18:44');
+INSERT INTO `operation_logs` VALUES (54, '增加库存', NULL, '库存管理', '2025-05-17 19:32:28', '"物品:至纯精华,数量:149,均价:2179.0335570469797"', 0, 1, '2025-05-17 19:32:28');
+INSERT INTO `operation_logs` VALUES (55, '批量修改', NULL, '入库管理', '2025-05-17 19:32:28', '[{"物品名称": "至纯精华", "数量": 149, "花费": 324676, "均价": 2179.0335570469797, "备注": "", "item_name": "至纯精华", "quantity": 149, "cost": 324676.0, "avg_cost": 2179.0335570469797, "note": ""}]', 0, 1, '2025-05-17 19:32:28');
+INSERT INTO `operation_logs` VALUES (56, '批量修改', NULL, '出库管理', '2025-05-17 20:49:07', '[{"item_name": "诛仙古玉", "quantity": 60, "unit_price": 2268.6, "fee": 0, "total_amount": 136116, "note": "", "物品名称": "诛仙古玉", "数量": 60, "单价": 2268.6, "手续费": 0, "总金额": 136116, "备注": "", "cost": 136116.0, "avg_cost": 2268.6}]', 0, 1, '2025-05-17 20:49:07');
+INSERT INTO `operation_logs` VALUES (57, '批量修改', NULL, '出库管理', '2025-05-17 20:51:43', '[{"item_name": "诛仙古玉", "quantity": 60, "unit_price": 2268.6, "fee": 0, "total_amount": 136116, "note": "", "物品名称": "诛仙古玉", "数量": 60, "单价": 2268.6, "手续费": 0, "总金额": 136116, "备注": "", "cost": 136116.0, "avg_cost": 2268.6}]', 0, 1, '2025-05-17 20:51:43');
+INSERT INTO `operation_logs` VALUES (58, '批量修改', '修改类', '出库管理', '2025-05-17 21:05:22', '[{"item_name": "诛仙古玉", "quantity": 60, "unit_price": 2268.6, "fee": 0, "total_amount": 136116, "note": "", "物品名称": "诛仙古玉", "数量": 60, "单价": 2268.6, "手续费": 0, "总金额": 136116, "备注": "", "cost": 136116.0, "avg_cost": 2268.6}]', 0, 1, '2025-05-17 21:05:22');
+INSERT INTO `operation_logs` VALUES (59, '删除', '删除类', '出库管理', '2025-05-17 21:09:21', '[{"item_name": "诛仙古玉", "transaction_time": "2025-05-17 21:05:20", "quantity": 60, "unit_price": 2269.0, "fee": 0.0, "deposit": 0.0, "total_amount": 136116.0, "note": ""}]', 1, 1, '2025-05-17 21:09:41');
+INSERT INTO `operation_logs` VALUES (60, '删除', '删除类', '出库管理', '2025-05-17 21:09:49', '[{"item_name": "诛仙古玉", "transaction_time": "2025-05-17 21:05:20", "quantity": 60, "unit_price": 2269.0, "fee": 0.0, "deposit": 0.0, "total_amount": 136140.0, "note": ""}]', 0, 1, '2025-05-17 21:09:49');
+INSERT INTO `operation_logs` VALUES (61, '批量添加', '添加类', '出库管理', '2025-05-17 22:04:06', '[{"item_name": "灵之精火", "quantity": 1, "unit_price": 1269, "fee": 64, "total_amount": 1205, "note": "41", "物品名称": "灵之精火", "数量": 1, "单价": 1269, "手续费": 64, "总金额": 1205, "备注": "41", "物品": "灵之精火", "出库数量": 1, "出库单价": 1269, "cost": 1269.0, "avg_cost": 1269.0}, {"item_name": "灵之精火", "quantity": 66, "unit_price": 1388, "fee": 4581, "total_amount": 87027, "note": "41", "物品名称": "灵之精火", "数量": 66, "单价": 1388, "手续费": 4581, "总金额": 87027, "备注": "41", "物品": "灵之精火", "出库数量": 66, "出库单价": 1388, "cost": 91608.0, "avg_cost": 1388.0}]', 0, 1, '2025-05-17 22:04:06');
+INSERT INTO `operation_logs` VALUES (62, '删除', '删除类', '出库管理', '2025-05-17 22:04:12', '[{"item_name": "灵之精火", "transaction_time": "2025-05-17 22:04:04", "quantity": 1, "unit_price": 1269.0, "fee": 64.0, "deposit": 0.0, "total_amount": 1205.0, "note": 41}, {"item_name": "灵之精火", "transaction_time": "2025-05-17 22:04:04", "quantity": 66, "unit_price": 1388.0, "fee": 4581.0, "deposit": 0.0, "total_amount": 87027.0, "note": 41}]', 0, 1, '2025-05-17 22:04:12');
+INSERT INTO `operation_logs` VALUES (63, '修改', '修改类', '交易监控', '2025-05-17 23:57:54', '{"old": ["灵之精火", "2025-05-15 11:22:41", "10,330", "1,276", 0, 0, 0, 0, "0.00%", ""], "new": ["灵之精火", "2025-05-15 11:22:41", 10330, 1276.0, 999.0, 0.0, 1029, 0, 0, ""]}', 0, 1, '2025-05-17 23:57:54');
+INSERT INTO `operation_logs` VALUES (64, '修改', '修改类', '出库管理', '2025-05-18 00:27:00', '{"old": ["至纯精华", "2025-05-15 17:00:00", 300, 998, "14,970", "284,430", ""], "new": ["至纯精华", "2025-05-15 17:00:00", 300, 999.0, 14970.0, 284430.0, ""]}', 1, 1, '2025-05-18 00:31:45');
+INSERT INTO `operation_logs` VALUES (65, '修改', '修改类', '出库管理', '2025-05-18 00:31:57', '{"old": ["至纯精华", "2025-05-15 17:00:00", 300, 998, 14970, 284430, ""], "new": ["至纯精华", "2025-05-15 17:00:00", 300, 999.0, 14970.0, 284430.0, ""]}', 1, 1, '2025-05-18 01:20:15');
+INSERT INTO `operation_logs` VALUES (66, '修改', '修改类', '出库管理', '2025-05-18 01:20:30', '{"old": ["至纯精华", "2025-05-15 17:00:00", 300, 998, 14970, 284430, ""], "new": ["至纯精华", "2025-05-15 17:00:00", 300, 999.0, 14970.0, 284430.0, ""]}', 0, 1, '2025-05-18 01:20:30');
+INSERT INTO `operation_logs` VALUES (67, '修改', '修改类', '入库管理', '2025-05-18 01:21:09', '{"old": ["至纯精华", "2025-05-16 07:57:00", 377, "622,804", "1,652", ""], "new": ["至纯精华", "2025-05-16 07:57:00", 377, 622804.0, 1652.0, "41"]}', 0, 1, '2025-05-18 01:21:09');
+INSERT INTO `operation_logs` VALUES (68, '修改', '修改类', '出库管理', '2025-05-18 01:23:30', '{"old": ["至纯精华", "2025-05-15 17:00:00", 300, 999, "14,970", "284,730", ""], "new": ["至纯精华", "2025-05-15 17:00:00", 300, 999.0, 14970.0, 284730.0, "41"]}', 0, 1, '2025-05-18 01:23:30');
+INSERT INTO `operation_logs` VALUES (69, '添加', '添加类', '出库管理', '2025-05-18 13:13:20', '{"item_name": "古玉", "quantity": 4006, "unit_price": 1978.0, "fee": 0.0, "total_amount": 7923868.0, "note": "22"}', 0, 1, '2025-05-18 13:13:20');
+UNLOCK TABLES;
+
+
+-- Table structure for silver_monitor
+DROP TABLE IF EXISTS `silver_monitor`;
+CREATE TABLE `silver_monitor` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `server` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `series` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `price` decimal(10,4) DEFAULT NULL,
+  `ma_price` decimal(10,4) DEFAULT NULL,
+  `timestamp` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_silver` (`server`,`series`,`timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Table structure for stock_in
+DROP TABLE IF EXISTS `stock_in`;
+CREATE TABLE `stock_in` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `transaction_time` datetime NOT NULL,
+  `quantity` int NOT NULL,
+  `cost` bigint DEFAULT NULL,
+  `avg_cost` bigint DEFAULT NULL,
+  `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=156 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Data for stock_in
+LOCK TABLES `stock_in` WRITE;
+INSERT INTO `stock_in` VALUES (139, '灵矿髓', '2025-04-15 17:36:00', 5000, 5830000, 1166, '', '2025-05-18 14:59:03');
+INSERT INTO `stock_in` VALUES (140, '至纯精华', '2025-04-15 17:37:00', 35809, 59621985, 1665, '', '2025-05-18 14:59:03');
+INSERT INTO `stock_in` VALUES (141, '灵之精火', '2025-04-16 12:18:00', 59637, 104782209, 1757, '', '2025-05-18 14:59:03');
+INSERT INTO `stock_in` VALUES (142, '灵草华', '2025-04-17 00:15:00', 10133, 9119700, 900, '', '2025-05-18 14:59:03');
+INSERT INTO `stock_in` VALUES (143, '至纯精华', '2025-04-30 13:27:00', 76, 104492, 1375, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (144, '灵之精火', '2025-04-30 19:25:00', 300, 430774, 1436, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (145, '至纯精华', '2025-04-30 19:25:00', 110, 137174, 1247, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (146, '至纯精华', '2025-05-01 03:08:00', 446, 592196, 1328, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (147, '至纯精华', '2025-05-01 06:40:00', 267, 329576, 1234, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (148, '至纯精华', '2025-05-01 18:30:00', 430, 577324, 1343, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (149, '古玉', '2025-05-01 19:22:00', 22770, 38709000, 1700, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (150, '古玉', '2025-05-01 22:02:00', 1599, 2715771, 1698, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (151, '古玉', '2025-05-01 22:03:00', 624, 1060176, 1699, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (152, '灵之精火', '2025-05-02 22:02:00', 946, 1398158, 1478, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (153, '灵之精火', '2025-05-02 22:03:00', 540, 806087, 1493, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (154, '古玉', '2025-05-15 02:27:00', 2792, 4746400, 1700, '', '2025-05-18 14:59:04');
+INSERT INTO `stock_in` VALUES (155, '至纯精华', '2025-05-16 07:57:00', 377, 622804, 1652, '', '2025-05-18 14:59:04');
+UNLOCK TABLES;
+
+
+-- Table structure for stock_out
+DROP TABLE IF EXISTS `stock_out`;
+CREATE TABLE `stock_out` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `transaction_time` datetime NOT NULL,
+  `quantity` int NOT NULL,
+  `unit_price` bigint DEFAULT NULL,
+  `fee` bigint DEFAULT NULL,
+  `deposit` bigint DEFAULT NULL,
+  `total_amount` bigint DEFAULT NULL,
+  `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3126 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Data for stock_out
+LOCK TABLES `stock_out` WRITE;
+INSERT INTO `stock_out` VALUES (2582, '灵之精火', '2025-05-18 14:43:00', 324, 1079, 17480, 0, 332116, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2583, '灵之精火', '2025-05-18 14:40:00', 54, 1079, 2914, 0, 55352, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2584, '灵之精火', '2025-05-18 14:40:00', 1, 1288, 65, 0, 1223, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2585, '灵之精火', '2025-05-18 14:40:00', 21, 1288, 1353, 0, 25695, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2586, '灵之精火', '2025-05-18 14:39:00', 145, 1131, 8200, 0, 155795, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2587, '灵之精火', '2025-05-18 14:39:00', 115, 1131, 6504, 0, 123561, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2588, '灵之精火', '2025-05-18 14:38:00', 30, 1131, 1697, 0, 32233, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2589, '灵之精火', '2025-05-18 14:38:00', 41, 1131, 2319, 0, 44052, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2590, '灵之精火', '2025-05-18 14:37:00', 292, 1366, 19944, 0, 378928, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2591, '灵之精火', '2025-05-18 14:37:00', 41, 1366, 2801, 0, 53205, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2592, '灵之精火', '2025-05-18 14:36:00', 666, 1328, 44223, 0, 840225, '', '2025-05-18 14:59:05');
+INSERT INTO `stock_out` VALUES (2593, '古玉', '2025-05-18 14:31:00', 1131, 1970, 0, 0, 2228070, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2594, '古玉', '2025-05-18 14:30:00', 2000, 1970, 0, 0, 3940000, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2595, '古玉', '2025-05-18 14:28:00', 100, 1970, 0, 0, 197000, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2596, '古玉', '2025-05-18 14:28:00', 10, 1970, 0, 0, 19700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2597, '古玉', '2025-05-18 14:27:00', 10, 1970, 0, 0, 19700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2598, '古玉', '2025-05-18 14:27:00', 10, 1970, 0, 0, 19700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2599, '古玉', '2025-05-18 14:27:00', 10, 1970, 0, 0, 19700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2600, '古玉', '2025-05-18 14:26:00', 10, 1970, 0, 0, 19700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2601, '古玉', '2025-05-18 14:26:00', 50, 1970, 0, 0, 98500, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2602, '古玉', '2025-05-17 07:56:00', 90, 2017, 0, 0, 181530, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2603, '古玉', '2025-05-17 07:56:00', 71, 2017, 0, 0, 143207, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2604, '古玉', '2025-05-17 07:56:00', 100, 2017, 0, 0, 201700, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2605, '古玉', '2025-05-17 07:56:00', 10, 2038, 0, 0, 20380, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2606, '古玉', '2025-05-17 07:56:00', 6, 2038, 0, 0, 12228, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2607, '古玉', '2025-05-17 07:56:00', 162, 2038, 0, 0, 330156, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2608, '古玉', '2025-05-17 07:56:00', 10, 2038, 0, 0, 20380, '', '2025-05-18 14:59:06');
+INSERT INTO `stock_out` VALUES (2609, '古玉', '2025-05-17 07:56:00', 63, 2038, 0, 0, 128394, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2610, '至纯精华', '2025-05-15 17:00:00', 300, 998, 14970, 0, 284430, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2611, '古玉', '2025-05-15 15:29:00', 10, 2038, 0, 0, 20380, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2612, '古玉', '2025-05-15 15:29:00', 6, 2038, 0, 0, 12228, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2613, '古玉', '2025-05-15 15:29:00', 162, 2038, 0, 0, 330156, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2614, '古玉', '2025-05-15 15:28:00', 10, 2038, 0, 0, 20380, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2615, '古玉', '2025-05-15 15:28:00', 63, 2038, 0, 0, 128394, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2616, '至纯精华', '2025-05-15 14:13:00', 212, 866, 9180, 0, 174412, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2617, '至纯精华', '2025-05-15 14:13:00', 212, 866, 9180, 0, 174412, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2618, '至纯精华', '2025-05-15 14:12:00', 106, 866, 4590, 0, 87206, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2619, '古玉', '2025-05-14 22:27:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2620, '古玉', '2025-05-14 22:27:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2621, '古玉', '2025-05-14 22:27:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2622, '古玉', '2025-05-14 22:22:00', 4, 2136, 0, 0, 8544, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2623, '古玉', '2025-05-14 22:21:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2624, '古玉', '2025-05-14 22:21:00', 288, 2136, 0, 0, 615168, '', '2025-05-18 14:59:07');
+INSERT INTO `stock_out` VALUES (2625, '古玉', '2025-05-14 22:21:00', 2, 2136, 0, 0, 4272, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2626, '古玉', '2025-05-14 22:20:00', 2, 2136, 0, 0, 4272, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2627, '古玉', '2025-05-14 22:20:00', 2, 2136, 0, 0, 4272, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2628, '古玉', '2025-05-14 22:16:00', 288, 2136, 0, 0, 615168, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2629, '古玉', '2025-05-14 22:14:00', 288, 2136, 0, 0, 615168, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2630, '古玉', '2025-05-14 22:14:00', 2, 2136, 0, 0, 4272, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2631, '古玉', '2025-05-14 22:13:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2632, '古玉', '2025-05-14 22:13:00', 4, 2136, 0, 0, 8544, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2633, '古玉', '2025-05-14 22:13:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2634, '古玉', '2025-05-14 22:12:00', 2, 2136, 0, 0, 4272, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2635, '古玉', '2025-05-14 22:12:00', 10, 2136, 0, 0, 21360, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2636, '灵之精火', '2025-05-14 22:09:00', 73, 1388, 5067, 0, 96257, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2637, '灵之精火', '2025-05-14 22:08:00', 47, 1388, 3262, 0, 61974, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2638, '灵之精火', '2025-05-14 22:08:00', 125, 1388, 8675, 0, 164825, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2639, '灵之精火', '2025-05-14 22:08:00', 52, 1388, 3609, 0, 68567, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2640, '至纯精华', '2025-05-13 14:52:00', 9, 1188, 535, 0, 10157, '', '2025-05-18 14:59:08');
+INSERT INTO `stock_out` VALUES (2641, '灵之精火', '2025-05-13 14:40:00', 51, 1269, 3236, 0, 61483, '', '2025-05-18 14:59:09');
+INSERT INTO `stock_out` VALUES (2642, '灵之精火', '2025-05-13 14:39:00', 61, 1269, 387, 0, 77022, '', '2025-05-18 14:59:09');
+INSERT INTO `stock_out` VALUES (2643, '灵之精火', '2025-05-13 14:39:00', 36, 1269, 2285, 0, 43399, '', '2025-05-18 14:59:09');
+INSERT INTO `stock_out` VALUES (2644, '灵之精火', '2025-05-13 14:38:00', 39, 1269, 2475, 0, 47016, '', '2025-05-18 14:59:09');
+INSERT INTO `stock_out` VALUES (2645, '灵之精火', '2025-05-13 14:38:00', 33, 1269, 2094, 0, 39783, '', '2025-05-18 14:59:09');
+INSERT INTO `stock_out` VALUES (2646, '灵之精火', '2025-05-13 14:35:00', 1, 1269, 64, 0, 1205, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2647, '灵之精火', '2025-05-13 14:35:00', 60, 1269, 3807, 0, 72333, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2648, '灵之精火', '2025-05-13 14:35:00', 120, 1269, 7614, 0, 144666, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2649, '灵之精火', '2025-05-13 14:34:00', 38, 1269, 2412, 0, 45810, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2650, '灵之精火', '2025-05-13 14:34:00', 19, 1269, 1206, 0, 22905, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2651, '灵之精火', '2025-05-13 14:31:00', 151, 1269, 9581, 0, 182038, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2652, '灵之精火', '2025-05-13 14:30:00', 312, 1269, 19797, 0, 376131, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2653, '灵之精火', '2025-05-13 14:30:00', 78, 1269, 4950, 0, 94032, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2654, '灵之精火', '2025-05-13 14:30:00', 55, 1269, 3490, 0, 66305, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2655, '灵之精火', '2025-05-13 14:28:00', 8, 1269, 508, 0, 9644, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2656, '灵之精火', '2025-05-13 14:28:00', 159, 1269, 10089, 0, 191682, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2657, '灵之精火', '2025-05-13 14:27:00', 337, 1269, 21383, 0, 406270, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2658, '灵之精火', '2025-05-13 14:27:00', 440, 1269, 27918, 0, 530442, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2659, '古玉', '2025-05-11 10:36:00', 76, 2268, 0, 0, 172368, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2660, '古玉', '2025-05-11 10:36:00', 60, 2268, 0, 0, 136080, '', '2025-05-18 14:59:10');
+INSERT INTO `stock_out` VALUES (2661, '古玉', '2025-05-11 10:11:00', 133, 2268, 0, 0, 301644, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2662, '古玉', '2025-05-11 10:11:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2663, '古玉', '2025-05-11 10:11:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2664, '古玉', '2025-05-11 10:10:00', 78, 2268, 0, 0, 176904, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2665, '古玉', '2025-05-11 10:09:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2666, '古玉', '2025-05-11 10:09:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2667, '古玉', '2025-05-11 10:09:00', 452, 2268, 0, 0, 1025136, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2668, '古玉', '2025-05-11 10:08:00', 516, 2268, 0, 0, 1170288, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2669, '古玉', '2025-05-11 10:07:00', 76, 2268, 0, 0, 172368, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2670, '古玉', '2025-05-11 10:07:00', 60, 2268, 0, 0, 136080, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2671, '古玉', '2025-05-11 10:07:00', 133, 2268, 0, 0, 301644, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2672, '古玉', '2025-05-11 10:06:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2673, '古玉', '2025-05-11 10:06:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2674, '古玉', '2025-05-11 10:06:00', 78, 2268, 0, 0, 176904, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2675, '古玉', '2025-05-11 10:06:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2676, '古玉', '2025-05-11 10:05:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2677, '古玉', '2025-05-11 10:05:00', 452, 2268, 0, 0, 1025136, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2678, '古玉', '2025-05-11 10:05:00', 516, 2268, 0, 0, 1170288, '', '2025-05-18 14:59:11');
+INSERT INTO `stock_out` VALUES (2679, '古玉', '2025-05-11 10:04:00', 76, 2268, 0, 0, 172368, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2680, '古玉', '2025-05-11 10:03:00', 60, 2268, 0, 0, 136080, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2681, '古玉', '2025-05-11 10:03:00', 133, 2268, 0, 0, 301644, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2682, '古玉', '2025-05-11 10:03:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2683, '古玉', '2025-05-11 10:02:00', 1, 2268, 0, 0, 2268, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2684, '古玉', '2025-05-11 10:02:00', 78, 2268, 0, 0, 176904, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2685, '古玉', '2025-05-11 10:02:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2686, '古玉', '2025-05-11 10:01:00', 2, 2268, 0, 0, 4536, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2687, '古玉', '2025-05-11 10:01:00', 452, 2268, 0, 0, 1025136, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2688, '古玉', '2025-05-11 10:01:00', 516, 2268, 0, 0, 1170288, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2689, '灵之精火', '2025-05-11 09:57:00', 214, 1388, 14852, 0, 282180, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2690, '灵草华', '2025-05-11 09:56:00', 4, 1084, 217, 0, 4119, '', '2025-05-18 14:59:12');
+INSERT INTO `stock_out` VALUES (2691, '灵之精火', '2025-05-11 09:53:00', 75, 1318, 4943, 0, 93907, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2692, '灵之精火', '2025-05-11 09:53:00', 18, 1313, 1182, 0, 22452, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2693, '灵之精火', '2025-05-11 09:53:00', 93, 1318, 6129, 0, 116445, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2694, '灵之精火', '2025-05-11 09:52:00', 48, 1318, 3164, 0, 60100, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2695, '灵之精火', '2025-05-11 09:52:00', 102, 1318, 6722, 0, 127714, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2696, '灵之精火', '2025-05-11 09:52:00', 188, 1318, 12390, 0, 235394, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2697, '灵之精火', '2025-05-11 09:51:00', 180, 1318, 11862, 0, 225378, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2698, '灵之精火', '2025-05-11 09:51:00', 11, 1318, 725, 0, 13773, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2699, '灵之精火', '2025-05-11 09:49:00', 302, 1318, 19902, 0, 378134, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2700, '灵之精火', '2025-05-11 09:48:00', 830, 1388, 57602, 0, 1094438, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2701, '灵之精火', '2025-05-11 09:48:00', 103, 1388, 7149, 0, 135815, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2702, '灵之精火', '2025-05-11 09:48:00', 66, 1388, 4581, 0, 87027, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2703, '古玉', '2025-05-10 00:04:00', 179, 2268, 0, 0, 405972, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2704, '灵之精火', '2025-05-09 23:37:00', 3, 1308, 197, 0, 3727, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2705, '灵之精火', '2025-05-09 23:36:00', 144, 1308, 9418, 0, 178934, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2706, '灵之精火', '2025-05-09 23:36:00', 370, 1308, 24198, 0, 459762, '', '2025-05-18 14:59:13');
+INSERT INTO `stock_out` VALUES (2707, '灵之精火', '2025-05-09 23:36:00', 482, 1308, 31523, 0, 598933, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2708, '灵之精火', '2025-05-09 23:35:00', 999, 1366, 68232, 0, 1296402, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2709, '灵之精火', '2025-05-09 23:33:00', 827, 1355, 56030, 0, 1064555, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2710, '灵之精火', '2025-05-09 23:32:00', 172, 1355, 11653, 0, 221407, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2711, '古玉', '2025-05-09 02:22:00', 3263, 2240, 0, 0, 7309120, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2712, '古玉', '2025-05-08 14:11:00', 122, 2240, 0, 0, 273280, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2713, '古玉', '2025-05-08 11:40:00', 297, 2031, 0, 0, 603207, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2714, '古玉', '2025-05-08 11:27:00', 2945, 2029, 0, 0, 5975405, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2715, '古玉', '2025-05-08 11:27:00', 2000, 1955, 0, 0, 3910000, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2716, '古玉', '2025-05-08 10:35:00', 318, 1855, 0, 0, 589890, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2717, '灵之精火', '2025-05-08 01:31:00', 202, 1466, 14807, 0, 281325, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2718, '灵之精火', '2025-05-08 01:29:00', 65, 1526, 4960, 0, 94230, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2719, '灵之精火', '2025-05-08 01:28:00', 2, 1526, 153, 0, 2899, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2720, '灵之精火', '2025-05-08 01:28:00', 8, 1526, 611, 0, 11597, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2721, '灵之精火', '2025-05-08 01:28:00', 289, 1526, 22051, 0, 418963, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2722, '古玉', '2025-05-08 01:13:00', 4872, 1786, 0, 0, 8701392, '', '2025-05-18 14:59:14');
+INSERT INTO `stock_out` VALUES (2723, '灵之精火', '2025-05-08 01:10:00', 5, 1466, 367, 0, 6963, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2724, '古玉', '2025-05-08 01:06:00', 6562, 1807, 0, 0, 11857534, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2725, '灵之精火', '2025-05-08 01:05:00', 110, 1466, 8063, 0, 153197, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2726, '灵之精火', '2025-05-08 01:05:00', 74, 1466, 5425, 0, 103059, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2727, '灵之精火', '2025-05-07 20:02:00', 270, 1498, 20223, 0, 384237, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2728, '灵之精火', '2025-05-07 20:02:00', 207, 1489, 15412, 0, 292811, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2729, '灵之精火', '2025-05-07 19:56:00', 38, 1489, 2830, 0, 53752, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2730, '灵之精火', '2025-05-07 19:56:00', 287, 1489, 21368, 0, 405975, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2731, '灵之精火', '2025-05-07 19:55:00', 716, 1498, 53629, 0, 1018939, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2732, '灵之精火', '2025-05-07 19:55:00', 467, 1489, 34769, 0, 660594, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2733, '至纯精华', '2025-05-07 19:54:00', 666, 966, 32168, 0, 611188, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2734, '至纯精华', '2025-05-07 02:47:00', 580, 966, 28014, 0, 532266, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2735, '至纯精华', '2025-05-07 02:47:00', 86, 966, 4154, 0, 78922, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2736, '至纯精华', '2025-05-07 02:47:00', 30, 998, 1497, 0, 28443, '', '2025-05-18 14:59:15');
+INSERT INTO `stock_out` VALUES (2737, '至纯精华', '2025-05-07 02:46:00', 1, 998, 50, 0, 948, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2738, '灵之精火', '2025-05-07 02:46:00', 310, 1439, 22305, 0, 423785, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2739, '灵之精火', '2025-05-07 02:46:00', 689, 1439, 49574, 0, 941897, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2740, '至纯精华', '2025-05-07 02:45:00', 980, 966, 47334, 0, 899346, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2741, '至纯精华', '2025-05-07 02:45:00', 19, 966, 918, 0, 17436, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2742, '至纯精华', '2025-05-07 02:44:00', 382, 1036, 19788, 0, 375964, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2743, '至纯精华', '2025-05-07 02:44:00', 586, 1016, 29769, 0, 565607, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2744, '至纯精华', '2025-05-07 02:44:00', 617, 1036, 31961, 0, 607251, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2745, '至纯精华', '2025-05-07 02:43:00', 684, 1166, 39878, 0, 757666, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2746, '灵之精火', '2025-05-06 23:28:00', 68, 1508, 5128, 0, 97416, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2747, '灵之精火', '2025-05-06 23:28:00', 5, 1596, 399, 0, 7581, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2748, '灵之精火', '2025-05-06 23:28:00', 138, 1596, 11013, 0, 209235, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2749, '灵之精火', '2025-05-06 23:27:00', 77, 1596, 6145, 0, 116747, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2750, '灵之精火', '2025-05-06 23:27:00', 50, 1596, 3990, 0, 75810, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2751, '灵之精火', '2025-05-06 23:27:00', 391, 1596, 31202, 0, 592834, '', '2025-05-18 14:59:16');
+INSERT INTO `stock_out` VALUES (2752, '古玉', '2025-05-06 23:23:00', 2000, 1863, 0, 0, 3726000, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2753, '灵之精火', '2025-05-06 23:20:00', 296, 1588, 23503, 0, 446545, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2754, '至纯精华', '2025-05-06 23:18:00', 999, 986, 49251, 0, 935763, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2755, '灵之精火', '2025-05-06 23:18:00', 999, 1538, 76824, 0, 1459638, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2756, '灵之精火', '2025-05-06 23:17:00', 341, 1588, 27076, 0, 514432, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2757, '灵之精火', '2025-05-06 23:17:00', 179, 1588, 14213, 0, 270039, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2758, '灵之精火', '2025-05-06 23:16:00', 100, 1588, 7940, 0, 150860, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2759, '灵之精火', '2025-05-06 23:16:00', 4, 1588, 318, 0, 6034, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2760, '灵之精火', '2025-05-06 23:16:00', 79, 1588, 6273, 0, 119179, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2761, '灵之精火', '2025-05-06 23:13:00', 685, 1509, 51684, 0, 981981, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2762, '灵之精火', '2025-05-06 23:13:00', 30, 1509, 2264, 0, 43006, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2763, '灵之精火', '2025-05-06 23:12:00', 86, 1509, 6489, 0, 123285, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2764, '灵之精火', '2025-05-06 23:12:00', 113, 1509, 8526, 0, 161991, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2765, '灵之精火', '2025-05-06 23:12:00', 54, 1509, 4075, 0, 77411, '', '2025-05-18 14:59:17');
+INSERT INTO `stock_out` VALUES (2766, '灵之精火', '2025-05-06 23:11:00', 15, 1509, 1132, 0, 21503, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2767, '灵之精火', '2025-05-06 23:11:00', 16, 1509, 1208, 0, 22936, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2768, '灵之精火', '2025-05-06 23:11:00', 999, 1527, 76274, 0, 1449199, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2769, '灵之精火', '2025-05-06 12:09:00', 100, 1508, 7540, 0, 143260, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2770, '灵之精火', '2025-05-06 12:09:00', 21, 1508, 1584, 0, 30084, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2771, '至纯精华', '2025-05-06 12:02:00', 7, 996, 349, 0, 6623, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2772, '至纯精华', '2025-05-06 12:01:00', 666, 886, 29504, 0, 560572, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2773, '至纯精华', '2025-05-06 12:01:00', 173, 996, 8616, 0, 163692, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2774, '至纯精华', '2025-05-06 12:01:00', 200, 996, 9960, 0, 189240, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2775, '至纯精华', '2025-05-06 12:00:00', 500, 996, 24900, 0, 473100, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2776, '至纯精华', '2025-05-06 12:00:00', 19, 996, 947, 0, 17977, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2777, '至纯精华', '2025-05-06 11:56:00', 371, 998, 18513, 0, 351745, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2778, '灵之精火', '2025-05-06 09:20:00', 733, 1496, 54829, 0, 1041739, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2779, '至纯精华', '2025-05-06 09:20:00', 567, 996, 28237, 0, 536495, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2780, '至纯精华', '2025-05-06 09:20:00', 333, 988, 16451, 0, 312553, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2781, '至纯精华', '2025-05-06 09:19:00', 56, 966, 2705, 0, 51391, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2782, '至纯精华', '2025-05-06 09:19:00', 1, 892, 45, 0, 847, '', '2025-05-18 14:59:18');
+INSERT INTO `stock_out` VALUES (2783, '至纯精华', '2025-05-06 09:19:00', 943, 966, 45547, 0, 865391, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2784, '至纯精华', '2025-05-06 09:18:00', 10, 892, 446, 0, 8474, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2785, '至纯精华', '2025-05-06 09:18:00', 988, 892, 44065, 0, 837231, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2786, '灵之精火', '2025-05-06 09:18:00', 266, 1496, 19897, 0, 378039, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2787, '灵之精火', '2025-05-06 06:48:00', 91, 1509, 6866, 0, 130453, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2788, '灵之精火', '2025-05-06 06:48:00', 14, 1509, 1057, 0, 20069, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2789, '灵之精火', '2025-05-06 06:47:00', 119, 1509, 8979, 0, 170592, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2790, '灵之精火', '2025-05-06 02:01:00', 141, 1509, 10639, 0, 202130, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2791, '灵之精火', '2025-05-06 02:01:00', 141, 1509, 10639, 0, 202130, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2792, '至纯精华', '2025-05-06 01:19:00', 987, 998, 49252, 0, 935774, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2793, '至纯精华', '2025-05-06 01:19:00', 456, 896, 20429, 0, 388147, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2794, '至纯精华', '2025-05-06 01:18:00', 423, 1066, 22546, 0, 428372, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2795, '至纯精华', '2025-05-06 01:18:00', 12, 998, 599, 0, 11377, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2796, '灵之精火', '2025-05-06 01:17:00', 684, 1481, 50651, 0, 962353, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2797, '至纯精华', '2025-05-06 01:17:00', 409, 1088, 22250, 0, 422742, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2798, '至纯精华', '2025-05-06 01:16:00', 590, 1088, 32096, 0, 609824, '', '2025-05-18 14:59:19');
+INSERT INTO `stock_out` VALUES (2799, '灵之精火', '2025-05-05 15:59:00', 315, 1481, 23326, 0, 443189, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2800, '至纯精华', '2025-05-05 15:41:00', 842, 888, 37385, 0, 710311, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2801, '至纯精华', '2025-05-05 15:41:00', 157, 888, 6971, 0, 132445, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2802, '至纯精华', '2025-05-05 15:40:00', 278, 998, 13873, 0, 263571, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2803, '灵之精火', '2025-05-05 15:40:00', 500, 1439, 35975, 0, 683525, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2804, '灵之精火', '2025-05-05 15:39:00', 27, 1439, 1943, 0, 36910, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2805, '至纯精华', '2025-05-05 15:38:00', 560, 998, 27944, 0, 530936, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2806, '至纯精华', '2025-05-05 15:38:00', 439, 998, 21907, 0, 416215, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2807, '灵之精火', '2025-05-05 08:13:00', 54, 1596, 4310, 0, 81874, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2808, '灵之精火', '2025-05-05 08:13:00', 30, 1596, 2394, 0, 45486, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2809, '灵之精火', '2025-05-05 08:12:00', 59, 1596, 4709, 0, 89455, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2810, '灵之精火', '2025-05-05 08:12:00', 195, 1596, 15561, 0, 295659, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2811, '至纯精华', '2025-05-05 08:11:00', 999, 999, 49901, 0, 948100, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2812, '至纯精华', '2025-05-05 08:09:00', 120, 993, 5958, 0, 113202, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2813, '至纯精华', '2025-05-04 21:42:00', 74, 900, 3330, 0, 63270, '', '2025-05-18 14:59:20');
+INSERT INTO `stock_out` VALUES (2814, '至纯精华', '2025-05-04 21:42:00', 193, 900, 8685, 0, 165015, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2815, '灵之精火', '2025-05-04 21:24:00', 187, 1566, 14643, 0, 278199, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2816, '灵之精火', '2025-05-04 21:22:00', 349, 1566, 27327, 0, 519207, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2817, '灵之精火', '2025-05-04 21:21:00', 463, 1566, 36253, 0, 688805, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2818, '灵之精火', '2025-05-04 21:21:00', 258, 1588, 20486, 0, 389218, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2819, '灵之精火', '2025-05-04 21:20:00', 116, 1588, 9211, 0, 174997, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2820, '灵之精火', '2025-05-04 21:20:00', 71, 1588, 5638, 0, 107110, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2821, '灵之精火', '2025-05-04 21:20:00', 99, 1588, 7861, 0, 149351, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2822, '灵之精火', '2025-05-04 21:19:00', 53, 1588, 4209, 0, 79955, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2823, '灵之精火', '2025-05-04 21:19:00', 400, 1588, 31760, 0, 603440, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2824, '灵之精火', '2025-05-04 21:18:00', 98, 1538, 7537, 0, 143187, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2825, '灵之精火', '2025-05-04 21:17:00', 215, 1538, 16534, 0, 314136, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2826, '至纯精华', '2025-05-04 07:51:00', 50, 1145, 2863, 0, 54387, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2827, '至纯精华', '2025-05-04 07:50:00', 88, 1143, 5030, 0, 95554, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2828, '至纯精华', '2025-05-04 07:50:00', 60, 1139, 3417, 0, 64923, '', '2025-05-18 14:59:21');
+INSERT INTO `stock_out` VALUES (2829, '灵之精火', '2025-05-04 07:50:00', 35, 1478, 2587, 0, 49143, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2830, '灵之精火', '2025-05-04 07:49:00', 100, 1478, 7390, 0, 140410, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2831, '灵之精火', '2025-05-04 07:49:00', 213, 1478, 15741, 0, 299073, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2832, '灵之精火', '2025-05-04 07:48:00', 251, 1478, 18549, 0, 352429, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2833, '灵之精火', '2025-05-03 20:57:00', 53, 1538, 4076, 0, 77438, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2834, '灵之精火', '2025-05-03 20:57:00', 200, 1538, 15380, 0, 292220, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2835, '灵之精火', '2025-05-03 20:57:00', 16, 1538, 1231, 0, 23377, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2836, '灵之精火', '2025-05-03 20:56:00', 205, 1538, 15765, 0, 299525, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2837, '灵之精火', '2025-05-03 20:56:00', 156, 1538, 11997, 0, 227931, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2838, '灵之精火', '2025-05-03 20:55:00', 27, 1538, 2077, 0, 39449, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2839, '灵之精火', '2025-05-03 20:55:00', 29, 1538, 2231, 0, 42371, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2840, '灵之精火', '2025-05-03 12:21:00', 80, 1479, 5916, 0, 112404, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2841, '灵之精火', '2025-05-03 11:35:00', 19, 1479, 1406, 0, 26695, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2842, '灵之精火', '2025-05-03 11:26:00', 360, 1479, 26622, 0, 505818, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2843, '灵之精火', '2025-05-03 11:25:00', 22, 1479, 1627, 0, 30911, '', '2025-05-18 14:59:22');
+INSERT INTO `stock_out` VALUES (2844, '灵之精火', '2025-05-03 11:24:00', 102, 1479, 7543, 0, 143315, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2845, '灵之精火', '2025-05-03 11:24:00', 50, 1479, 3698, 0, 70252, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2846, '灵之精火', '2025-05-03 11:24:00', 67, 1479, 4955, 0, 94138, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2847, '灵之精火', '2025-05-03 11:17:00', 150, 1479, 11093, 0, 210757, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2848, '灵之精火', '2025-05-03 11:17:00', 8, 1454, 582, 0, 11050, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2849, '灵之精火', '2025-05-03 11:17:00', 163, 1454, 11851, 0, 225151, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2850, '灵之精火', '2025-05-03 11:17:00', 200, 1454, 14540, 0, 276260, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2851, '灵之精火', '2025-05-03 11:16:00', 10, 1454, 727, 0, 13813, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2852, '灵之精火', '2025-05-03 11:15:00', 43, 1454, 3127, 0, 59395, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2853, '灵之精火', '2025-05-03 11:15:00', 149, 1479, 11019, 0, 209352, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2854, '灵之精火', '2025-05-03 11:01:00', 352, 1454, 25591, 0, 486217, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2855, '灵之精火', '2025-05-03 11:00:00', 173, 1454, 12578, 0, 238964, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2856, '至纯精华', '2025-05-03 10:32:00', 9, 1234, 556, 0, 10550, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2857, '至纯精华', '2025-05-03 10:31:00', 32, 1188, 1901, 0, 36115, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2858, '至纯精华', '2025-05-03 10:31:00', 36, 1188, 2139, 0, 40629, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2859, '古玉', '2025-05-02 20:50:00', 312, 1888, 29453, 0, 559603, '', '2025-05-18 14:59:23');
+INSERT INTO `stock_out` VALUES (2860, '至纯精华', '2025-05-02 20:42:00', 15, 1488, 1116, 0, 21204, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2861, '灵之精火', '2025-05-02 20:42:00', 288, 1785, 25704, 0, 488376, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2862, '灵之精火', '2025-05-01 18:56:00', 127, 1785, 11335, 0, 215360, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2863, '灵之精火', '2025-05-01 18:56:00', 2, 1785, 179, 0, 3391, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2864, '灵草华', '2025-05-01 18:55:00', 98, 1273, 6238, 0, 118516, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2865, '灵之精火', '2025-05-01 18:45:00', 178, 1785, 15887, 0, 301843, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2866, '灵之精火', '2025-05-01 18:44:00', 200, 1785, 17850, 0, 339150, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2867, '灵之精火', '2025-05-01 18:44:00', 36, 1785, 3213, 0, 61047, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2868, '灵之精火', '2025-05-01 18:44:00', 1, 1785, 90, 0, 1695, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2869, '灵之精火', '2025-05-01 18:43:00', 20, 1785, 1785, 0, 33915, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2870, '灵之精火', '2025-05-01 18:42:00', 203, 1821, 18484, 0, 351179, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2871, '灵草华', '2025-05-01 18:42:00', 14, 1386, 971, 0, 18433, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2872, '灵草华', '2025-05-01 18:42:00', 14, 1385, 970, 0, 18420, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2873, '灵草华', '2025-05-01 18:41:00', 93, 1387, 6450, 0, 122541, '', '2025-05-18 14:59:24');
+INSERT INTO `stock_out` VALUES (2874, '灵之精火', '2025-05-01 18:38:00', 507, 1821, 46163, 0, 877084, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2875, '灵之精火', '2025-05-01 18:38:00', 269, 1821, 24493, 0, 465356, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2876, '灵之精火', '2025-05-01 18:37:00', 40, 1837, 3674, 0, 69806, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2877, '灵之精火', '2025-05-01 18:37:00', 121, 1837, 1114, 0, 221163, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2878, '灵之精火', '2025-05-01 18:36:00', 4, 1837, 368, 0, 6980, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2879, '灵之精火', '2025-05-01 18:35:00', 100, 1837, 9185, 0, 174515, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2880, '灵之精火', '2025-05-01 18:35:00', 287, 1837, 26361, 0, 500858, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2881, '灵之精火', '2025-05-01 18:35:00', 200, 1837, 18370, 0, 349030, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2882, '灵之精火', '2025-05-01 18:34:00', 200, 1837, 18370, 0, 349030, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2883, '灵之精火', '2025-05-01 18:34:00', 25, 1837, 2297, 0, 43628, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2884, '灵草华', '2025-05-01 18:33:00', 40, 1384, 2768, 0, 52592, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2885, '灵草华', '2025-05-01 18:33:00', 9, 1384, 623, 0, 11833, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2886, '灵之精火', '2025-05-01 18:32:00', 32, 1785, 2856, 0, 54264, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2887, '灵之精火', '2025-05-01 18:32:00', 12, 1785, 1071, 0, 20349, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2888, '灵之精火', '2025-05-01 18:32:00', 65, 1785, 5802, 0, 110223, '', '2025-05-18 14:59:25');
+INSERT INTO `stock_out` VALUES (2889, '灵草华', '2025-05-01 18:27:00', 21, 1379, 1448, 0, 27511, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2890, '灵草华', '2025-05-01 18:27:00', 90, 1380, 6210, 0, 117990, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2891, '灵草华', '2025-05-01 18:26:00', 10, 1379, 690, 0, 13100, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2892, '灵草华', '2025-05-01 18:26:00', 99, 1381, 6836, 0, 129883, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2893, '灵草华', '2025-05-01 18:25:00', 99, 1382, 6841, 0, 129977, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2894, '灵草华', '2025-05-01 18:25:00', 9, 1380, 621, 0, 11799, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2895, '灵草华', '2025-05-01 06:39:00', 54, 1332, 3597, 0, 68331, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2896, '灵草华', '2025-05-01 06:38:00', 30, 1332, 1998, 0, 37962, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2897, '灵草华', '2025-05-01 06:38:00', 15, 1332, 999, 0, 18981, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2898, '灵草华', '2025-05-01 06:38:00', 25, 1331, 1664, 0, 31611, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2899, '灵草华', '2025-05-01 06:38:00', 26, 1331, 1731, 0, 32875, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2900, '灵草华', '2025-05-01 06:37:00', 74, 1331, 4925, 0, 93569, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2901, '灵草华', '2025-05-01 06:37:00', 3, 1331, 200, 0, 3793, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2902, '灵草华', '2025-05-01 02:52:00', 66, 1382, 4561, 0, 86651, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2903, '灵草华', '2025-05-01 02:52:00', 50, 1384, 3460, 0, 65740, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2904, '灵草华', '2025-05-01 02:52:00', 99, 1383, 6846, 0, 130071, '', '2025-05-18 14:59:26');
+INSERT INTO `stock_out` VALUES (2905, '灵草华', '2025-05-01 02:51:00', 33, 1382, 2281, 0, 43325, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2906, '灵之精火', '2025-05-01 02:49:00', 15, 1938, 1454, 0, 27616, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2907, '灵之精火', '2025-05-01 02:48:00', 73, 1938, 7074, 0, 134400, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2908, '灵之精火', '2025-05-01 02:48:00', 164, 1938, 15892, 0, 301940, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2909, '灵之精火', '2025-05-01 02:47:00', 34, 1938, 3295, 0, 62597, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2910, '灵之精火', '2025-05-01 02:46:00', 999, 1888, 94306, 0, 1791806, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2911, '灵草华', '2025-05-01 02:46:00', 19, 1238, 1177, 0, 22345, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2912, '灵草华', '2025-05-01 02:45:00', 18, 1238, 1115, 0, 21169, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2913, '灵草华', '2025-05-01 02:44:00', 62, 1238, 3838, 0, 72918, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2914, '灵草华', '2025-05-01 02:44:00', 99, 1238, 6129, 0, 116433, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2915, '灵草华', '2025-05-01 02:44:00', 99, 1288, 6376, 0, 121136, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2916, '灵草华', '2025-05-01 02:43:00', 25, 1288, 1610, 0, 30590, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2917, '灵草华', '2025-05-01 02:35:00', 19, 1381, 1312, 0, 24927, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2918, '灵草华', '2025-05-01 02:35:00', 99, 1382, 6841, 0, 129977, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2919, '灵草华', '2025-05-01 02:34:00', 80, 1381, 5524, 0, 104956, '', '2025-05-18 14:59:27');
+INSERT INTO `stock_out` VALUES (2920, '灵之精火', '2025-05-01 02:33:00', 999, 1668, 83317, 0, 1583015, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2921, '灵之精火', '2025-05-01 02:33:00', 999, 1728, 86314, 0, 1639958, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2922, '灵之精火', '2025-05-01 02:32:00', 999, 1799, 89861, 0, 1707340, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2923, '灵之精火', '2025-05-01 02:32:00', 999, 1888, 94306, 0, 1791806, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2924, '灵草华', '2025-05-01 02:31:00', 99, 1164, 5762, 0, 109474, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2925, '灵草华', '2025-05-01 02:31:00', 99, 1161, 5747, 0, 109192, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2926, '灵草华', '2025-05-01 02:30:00', 46, 1164, 2678, 0, 50866, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2927, '灵草华', '2025-05-01 02:30:00', 33, 1164, 1921, 0, 36491, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2928, '灵草华', '2025-05-01 02:29:00', 20, 1164, 1164, 0, 22116, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2929, '灵草华', '2025-05-01 02:29:00', 99, 1188, 5881, 0, 111731, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2930, '灵草华', '2025-05-01 02:28:00', 99, 1188, 5881, 0, 111731, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2931, '灵草华', '2025-05-01 02:28:00', 77, 1192, 4590, 0, 87194, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2932, '灵草华', '2025-05-01 02:28:00', 99, 1193, 5906, 0, 112201, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2933, '灵草华', '2025-05-01 02:27:00', 17, 1199, 1020, 0, 19363, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2934, '灵草华', '2025-05-01 02:26:00', 40, 1199, 2398, 0, 45562, '', '2025-05-18 14:59:28');
+INSERT INTO `stock_out` VALUES (2935, '灵草华', '2025-05-01 02:26:00', 30, 1199, 1799, 0, 34171, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2936, '灵草华', '2025-05-01 02:26:00', 99, 1199, 5936, 0, 112765, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2937, '灵草华', '2025-05-01 02:25:00', 12, 1199, 720, 0, 13668, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2938, '灵之精火', '2025-05-01 02:24:00', 297, 1618, 24028, 0, 456518, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2939, '灵之精火', '2025-05-01 02:23:00', 4, 1618, 324, 0, 6148, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2940, '灵之精火', '2025-05-01 02:23:00', 2, 1618, 162, 0, 3074, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2941, '灵之精火', '2025-05-01 02:23:00', 216, 1618, 17475, 0, 332013, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2942, '灵之精火', '2025-05-01 02:23:00', 462, 1618, 37376, 0, 710140, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2943, '灵之精火', '2025-05-01 02:22:00', 18, 1618, 1457, 0, 27667, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2944, '灵之精火', '2025-05-01 02:21:00', 6, 1665, 500, 0, 9490, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2945, '灵之精火', '2025-05-01 02:20:00', 33, 1665, 2748, 0, 52197, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2946, '灵之精火', '2025-05-01 02:20:00', 30, 1665, 2498, 0, 47452, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2947, '灵之精火', '2025-05-01 02:20:00', 29, 1665, 2415, 0, 45870, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2948, '灵之精火', '2025-05-01 02:20:00', 17, 1665, 1416, 0, 26889, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2949, '灵之精火', '2025-05-01 02:17:00', 14, 1665, 1166, 0, 22144, '', '2025-05-18 14:59:29');
+INSERT INTO `stock_out` VALUES (2950, '灵之精火', '2025-05-01 02:17:00', 465, 1665, 38712, 0, 735513, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2951, '灵之精火', '2025-05-01 02:17:00', 718, 1665, 59774, 0, 1135696, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2952, '灵之精火', '2025-05-01 02:17:00', 999, 1688, 84316, 0, 1601996, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2953, '灵草华', '2025-05-01 02:16:00', 17, 1197, 1018, 0, 19331, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2954, '灵草华', '2025-05-01 02:15:00', 40, 1266, 2532, 0, 48108, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2955, '灵草华', '2025-05-01 02:15:00', 99, 1266, 6267, 0, 119067, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2956, '灵草华', '2025-05-01 02:15:00', 56, 1266, 3545, 0, 67351, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2957, '灵草华', '2025-05-01 02:14:00', 52, 1288, 3349, 0, 63627, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2958, '灵草华', '2025-05-01 02:13:00', 3, 1266, 190, 0, 3608, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2959, '灵草华', '2025-05-01 02:12:00', 76, 1288, 4895, 0, 92993, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2960, '灵草华', '2025-05-01 02:12:00', 20, 1288, 1288, 0, 24472, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2961, '灵草华', '2025-05-01 02:12:00', 47, 1288, 3027, 0, 57509, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2962, '灵草华', '2025-05-01 02:11:00', 3, 1288, 194, 0, 3670, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2963, '灵草华', '2025-05-01 02:10:00', 97, 1288, 6247, 0, 118689, '', '2025-05-18 14:59:30');
+INSERT INTO `stock_out` VALUES (2964, '灵草华', '2025-05-01 02:10:00', 2, 1288, 129, 0, 2447, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2965, '灵之精火', '2025-05-01 02:08:00', 999, 1666, 83217, 0, 1581117, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2966, '灵草华', '2025-05-01 02:07:00', 16, 1198, 959, 0, 18209, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2967, '灵草华', '2025-05-01 02:07:00', 53, 1198, 3175, 0, 60319, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2968, '灵草华', '2025-05-01 02:06:00', 30, 1198, 1797, 0, 34143, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2969, '灵之精火', '2025-05-01 02:02:00', 786, 1888, 74199, 0, 1409769, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2970, '灵之精火', '2025-05-01 02:02:00', 140, 1888, 13216, 0, 251104, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2971, '灵之精火', '2025-05-01 02:01:00', 213, 1888, 20108, 0, 382036, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2972, '灵草华', '2025-05-01 02:01:00', 15, 1385, 1039, 0, 19736, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2973, '灵草华', '2025-05-01 02:01:00', 20, 1385, 1385, 0, 26315, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2974, '灵草华', '2025-05-01 01:57:00', 29, 1189, 1725, 0, 32756, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2975, '灵之精火', '2025-05-01 01:55:00', 21, 1837, 1929, 0, 36648, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2976, '灵之精火', '2025-05-01 01:54:00', 1, 1837, 92, 0, 1745, '', '2025-05-18 14:59:31');
+INSERT INTO `stock_out` VALUES (2977, '灵之精火', '2025-05-01 01:54:00', 20, 1821, 1821, 0, 34599, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2978, '灵草华', '2025-05-01 01:54:00', 50, 1385, 3463, 0, 65787, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2979, '灵草华', '2025-05-01 01:53:00', 66, 1189, 3924, 0, 74550, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2980, '灵草华', '2025-05-01 01:52:00', 4, 1189, 238, 0, 4518, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2981, '灵草华', '2025-05-01 01:51:00', 6, 1387, 417, 0, 7905, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2982, '灵草华', '2025-05-01 01:51:00', 85, 1386, 5891, 0, 111919, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2983, '灵之精火', '2025-05-01 01:45:00', 80, 1654, 6616, 0, 125704, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2984, '灵之精火', '2025-05-01 01:45:00', 80, 1654, 6616, 0, 125704, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2985, '灵之精火', '2025-05-01 01:45:00', 999, 1666, 83217, 0, 1581117, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2986, '灵草华', '2025-05-01 01:37:00', 16, 1198, 959, 0, 18209, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2987, '灵草华', '2025-05-01 01:37:00', 83, 1198, 4972, 0, 94462, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2988, '灵草华', '2025-05-01 01:37:00', 76, 1209, 4595, 0, 87289, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2989, '灵草华', '2025-05-01 01:35:00', 99, 1209, 5985, 0, 113706, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2990, '灵草华', '2025-05-01 01:35:00', 23, 1209, 1391, 0, 26416, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2991, '灵草华', '2025-05-01 01:34:00', 66, 1228, 4053, 0, 76995, '', '2025-05-18 14:59:32');
+INSERT INTO `stock_out` VALUES (2992, '灵草华', '2025-05-01 01:34:00', 33, 1228, 2027, 0, 38497, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2993, '灵之精火', '2025-04-30 23:17:00', 31, 1629, 2525, 0, 47974, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2994, '灵之精火', '2025-04-30 23:16:00', 545, 1629, 44391, 0, 843414, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2995, '灵之精火', '2025-04-30 23:16:00', 317, 1629, 25820, 0, 490573, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2996, '灵之精火', '2025-04-30 23:13:00', 106, 1629, 8634, 0, 164040, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2997, '灵草华', '2025-04-30 23:13:00', 99, 1180, 5841, 0, 110979, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2998, '灵之精火', '2025-04-30 23:05:00', 64, 1654, 5293, 0, 100563, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (2999, '灵草华', '2025-04-30 23:04:00', 50, 1170, 2925, 0, 55575, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3000, '灵之精火', '2025-04-30 23:04:00', 10, 1654, 827, 0, 15713, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3001, '灵之精火', '2025-04-30 23:02:00', 99, 1654, 8188, 0, 155558, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3002, '灵草华', '2025-04-30 23:02:00', 49, 1170, 2867, 0, 54463, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3003, '灵之精火', '2025-04-30 23:00:00', 54, 1580, 4266, 0, 81054, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3004, '灵之精火', '2025-04-30 23:00:00', 75, 1580, 5925, 0, 112575, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3005, '灵之精火', '2025-04-30 22:59:00', 487, 1654, 40275, 0, 765223, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3006, '灵之精火', '2025-04-30 22:59:00', 72, 1654, 5955, 0, 113133, '', '2025-05-18 14:59:33');
+INSERT INTO `stock_out` VALUES (3007, '灵之精火', '2025-04-30 22:58:00', 187, 1654, 15465, 0, 293833, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3008, '灵草华', '2025-04-30 22:56:00', 56, 1167, 3268, 0, 62084, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3009, '灵之精火', '2025-04-30 22:55:00', 160, 1580, 12640, 0, 240160, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3010, '灵之精火', '2025-04-30 22:54:00', 165, 1588, 13101, 0, 248919, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3011, '灵之精火', '2025-04-30 22:54:00', 12, 1588, 953, 0, 18103, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3012, '灵之精火', '2025-04-30 22:52:00', 182, 1577, 14351, 0, 272663, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3013, '灵之精火', '2025-04-30 22:52:00', 206, 1588, 16357, 0, 310771, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3014, '灵之精火', '2025-04-30 22:51:00', 54, 1588, 4288, 0, 81464, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3015, '灵之精火', '2025-04-30 22:50:00', 92, 1665, 7659, 0, 145521, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3016, '灵之精火', '2025-04-30 22:46:00', 2, 1588, 159, 0, 3017, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3017, '灵之精火', '2025-04-30 22:45:00', 210, 1588, 16674, 0, 316806, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3018, '灵之精火', '2025-04-30 22:45:00', 374, 1588, 29696, 0, 564216, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3019, '灵之精火', '2025-04-30 22:45:00', 85, 1588, 6749, 0, 128231, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3020, '灵之精火', '2025-04-30 22:44:00', 68, 1588, 5400, 0, 102584, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3021, '灵之精火', '2025-04-30 22:44:00', 59, 1665, 4912, 0, 93323, '', '2025-05-18 14:59:34');
+INSERT INTO `stock_out` VALUES (3022, '灵草华', '2025-04-30 22:41:00', 96, 1157, 5554, 0, 105518, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3023, '灵草华', '2025-04-30 22:41:00', 3, 1157, 174, 0, 3297, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3024, '灵之精火', '2025-04-30 22:34:00', 40, 1619, 3238, 0, 61522, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3025, '灵之精火', '2025-04-30 22:34:00', 134, 1619, 10848, 0, 206098, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3026, '灵之精火', '2025-04-30 22:29:00', 599, 1619, 48490, 0, 921291, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3027, '灵之精火', '2025-04-30 22:29:00', 22, 1619, 1781, 0, 33837, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3028, '灵之精火', '2025-04-30 22:28:00', 74, 1619, 5991, 0, 113815, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3029, '灵之精火', '2025-04-30 22:28:00', 37, 1619, 2996, 0, 56907, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3030, '灵之精火', '2025-04-30 22:28:00', 17, 1619, 1377, 0, 26146, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3031, '灵之精火', '2025-04-30 22:27:00', 50, 1619, 4048, 0, 76902, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3032, '灵之精火', '2025-04-30 22:27:00', 26, 1619, 2105, 0, 39989, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3033, '灵草华', '2025-04-30 22:14:00', 99, 1163, 5757, 0, 109380, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3034, '灵之精火', '2025-04-30 22:14:00', 40, 1616, 3232, 0, 61408, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3035, '灵之精火', '2025-04-30 22:07:00', 11, 1616, 889, 0, 16887, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3036, '灵之精火', '2025-04-30 22:07:00', 184, 1616, 14868, 0, 282476, '', '2025-05-18 14:59:35');
+INSERT INTO `stock_out` VALUES (3037, '灵之精火', '2025-04-30 22:07:00', 206, 1616, 16645, 0, 316251, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3038, '灵之精火', '2025-04-30 22:01:00', 38, 1616, 3071, 0, 58337, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3039, '灵之精火', '2025-04-30 22:01:00', 520, 1616, 42016, 0, 798304, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3040, '灵之精火', '2025-04-30 22:00:00', 253, 1617, 20456, 0, 388645, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3041, '灵之精火', '2025-04-30 22:00:00', 1, 1617, 81, 0, 1536, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3042, '灵之精火', '2025-04-30 22:00:00', 100, 1617, 8085, 0, 153615, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3043, '灵之精火', '2025-04-30 21:59:00', 298, 1617, 24094, 0, 457772, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3044, '灵之精火', '2025-04-30 21:58:00', 16, 1617, 1294, 0, 24578, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3045, '灵之精火', '2025-04-30 21:57:00', 10, 1617, 809, 0, 15361, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3046, '灵之精火', '2025-04-30 21:57:00', 42, 1617, 3396, 0, 64518, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3047, '灵之精火', '2025-04-30 21:57:00', 65, 1617, 5256, 0, 99849, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3048, '灵之精火', '2025-04-30 21:56:00', 37, 1617, 2992, 0, 56837, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3049, '灵之精火', '2025-04-30 21:56:00', 178, 1617, 14392, 0, 273434, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3050, '灵草华', '2025-04-30 20:33:00', 54, 1153, 3114, 0, 59148, '', '2025-05-18 14:59:36');
+INSERT INTO `stock_out` VALUES (3051, '灵之精火', '2025-04-30 20:33:00', 140, 1577, 11039, 0, 209741, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3052, '灵之精火', '2025-04-30 20:33:00', 14, 1577, 1104, 0, 20974, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3053, '灵之精火', '2025-04-30 20:32:00', 41, 1577, 3233, 0, 61424, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3054, '灵之精火', '2025-04-30 20:32:00', 97, 1577, 7649, 0, 145320, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3055, '灵之精火', '2025-04-30 20:03:00', 41, 1577, 3233, 0, 61424, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3056, '灵之精火', '2025-04-30 20:03:00', 66, 1577, 5205, 0, 98877, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3057, '灵之精火', '2025-04-30 20:03:00', 145, 1577, 11434, 0, 217231, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3058, '灵之精火', '2025-04-30 20:02:00', 22, 1577, 1735, 0, 32959, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3059, '灵之精火', '2025-04-30 20:02:00', 10, 1577, 789, 0, 14981, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3060, '灵之精火', '2025-04-30 20:02:00', 60, 1577, 4731, 0, 89889, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3061, '灵之精火', '2025-04-30 20:01:00', 181, 1577, 14272, 0, 271165, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3062, '灵之精火', '2025-04-30 19:58:00', 190, 1555, 14773, 0, 280677, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3063, '灵之精火', '2025-04-30 19:57:00', 13, 1555, 1011, 0, 19204, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3064, '灵之精火', '2025-04-30 19:57:00', 45, 1555, 3499, 0, 66476, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3065, '灵之精火', '2025-04-30 19:57:00', 15, 1555, 1167, 0, 22158, '', '2025-05-18 14:59:37');
+INSERT INTO `stock_out` VALUES (3066, '灵之精火', '2025-04-30 19:56:00', 146, 1555, 11352, 0, 215678, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3067, '灵之精火', '2025-04-30 19:56:00', 19, 1555, 1478, 0, 28067, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3068, '灵之精火', '2025-04-30 19:56:00', 571, 1555, 44396, 0, 843509, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3069, '灵之精火', '2025-04-30 19:52:00', 53, 1483, 3930, 0, 74669, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3070, '灵草华', '2025-04-30 19:51:00', 40, 1153, 2306, 0, 43814, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3071, '灵草华', '2025-04-30 19:51:00', 5, 1153, 289, 0, 5476, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3072, '灵草华', '2025-04-30 19:46:00', 99, 1190, 5891, 0, 111919, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3073, '灵草华', '2025-04-30 19:45:00', 22, 1192, 1312, 0, 24912, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3074, '灵草华', '2025-04-30 19:45:00', 99, 1191, 5896, 0, 112013, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3075, '灵之精火', '2025-04-30 19:43:00', 23, 1483, 1706, 0, 32403, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3076, '灵之精火', '2025-04-30 19:43:00', 113, 1483, 8379, 0, 159200, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3077, '灵之精火', '2025-04-30 19:42:00', 15, 1483, 1113, 0, 21132, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3078, '灵之精火', '2025-04-30 19:42:00', 1, 1483, 75, 0, 1408, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3079, '灵之精火', '2025-04-30 19:41:00', 116, 1483, 8602, 0, 163426, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3080, '灵之精火', '2025-04-30 19:41:00', 107, 1483, 7935, 0, 150746, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3081, '灵之精火', '2025-04-30 19:40:00', 45, 1483, 3337, 0, 63398, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3082, '灵之精火', '2025-04-30 19:40:00', 167, 1483, 12384, 0, 235277, '', '2025-05-18 14:59:38');
+INSERT INTO `stock_out` VALUES (3083, '灵之精火', '2025-04-30 19:36:00', 23, 1483, 1706, 0, 32403, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3084, '灵之精火', '2025-04-30 19:35:00', 113, 1483, 8379, 0, 159200, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3085, '灵之精火', '2025-04-30 19:35:00', 15, 1483, 1113, 0, 21132, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3086, '灵之精火', '2025-04-30 19:35:00', 15, 1483, 1113, 0, 21132, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3087, '灵之精火', '2025-04-30 19:34:00', 1, 1483, 75, 0, 1408, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3088, '灵之精火', '2025-04-30 19:34:00', 116, 1483, 8602, 0, 163426, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3089, '灵之精火', '2025-04-30 19:33:00', 107, 1483, 7935, 0, 150746, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3090, '灵之精火', '2025-04-30 19:33:00', 45, 1483, 3337, 0, 63398, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3091, '灵之精火', '2025-04-30 19:33:00', 53, 1483, 3930, 0, 74669, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3092, '灵之精火', '2025-04-30 19:32:00', 167, 1483, 12384, 0, 235277, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3093, '灵之精火', '2025-04-30 19:30:00', 336, 1484, 24932, 0, 473692, '', '2025-05-18 14:59:39');
+INSERT INTO `stock_out` VALUES (3094, '灵之精火', '2025-04-30 19:30:00', 94, 1484, 6975, 0, 132521, '', '2025-05-18 14:59:40');
+INSERT INTO `stock_out` VALUES (3095, '灵之精火', '2025-04-30 19:30:00', 27, 1484, 2004, 0, 38064, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3096, '灵之精火', '2025-04-30 19:29:00', 147, 1488, 10937, 0, 207799, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3097, '灵之精火', '2025-04-30 19:29:00', 14, 1488, 1042, 0, 19790, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3098, '灵之精火', '2025-04-30 19:29:00', 539, 1488, 40102, 0, 761930, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3099, '灵之精火', '2025-04-30 19:28:00', 299, 1488, 22246, 0, 422666, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3100, '灵之精火', '2025-04-30 19:25:00', 109, 1580, 8611, 0, 163609, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3101, '灵之精火', '2025-04-30 19:24:00', 437, 1580, 34523, 0, 655937, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3102, '灵之精火', '2025-04-30 19:24:00', 164, 1580, 12956, 0, 246164, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3103, '至纯精华', '2025-04-30 13:49:00', 383, 1688, 32326, 0, 614178, '', '2025-05-18 14:59:41');
+INSERT INTO `stock_out` VALUES (3104, '灵之精火', '2025-04-30 13:48:00', 23, 1483, 1706, 0, 32403, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3105, '灵之精火', '2025-04-30 13:48:00', 131, 1483, 9714, 0, 184559, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3106, '灵之精火', '2025-04-30 13:47:00', 71, 1483, 5265, 0, 100028, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3107, '灵之精火', '2025-04-30 13:47:00', 55, 1483, 4079, 0, 77486, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3108, '灵之精火', '2025-04-30 13:40:00', 16, 1483, 1187, 0, 22541, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3109, '灵之精火', '2025-04-30 13:39:00', 71, 1483, 5265, 0, 100028, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3110, '灵草华', '2025-04-30 13:39:00', 65, 1178, 3829, 0, 72741, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3111, '灵草华', '2025-04-30 13:28:00', 20, 1178, 1178, 0, 22382, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3112, '灵草华', '2025-04-30 13:28:00', 82, 1177, 4826, 0, 91688, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3113, '灵草华', '2025-04-30 13:28:00', 14, 1178, 825, 0, 15667, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3114, '灵草华', '2025-04-30 13:27:00', 17, 1177, 1001, 0, 19008, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3115, '灵之精火', '2025-04-30 12:36:00', 143, 1484, 10611, 0, 201601, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3116, '灵之精火', '2025-04-30 12:36:00', 159, 1484, 11798, 0, 224158, '', '2025-05-18 14:59:42');
+INSERT INTO `stock_out` VALUES (3117, '灵之精火', '2025-04-30 12:36:00', 93, 1484, 6901, 0, 131111, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3118, '灵之精火', '2025-04-30 12:35:00', 147, 1484, 10908, 0, 207240, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3119, '灵之精火', '2025-04-30 12:35:00', 828, 1444, 59782, 0, 1135850, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3120, '灵之精火', '2025-04-30 12:35:00', 96, 1444, 6932, 0, 131692, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3121, '灵之精火', '2025-04-30 12:34:00', 75, 1444, 5415, 0, 102885, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3122, '灵草华', '2025-04-30 09:53:00', 5422, 1151, 0, 0, 6240722, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3123, '灵矿髓', '2025-04-26 18:15:00', 5000, 1710, 0, 0, 8550000, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3124, '至纯精华', '2025-04-18 15:24:00', 19000, 3000, 0, 0, 57000000, '', '2025-05-18 14:59:43');
+INSERT INTO `stock_out` VALUES (3125, '灵之精火', '2025-04-17 12:49:00', 3136, 1721, 0, 0, 5397056, '', '2025-05-18 14:59:43');
+UNLOCK TABLES;
+
+
+-- Table structure for trade_monitor
+DROP TABLE IF EXISTS `trade_monitor`;
+CREATE TABLE `trade_monitor` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `monitor_time` datetime NOT NULL,
+  `quantity` int NOT NULL,
+  `market_price` bigint DEFAULT NULL,
+  `target_price` bigint DEFAULT NULL,
+  `planned_price` bigint DEFAULT NULL,
+  `break_even_price` bigint DEFAULT NULL,
+  `profit` bigint DEFAULT NULL,
+  `profit_rate` bigint DEFAULT NULL,
+  `strategy` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Data for trade_monitor
+LOCK TABLES `trade_monitor` WRITE;
+INSERT INTO `trade_monitor` VALUES (15, '至纯精华', '2025-05-15 11:22:41', 1039, 1085, 0, 0, 0, 0, 0, '', '2025-05-13 12:28:19');
+INSERT INTO `trade_monitor` VALUES (17, '灵矿髓', '2025-05-15 11:22:41', 3293, 1947, 0, 0, 0, 0, 0, '', '2025-05-15 11:17:47');
+INSERT INTO `trade_monitor` VALUES (19, '灵草华', '2025-05-15 11:22:41', 8339, 1095, 999, 0, 0, 0, 0, '', '2025-05-15 11:57:56');
+INSERT INTO `trade_monitor` VALUES (20, '灵之精火', '2025-05-15 11:22:41', 10330, 1276, 999, 0, 1029, 0, 0, '', '2025-05-17 23:57:54');
+UNLOCK TABLES;
+
+SET FOREIGN_KEY_CHECKS=1;

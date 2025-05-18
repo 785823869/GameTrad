@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 import shutil
+import subprocess
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -38,19 +39,160 @@ def backup_database():
         password = "Cenb1017!@"
         database = "OcrTrade"
         
-        # 使用mysqldump进行备份
-        cmd = f'mysqldump -h {host} -P {port} -u {user}'
-        if password:
-            cmd += f' -p{password}'
-        cmd += f' {database} > "{backup_file}"'
+        # 使用subprocess.Popen代替os.system以获得更好的错误处理
+        mysqldump_cmd = [
+            "mysqldump",
+            "-h", host,
+            "-P", str(port),
+            "-u", user,
+            f"-p{password}",
+            "--set-charset",
+            "--routines",
+            "--triggers",
+            "--single-transaction",
+            database
+        ]
         
-        os.system(cmd)
-        print(f"数据库已备份到: {backup_file}")
-        return True
+        # 执行备份命令
+        with open(backup_file, 'w', encoding='utf8') as f:
+            process = subprocess.Popen(
+                mysqldump_cmd,
+                stdout=f,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            _, stderr = process.communicate()
+            
+            # 检查命令执行结果
+            if process.returncode != 0:
+                print(f"mysqldump执行失败，错误码: {process.returncode}")
+                print(f"错误信息: {stderr}")
+                
+                # 检查是否是mysqldump命令不存在
+                if "不是内部或外部命令" in stderr or "command not found" in stderr:
+                    print("mysqldump命令不可用，请确保MySQL客户端工具已安装并添加到PATH中")
+                    print("将尝试使用纯Python方式备份...")
+                    return backup_database_python()
+                
+                return False
+        
+        # 验证备份文件
+        if os.path.exists(backup_file):
+            file_size = os.path.getsize(backup_file)
+            if file_size == 0:
+                print(f"警告: 备份文件大小为0字节，备份可能失败")
+                os.remove(backup_file)  # 删除空文件
+                print("将尝试使用纯Python方式备份...")
+                return backup_database_python()
+            else:
+                print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
+                return True
+        else:
+            print(f"备份失败: 无法创建备份文件")
+            return False
+            
     except Exception as e:
         print(f"备份数据库失败: {e}")
+        print("将尝试使用纯Python方式备份...")
+        return backup_database_python()
+    finally:
+        conn.close()
+
+def backup_database_python():
+    """使用纯Python方式备份数据库（不依赖mysqldump）"""
+    backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'database_backups')
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_file = os.path.join(backup_dir, f'backup_{timestamp}.sql')
+    
+    print(f"\n开始使用纯Python方式备份数据库...")
+    
+    try:
+        # 获取数据库连接
+        db_manager = DatabaseManager()
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # 打开备份文件
+        with open(backup_file, 'w', encoding='utf8') as f:
+            # 写入文件头
+            f.write(f"-- MySQL dump by Python MySQLdb\n")
+            f.write(f"-- Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            f.write("SET NAMES utf8mb4;\n")
+            f.write("SET FOREIGN_KEY_CHECKS=0;\n\n")
+            
+            # 获取所有表
+            cursor.execute("SHOW TABLES")
+            tables = [table[0] for table in cursor.fetchall()]
+            
+            if not tables:
+                print(f"警告: 数据库中没有表")
+                f.write(f"-- 警告: 数据库中没有表\n")
+            
+            # 备份每个表
+            for table in tables:
+                print(f"备份表: {table}")
+                
+                # 获取表结构
+                cursor.execute(f"SHOW CREATE TABLE `{table}`")
+                create_table = cursor.fetchone()[1]
+                
+                f.write(f"\n-- Table structure for {table}\n")
+                f.write("DROP TABLE IF EXISTS `" + table + "`;\n")
+                f.write(create_table + ";\n\n")
+                
+                # 获取表数据
+                cursor.execute(f"SELECT * FROM `{table}`")
+                rows = cursor.fetchall()
+                
+                if rows:
+                    f.write(f"-- Data for {table}\n")
+                    f.write("LOCK TABLES `" + table + "` WRITE;\n")
+                    
+                    # 获取列名
+                    cursor.execute(f"DESCRIBE `{table}`")
+                    columns = [column[0] for column in cursor.fetchall()]
+                    
+                    # 构建INSERT语句
+                    for row in rows:
+                        values = []
+                        for value in row:
+                            if value is None:
+                                values.append("NULL")
+                            elif isinstance(value, (int, float)):
+                                values.append(str(value))
+                            elif isinstance(value, bytes):
+                                values.append("X'" + value.hex() + "'")
+                            else:
+                                values.append("'" + str(value).replace("'", "''") + "'")
+                                
+                        f.write(f"INSERT INTO `{table}` VALUES ({', '.join(values)});\n")
+                    
+                    f.write("UNLOCK TABLES;\n\n")
+            
+            # 写入文件尾
+            f.write("SET FOREIGN_KEY_CHECKS=1;\n")
+        
+        # 验证备份文件
+        file_size = os.path.getsize(backup_file)
+        if file_size == 0:
+            print(f"警告: 备份文件大小为0字节，备份可能失败")
+            os.remove(backup_file)  # 删除空文件
+            return False
+        else:
+            print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
+            return True
+            
+    except Exception as e:
+        print(f"纯Python方式备份失败: {e}")
+        if os.path.exists(backup_file):
+            os.remove(backup_file)  # 删除可能的部分备份文件
         return False
     finally:
+        cursor.close()
         conn.close()
 
 def clear_stock_data():

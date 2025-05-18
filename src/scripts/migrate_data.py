@@ -5,6 +5,8 @@ import os
 import shutil
 from tqdm import tqdm
 import json
+import subprocess
+import shlex
 
 class DataMigrator:
     def __init__(self):
@@ -97,20 +99,94 @@ class DataMigrator:
         print(f"表 {table_name} 结构已同步")
         return True
 
-    def backup_database(self, remote_ip, remote_user, remote_pass, remote_db, remote_port=33306):
-        """备份远程数据库"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = os.path.join(self.backup_dir, f"backup_{timestamp}.sql")
+    def backup_database(self, remote_ip, remote_user, remote_pass, remote_db, remote_port=33306, backup_dir=None):
+        """备份远程数据库
         
-        print("\n开始备份远程数据库...")
+        Args:
+            remote_ip: 远程数据库IP
+            remote_user: 远程数据库用户名
+            remote_pass: 远程数据库密码
+            remote_db: 远程数据库名
+            remote_port: 远程数据库端口，默认33306
+            backup_dir: 自定义备份目录，如果为None则使用默认目录
+            
+        Returns:
+            str: 备份文件路径，如果备份失败则返回None
+        """
+        # 使用自定义备份目录或默认目录
+        target_backup_dir = backup_dir if backup_dir else self.backup_dir
+        
+        # 确保备份目录存在
+        if not os.path.exists(target_backup_dir):
+            try:
+                os.makedirs(target_backup_dir)
+                print(f"创建备份目录: {target_backup_dir}")
+            except Exception as e:
+                print(f"创建备份目录失败: {e}")
+                return None
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = os.path.join(target_backup_dir, f"backup_{remote_db}_{timestamp}.sql")
+        
+        print(f"\n开始备份远程数据库 {remote_db}...")
         try:
-            # 使用mysqldump命令备份
-            os.system(f"mysqldump -h {remote_ip} -P {remote_port} -u {remote_user} -p{remote_pass} {remote_db} > {backup_file}")
-            print(f"数据库已备份到: {backup_file}")
-            return backup_file
+            # 构建mysqldump命令
+            # 注意：在Windows中，不能使用shlex.quote处理密码，因为它会添加单引号，而Windows命令行不支持
+            mysqldump_cmd = [
+                "mysqldump",
+                "-h", remote_ip,
+                "-P", str(remote_port),
+                "-u", remote_user,
+                f"-p{remote_pass}",
+                "--set-charset",
+                "--routines",
+                "--triggers",
+                "--single-transaction",
+                remote_db
+            ]
+            
+            # 执行备份命令
+            with open(backup_file, 'w', encoding='utf8') as f:
+                process = subprocess.Popen(
+                    mysqldump_cmd,
+                    stdout=f,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                _, stderr = process.communicate()
+                
+                # 检查命令执行结果
+                if process.returncode != 0:
+                    print(f"mysqldump执行失败，错误码: {process.returncode}")
+                    print(f"错误信息: {stderr}")
+                    
+                    # 检查是否是mysqldump命令不存在
+                    if "不是内部或外部命令" in stderr or "command not found" in stderr:
+                        print("mysqldump命令不可用，请确保MySQL客户端工具已安装并添加到PATH中")
+                        print("将尝试使用纯Python方式备份...")
+                        return self.backup_database_python(remote_ip, remote_user, remote_pass, remote_db, remote_port, backup_dir)
+                    
+                    return None
+            
+            # 验证备份文件
+            if os.path.exists(backup_file):
+                file_size = os.path.getsize(backup_file)
+                if file_size == 0:
+                    print(f"警告: 备份文件大小为0字节，备份可能失败")
+                    print("将尝试使用纯Python方式备份...")
+                    os.remove(backup_file)  # 删除空文件
+                    return self.backup_database_python(remote_ip, remote_user, remote_pass, remote_db, remote_port, backup_dir)
+                else:
+                    print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
+                    return backup_file
+            else:
+                print(f"备份失败: 无法创建备份文件")
+                return None
+                
         except Exception as e:
             print(f"备份失败: {e}")
-            return None
+            print("将尝试使用纯Python方式备份...")
+            return self.backup_database_python(remote_ip, remote_user, remote_pass, remote_db, remote_port, backup_dir)
 
     def verify_data(self, table_name, local_rows, remote_rows):
         """验证数据完整性"""
@@ -185,7 +261,7 @@ class DataMigrator:
             print(f"迁移表 {table_name} 时出错: {e}")
             raise
 
-    def migrate_all_tables(self, local_db, local_user, local_pass, remote_db, remote_ip, remote_user, remote_pass, selected_tables=None, local_host="localhost", local_port=3306, remote_port=33306):
+    def migrate_all_tables(self, local_db, local_user, local_pass, remote_db, remote_ip, remote_user, remote_pass, selected_tables=None, local_host="localhost", local_port=3306, remote_port=33306, backup_dir=None):
         """迁移所有选中的表"""
         print("开始数据迁移...")
         print(f"迁移时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -210,7 +286,7 @@ class DataMigrator:
             ]
         
         # 先备份远程数据库
-        backup_file = self.backup_database(remote_ip, remote_user, remote_pass, remote_db, remote_port=remote_port)
+        backup_file = self.backup_database(remote_ip, remote_user, remote_pass, remote_db, remote_port=remote_port, backup_dir=backup_dir)
         if not backup_file:
             print("警告: 备份失败，是否继续迁移？(y/n)")
             if input().lower() != 'y':
@@ -331,9 +407,25 @@ class DataMigrator:
                             pass
         return reports
 
-    def restore_database(self, backup_file, db_ip, user, passwd, db_name, port=33306):
-        """从备份文件恢复数据库"""
-        backup_path = os.path.join(self.backup_dir, backup_file)
+    def restore_database(self, backup_file, db_ip, user, passwd, db_name, port=33306, backup_dir=None):
+        """从备份文件恢复数据库
+        
+        Args:
+            backup_file: 备份文件名
+            db_ip: 数据库IP
+            user: 数据库用户名
+            passwd: 数据库密码
+            db_name: 数据库名
+            port: 数据库端口，默认33306
+            backup_dir: 自定义备份目录，如果为None则使用默认目录
+            
+        Returns:
+            bool: 恢复是否成功
+        """
+        # 使用自定义备份目录或默认目录
+        target_backup_dir = backup_dir if backup_dir else self.backup_dir
+        
+        backup_path = os.path.join(target_backup_dir, backup_file)
         if not os.path.exists(backup_path):
             print(f"备份文件不存在: {backup_path}")
             return False
@@ -364,6 +456,201 @@ class DataMigrator:
         except Exception as e:
             print(f"恢复数据库时出错: {e}")
             return False
+
+    def manual_backup(self, db_name, db_ip, user, passwd, port=33306, backup_dir=None):
+        """手动备份数据库，不进行数据迁移
+        
+        Args:
+            db_name: 数据库名
+            db_ip: 数据库IP
+            user: 数据库用户名
+            passwd: 数据库密码
+            port: 数据库端口，默认33306
+            backup_dir: 自定义备份目录，如果为None则使用默认目录
+            
+        Returns:
+            str: 备份文件路径，如果备份失败则返回None
+        """
+        try:
+            # 尝试连接到数据库，确保数据库可访问
+            try:
+                conn = MySQLdb.connect(
+                    host=db_ip,
+                    port=port,
+                    user=user,
+                    passwd=passwd,
+                    db=db_name,
+                    charset="utf8mb4",
+                    connect_timeout=5
+                )
+                conn.close()
+                print(f"成功连接到数据库 {db_name}")
+            except Exception as e:
+                print(f"无法连接到数据库 {db_name}: {e}")
+                # 提供更有用的错误信息
+                if "Can't connect to MySQL server" in str(e):
+                    print("可能原因: 无法连接到MySQL服务器，请检查网络连接和服务器状态。")
+                elif "Access denied" in str(e):
+                    print("可能原因: 访问被拒绝，请检查用户名和密码。")
+                elif "Unknown database" in str(e):
+                    print("可能原因: 数据库不存在，请先创建数据库。")
+                return None
+            
+            # 执行备份
+            backup_file = self.backup_database(db_ip, user, passwd, db_name, remote_port=port, backup_dir=backup_dir)
+            
+            # 验证备份文件
+            if backup_file and os.path.exists(backup_file):
+                file_size = os.path.getsize(backup_file)
+                if file_size == 0:
+                    print(f"警告: 备份文件大小为0字节，备份可能失败")
+                    # 尝试使用纯Python方式备份
+                    print("尝试使用纯Python方式备份...")
+                    os.remove(backup_file)  # 删除空文件
+                    return self.backup_database_python(db_ip, user, passwd, db_name, remote_port=port, backup_dir=backup_dir)
+                
+                # 检查文件内容
+                try:
+                    with open(backup_file, 'r', encoding='utf8') as f:
+                        content = f.read(1000)  # 只读取前1000个字符进行检查
+                        if not content or content.strip() == "":
+                            print(f"警告: 备份文件内容为空，备份可能失败")
+                            # 尝试使用纯Python方式备份
+                            print("尝试使用纯Python方式备份...")
+                            os.remove(backup_file)  # 删除空文件
+                            return self.backup_database_python(db_ip, user, passwd, db_name, remote_port=port, backup_dir=backup_dir)
+                except Exception as e:
+                    print(f"检查备份文件内容时出错: {e}")
+            
+            return backup_file
+        except Exception as e:
+            print(f"备份数据库 {db_name} 失败: {e}")
+            return None
+
+    def backup_database_python(self, remote_ip, remote_user, remote_pass, remote_db, remote_port=33306, backup_dir=None):
+        """使用纯Python方式备份数据库（不依赖mysqldump）
+        
+        Args:
+            remote_ip: 远程数据库IP
+            remote_user: 远程数据库用户名
+            remote_pass: 远程数据库密码
+            remote_db: 远程数据库名
+            remote_port: 远程数据库端口，默认33306
+            backup_dir: 自定义备份目录，如果为None则使用默认目录
+            
+        Returns:
+            str: 备份文件路径，如果备份失败则返回None
+        """
+        # 使用自定义备份目录或默认目录
+        target_backup_dir = backup_dir if backup_dir else self.backup_dir
+        
+        # 确保备份目录存在
+        if not os.path.exists(target_backup_dir):
+            try:
+                os.makedirs(target_backup_dir)
+                print(f"创建备份目录: {target_backup_dir}")
+            except Exception as e:
+                print(f"创建备份目录失败: {e}")
+                return None
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = os.path.join(target_backup_dir, f"backup_{remote_db}_{timestamp}.sql")
+        
+        print(f"\n开始使用纯Python方式备份数据库 {remote_db}...")
+        
+        try:
+            # 连接到数据库
+            conn = MySQLdb.connect(
+                host=remote_ip,
+                port=remote_port,
+                user=remote_user,
+                passwd=remote_pass,
+                db=remote_db,
+                charset="utf8mb4"
+            )
+            cursor = conn.cursor()
+            
+            # 打开备份文件
+            with open(backup_file, 'w', encoding='utf8') as f:
+                # 写入文件头
+                f.write(f"-- MySQL dump by Python MySQLdb\n")
+                f.write(f"-- Database: {remote_db}\n")
+                f.write(f"-- Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                f.write("SET NAMES utf8mb4;\n")
+                f.write("SET FOREIGN_KEY_CHECKS=0;\n\n")
+                
+                # 获取所有表
+                cursor.execute("SHOW TABLES")
+                tables = [table[0] for table in cursor.fetchall()]
+                
+                if not tables:
+                    print(f"警告: 数据库 {remote_db} 中没有表")
+                    f.write(f"-- 警告: 数据库 {remote_db} 中没有表\n")
+                
+                # 备份每个表
+                for table in tables:
+                    print(f"备份表: {table}")
+                    
+                    # 获取表结构
+                    cursor.execute(f"SHOW CREATE TABLE `{table}`")
+                    create_table = cursor.fetchone()[1]
+                    
+                    f.write(f"\n-- Table structure for {table}\n")
+                    f.write("DROP TABLE IF EXISTS `" + table + "`;\n")
+                    f.write(create_table + ";\n\n")
+                    
+                    # 获取表数据
+                    cursor.execute(f"SELECT * FROM `{table}`")
+                    rows = cursor.fetchall()
+                    
+                    if rows:
+                        f.write(f"-- Data for {table}\n")
+                        f.write("LOCK TABLES `" + table + "` WRITE;\n")
+                        
+                        # 获取列名
+                        cursor.execute(f"DESCRIBE `{table}`")
+                        columns = [column[0] for column in cursor.fetchall()]
+                        
+                        # 构建INSERT语句
+                        for row in rows:
+                            values = []
+                            for value in row:
+                                if value is None:
+                                    values.append("NULL")
+                                elif isinstance(value, (int, float)):
+                                    values.append(str(value))
+                                elif isinstance(value, bytes):
+                                    values.append("X'" + value.hex() + "'")
+                                else:
+                                    values.append("'" + str(value).replace("'", "''") + "'")
+                                    
+                            f.write(f"INSERT INTO `{table}` VALUES ({', '.join(values)});\n")
+                        
+                        f.write("UNLOCK TABLES;\n\n")
+                
+                # 写入文件尾
+                f.write("SET FOREIGN_KEY_CHECKS=1;\n")
+            
+            # 关闭连接
+            cursor.close()
+            conn.close()
+            
+            # 验证备份文件
+            file_size = os.path.getsize(backup_file)
+            if file_size == 0:
+                print(f"警告: 备份文件大小为0字节，备份可能失败")
+                os.remove(backup_file)  # 删除空文件
+                return None
+            else:
+                print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
+                return backup_file
+                
+        except Exception as e:
+            print(f"纯Python方式备份失败: {e}")
+            if os.path.exists(backup_file):
+                os.remove(backup_file)  # 删除可能的部分备份文件
+            return None
 
 def main():
     """命令行入口函数"""

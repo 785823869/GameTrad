@@ -44,6 +44,10 @@ class OCRPreview(ttk.Frame):
         self.empty_label = ttk.Label(self.scrollable_frame, text="▶ 暂无图片，请添加或粘贴图片后在此处查看 ◀", font=("", 10, "bold"))
         self.empty_label.pack(pady=10)
         
+        # 添加图片计数标签
+        self.count_label = ttk.Label(self, text="已添加 0 张图片", font=("", 9))
+        self.count_label.pack(side="bottom", fill="x", padx=5, pady=2)
+        
         # 绑定鼠标滚轮事件
         self.bind_all("<MouseWheel>", self._on_mousewheel)
         
@@ -164,6 +168,10 @@ class OCRPreview(ttk.Frame):
         # 清除引用
         self.thumbnails.clear()
         self.photo_refs.clear()
+        
+        # 更新图片计数标签
+        image_count = len(self.images)
+        self.count_label.config(text=f"已添加 {image_count} 张图片")
         
         # 重新创建图片预览
         for idx, img in enumerate(self.images):

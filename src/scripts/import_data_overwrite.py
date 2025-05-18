@@ -28,75 +28,63 @@ def backup_database():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_file = os.path.join(backup_dir, f'backup_{timestamp}.sql')
     
-    db_manager = DatabaseManager()
-    conn = db_manager.get_connection()
+    print(f"\n开始备份数据库到: {backup_file}")
     
     try:
-        # 使用与DatabaseManager.get_connection相同的配置
-        host = "sql.didiba.uk"
-        port = 33306
-        user = "root"
-        password = "Cenb1017!@"
-        database = "OcrTrade"
+        # 获取数据库连接参数
+        db_manager = DatabaseManager()
+        conn = db_manager.get_connection()
         
-        # 使用subprocess.Popen代替os.system以获得更好的错误处理
-        mysqldump_cmd = [
-            "mysqldump",
-            "-h", host,
-            "-P", str(port),
-            "-u", user,
-            f"-p{password}",
-            "--set-charset",
-            "--routines",
-            "--triggers",
-            "--single-transaction",
-            database
-        ]
+        # 获取连接参数
+        config = {
+            'host': db_manager.config['host'],
+            'port': db_manager.config['port'],
+            'user': db_manager.config['user'],
+            'passwd': db_manager.config['passwd'],
+            'db': db_manager.config['db']
+        }
         
-        # 执行备份命令
-        with open(backup_file, 'w', encoding='utf8') as f:
-            process = subprocess.Popen(
-                mysqldump_cmd,
-                stdout=f,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
-            _, stderr = process.communicate()
+        # 尝试使用mysqldump命令行工具备份
+        try:
+            cmd = f"mysqldump --host={config['host']} --port={config['port']} --user={config['user']} --password={config['passwd']} {config['db']} > \"{backup_file}\""
             
-            # 检查命令执行结果
+            # 执行命令
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            
             if process.returncode != 0:
-                print(f"mysqldump执行失败，错误码: {process.returncode}")
-                print(f"错误信息: {stderr}")
+                print(f"mysqldump命令执行失败: {stderr.decode('utf-8', errors='ignore')}")
                 
                 # 检查是否是mysqldump命令不存在
-                if "不是内部或外部命令" in stderr or "command not found" in stderr:
+                if "不是内部或外部命令" in stderr.decode('utf-8', errors='ignore') or "command not found" in stderr.decode('utf-8', errors='ignore'):
                     print("mysqldump命令不可用，请确保MySQL客户端工具已安装并添加到PATH中")
                     print("将尝试使用纯Python方式备份...")
                     return backup_database_python()
                 
                 return False
-        
-        # 验证备份文件
-        if os.path.exists(backup_file):
-            file_size = os.path.getsize(backup_file)
-            if file_size == 0:
-                print(f"警告: 备份文件大小为0字节，备份可能失败")
-                os.remove(backup_file)  # 删除空文件
-                print("将尝试使用纯Python方式备份...")
-                return backup_database_python()
-            else:
-                print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
-                return True
-        else:
-            print(f"备份失败: 无法创建备份文件")
-            return False
             
-    except Exception as e:
-        print(f"备份数据库失败: {e}")
-        print("将尝试使用纯Python方式备份...")
-        return backup_database_python()
+            # 验证备份文件
+            if os.path.exists(backup_file):
+                file_size = os.path.getsize(backup_file)
+                if file_size == 0:
+                    print(f"警告: 备份文件大小为0字节，备份可能失败")
+                    os.remove(backup_file)  # 删除空文件
+                    print("将尝试使用纯Python方式备份...")
+                    return backup_database_python()
+                else:
+                    print(f"数据库已备份到: {backup_file} (大小: {file_size/1024:.1f} KB)")
+                    return True
+            else:
+                print(f"备份失败: 无法创建备份文件")
+                return False
+                
+        except Exception as e:
+            print(f"备份数据库失败: {e}")
+            print("将尝试使用纯Python方式备份...")
+            return backup_database_python()
     finally:
-        conn.close()
+        if 'conn' in locals() and conn:
+            conn.close()
 
 def backup_database_python():
     """使用纯Python方式备份数据库（不依赖mysqldump）"""

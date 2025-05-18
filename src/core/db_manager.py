@@ -7,9 +7,13 @@ from MySQLdb import OperationalError, IntegrityError
 from datetime import datetime
 from decimal import Decimal
 import json
+import os
 
 class DatabaseManager:
     def __init__(self):
+        # 加载数据库配置
+        self.config = self.load_db_config()
+        
         # 检测MySQL连接有效性
         try:
             conn = self.get_connection()
@@ -18,20 +22,108 @@ class DatabaseManager:
             raise RuntimeError(f"MySQL连接失败: {e}")
         self._create_tables_mysql()  # MySQL建表
 
+    def load_db_config(self):
+        """从配置文件加载数据库连接参数"""
+        # 默认配置
+        default_config = {
+            'host': "sql.didiba.uk",
+            'port': 33306,
+            'user': "root",
+            'passwd': "Cenb1017!@",
+            'db': "OcrTrade",
+            'charset': "utf8mb4",
+            'connect_timeout': 10
+        }
+        
+        # 创建配置目录
+        config_dir = os.path.join(os.path.expanduser("~"), ".gametrad")
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+            
+        # 配置文件路径
+        config_file = os.path.join(config_dir, "db_config.json")
+        
+        # 如果配置文件存在，则加载配置
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    # 确保所有必要的配置项都存在
+                    for key in default_config:
+                        if key not in config:
+                            config[key] = default_config[key]
+                    # 确保端口是整数
+                    config['port'] = int(config['port'])
+                    config['connect_timeout'] = int(config['connect_timeout'])
+                    return config
+            except Exception as e:
+                print(f"加载数据库配置失败: {e}")
+                # 如果加载失败，使用默认配置
+                return default_config
+        else:
+            # 如果配置文件不存在，创建默认配置文件
+            try:
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"创建默认数据库配置文件失败: {e}")
+            return default_config
+    
+    def save_db_config(self, config):
+        """保存数据库连接参数到配置文件"""
+        # 创建配置目录
+        config_dir = os.path.join(os.path.expanduser("~"), ".gametrad")
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+            
+        # 配置文件路径
+        config_file = os.path.join(config_dir, "db_config.json")
+        
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            # 更新当前配置
+            self.config = config
+            return True
+        except Exception as e:
+            print(f"保存数据库配置失败: {e}")
+            return False
+
     def get_connection(self):
         try:
             return MySQLdb.connect(
-                host="sql.didiba.uk",  # 新的远程服务器地址
-                port=33306,            # 新的MySQL端口
-                user="root",          # 数据库用户名
-                passwd="Cenb1017!@",  # 数据库密码
-                db="OcrTrade",        # 数据库名
-                charset="utf8mb4",    # 字符集
-                connect_timeout=10    # 连接超时时间
+                host=self.config['host'],
+                port=self.config['port'],
+                user=self.config['user'],
+                passwd=self.config['passwd'],
+                db=self.config['db'],
+                charset=self.config['charset'],
+                connect_timeout=self.config['connect_timeout']
             )
         except MySQLdb.Error as e:
             print(f"MySQL连接错误: {e}")
-            raise RuntimeError(f"无法连接到远程MySQL服务器(sql.didiba.uk): {e}")
+            raise RuntimeError(f"无法连接到MySQL服务器({self.config['host']}): {e}")
+
+    def test_connection(self, config):
+        """测试数据库连接"""
+        try:
+            conn = MySQLdb.connect(
+                host=config['host'],
+                port=int(config['port']),
+                user=config['user'],
+                passwd=config['passwd'],
+                db=config['db'],
+                charset=config['charset'],
+                connect_timeout=int(config['connect_timeout'])
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT VERSION()")
+            version = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return True, f"连接成功！MySQL版本: {version[0]}"
+        except Exception as e:
+            return False, f"连接失败: {str(e)}"
 
     def close(self):
         pass  # 不再需要全局关闭

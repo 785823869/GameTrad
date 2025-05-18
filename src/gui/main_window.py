@@ -155,6 +155,7 @@ class GameTradingSystemGUI:
         settings_menu = tb.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="设置", menu=settings_menu)
         settings_menu.add_command(label="Server酱配置", command=self.open_server_chan_config)
+        settings_menu.add_command(label="数据库连接设置", command=self.open_db_connection_config)
         settings_menu.add_command(label="公式管理", command=self.open_formula_manager)
         settings_menu.add_command(label="备注规则配置", command=self.open_note_rules_config)
         settings_menu.add_command(label="物品字典管理", command=self.open_item_dict_manager)
@@ -194,6 +195,184 @@ class GameTradingSystemGUI:
                 messagebox.showerror("更新检查失败", f"检查更新时发生错误:\n{str(e)}\n\n请检查网络连接或手动访问官网获取更新。")
             except:
                 self.logger.error("无法显示错误对话框")
+    
+    def open_db_connection_config(self):
+        """打开数据库连接设置窗口"""
+        self.logger.info("打开数据库连接设置窗口")
+        
+        # 创建设置窗口
+        config_window = tb.Toplevel(self.root)
+        config_window.title("数据库连接设置")
+        config_window.geometry("500x400")
+        config_window.resizable(False, False)
+        
+        # 加载当前数据库配置
+        current_config = self.db_manager.config
+        
+        # 创建表单
+        form_frame = tb.Frame(config_window, padding=20)
+        form_frame.pack(fill="both", expand=True)
+        
+        # 数据库连接参数输入框
+        tb.Label(form_frame, text="主机地址:").grid(row=0, column=0, sticky="w", pady=5)
+        host_var = StringVar(value=current_config['host'])
+        host_entry = tb.Entry(form_frame, textvariable=host_var, width=30)
+        host_entry.grid(row=0, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="端口:").grid(row=1, column=0, sticky="w", pady=5)
+        port_var = StringVar(value=str(current_config['port']))
+        port_entry = tb.Entry(form_frame, textvariable=port_var, width=10)
+        port_entry.grid(row=1, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="用户名:").grid(row=2, column=0, sticky="w", pady=5)
+        user_var = StringVar(value=current_config['user'])
+        user_entry = tb.Entry(form_frame, textvariable=user_var, width=20)
+        user_entry.grid(row=2, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="密码:").grid(row=3, column=0, sticky="w", pady=5)
+        passwd_var = StringVar(value=current_config['passwd'])
+        passwd_entry = tb.Entry(form_frame, textvariable=passwd_var, width=30, show="*")
+        passwd_entry.grid(row=3, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="数据库名:").grid(row=4, column=0, sticky="w", pady=5)
+        db_var = StringVar(value=current_config['db'])
+        db_entry = tb.Entry(form_frame, textvariable=db_var, width=20)
+        db_entry.grid(row=4, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="字符集:").grid(row=5, column=0, sticky="w", pady=5)
+        charset_var = StringVar(value=current_config['charset'])
+        charset_entry = tb.Entry(form_frame, textvariable=charset_var, width=10)
+        charset_entry.grid(row=5, column=1, sticky="w", pady=5)
+        
+        tb.Label(form_frame, text="连接超时(秒):").grid(row=6, column=0, sticky="w", pady=5)
+        timeout_var = StringVar(value=str(current_config['connect_timeout']))
+        timeout_entry = tb.Entry(form_frame, textvariable=timeout_var, width=5)
+        timeout_entry.grid(row=6, column=1, sticky="w", pady=5)
+        
+        # 状态显示区域
+        status_frame = tb.Frame(form_frame)
+        status_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
+        
+        status_var = StringVar(value="")
+        status_label = tb.Label(status_frame, textvariable=status_var, wraplength=400)
+        status_label.pack(fill="x", expand=True)
+        
+        # 按钮区域
+        button_frame = tb.Frame(form_frame)
+        button_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=10)
+        
+        # 测试连接按钮
+        def test_connection():
+            # 收集当前输入的配置
+            config = {
+                'host': host_var.get(),
+                'port': port_var.get(),
+                'user': user_var.get(),
+                'passwd': passwd_var.get(),
+                'db': db_var.get(),
+                'charset': charset_var.get(),
+                'connect_timeout': timeout_var.get()
+            }
+            
+            # 测试连接
+            self.logger.info(f"测试数据库连接: {config['host']}:{config['port']}")
+            status_var.set("正在测试连接...")
+            config_window.update()
+            
+            success, message = self.db_manager.test_connection(config)
+            
+            if success:
+                status_var.set(f"✓ {message}")
+                status_label.config(foreground="green")
+            else:
+                status_var.set(f"✗ {message}")
+                status_label.config(foreground="red")
+        
+        # 保存配置按钮
+        def save_config():
+            # 收集当前输入的配置
+            config = {
+                'host': host_var.get(),
+                'port': port_var.get(),
+                'user': user_var.get(),
+                'passwd': passwd_var.get(),
+                'db': db_var.get(),
+                'charset': charset_var.get(),
+                'connect_timeout': timeout_var.get()
+            }
+            
+            # 验证配置
+            if not config['host'] or not config['port'] or not config['user'] or not config['db']:
+                status_var.set("✗ 请填写所有必要的连接参数")
+                status_label.config(foreground="red")
+                return
+            
+            # 保存配置
+            self.logger.info(f"保存数据库连接配置: {config['host']}:{config['port']}")
+            
+            if self.db_manager.save_db_config(config):
+                status_var.set("✓ 配置已保存。重启应用程序后生效。")
+                status_label.config(foreground="green")
+                
+                # 提示用户重启应用程序
+                messagebox.showinfo("配置已保存", "数据库连接配置已保存。\n请重启应用程序以应用新的配置。")
+            else:
+                status_var.set("✗ 保存配置失败")
+                status_label.config(foreground="red")
+        
+        # 恢复默认配置按钮
+        def reset_config():
+            # 确认是否恢复默认配置
+            if not messagebox.askyesno("确认", "确定要恢复默认数据库连接配置吗？"):
+                return
+                
+            # 默认配置
+            default_config = {
+                'host': "sql.didiba.uk",
+                'port': "33306",
+                'user': "root",
+                'passwd': "Cenb1017!@",
+                'db': "OcrTrade",
+                'charset': "utf8mb4",
+                'connect_timeout': "10"
+            }
+            
+            # 更新输入框
+            host_var.set(default_config['host'])
+            port_var.set(default_config['port'])
+            user_var.set(default_config['user'])
+            passwd_var.set(default_config['passwd'])
+            db_var.set(default_config['db'])
+            charset_var.set(default_config['charset'])
+            timeout_var.set(default_config['connect_timeout'])
+            
+            status_var.set("已恢复默认配置，点击保存以应用")
+            status_label.config(foreground="blue")
+        
+        # 添加按钮
+        test_btn = tb.Button(button_frame, text="测试连接", command=test_connection, bootstyle="info")
+        test_btn.pack(side="left", padx=5)
+        
+        reset_btn = tb.Button(button_frame, text="恢复默认", command=reset_config, bootstyle="warning")
+        reset_btn.pack(side="left", padx=5)
+        
+        save_btn = tb.Button(button_frame, text="保存配置", command=save_config, bootstyle="success")
+        save_btn.pack(side="right", padx=5)
+        
+        cancel_btn = tb.Button(button_frame, text="取消", command=config_window.destroy, bootstyle="secondary")
+        cancel_btn.pack(side="right", padx=5)
+        
+        # 添加说明文本
+        note_frame = tb.Frame(form_frame)
+        note_frame.grid(row=9, column=0, columnspan=2, sticky="ew", pady=10)
+        
+        note_text = """注意事项:
+1. 修改数据库连接配置后需要重启应用程序才能生效
+2. 请确保输入正确的连接参数，否则应用程序可能无法正常工作
+3. 如果连接测试失败，请检查网络连接和数据库服务器状态"""
+        
+        note_label = tb.Label(note_frame, text=note_text, justify="left", wraplength=450)
+        note_label.pack(fill="x", expand=True)
         
     def open_server_chan_config(self):
         """打开Server酱配置窗口"""

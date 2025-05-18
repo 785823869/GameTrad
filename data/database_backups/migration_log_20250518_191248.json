@@ -1,0 +1,13 @@
+{
+  "timestamp": "20250518_191248",
+  "tables": [
+    "stock_in",
+    "stock_out",
+    "trade_monitor",
+    "inventory",
+    "operation_logs",
+    "item_dict",
+    "silver_monitor"
+  ],
+  "status": "success"
+}

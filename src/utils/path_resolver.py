@@ -243,5 +243,28 @@ def get_config_path(config_name):
     """
     return os.path.join(get_user_config_dir(), config_name)
 
+def get_script_path(relative_script_path):
+    """
+    获取脚本文件的绝对路径，适用于开发和打包环境
+    
+    Args:
+        relative_script_path: 相对于src目录的脚本路径，例如 'scripts/migrate_data_gui.py'
+        
+    Returns:
+        str: 脚本文件的绝对路径
+    """
+    # 确保路径使用系统的路径分隔符
+    clean_path = relative_script_path.replace('\\', os.sep).replace('/', os.sep)
+    
+    # 在开发环境中，脚本应该位于src目录下
+    if not is_frozen():
+        src_dir = os.path.join(get_app_root(), 'src')
+        script_path = os.path.join(src_dir, clean_path)
+    else:
+        # 在打包环境中，脚本应该位于PyInstaller解压的临时目录下的src目录中
+        script_path = os.path.join(get_app_root(), 'src', clean_path)
+    
+    return script_path
+
 # 在模块初始化时进行配置迁移
 migrate_config_to_user_dir() 

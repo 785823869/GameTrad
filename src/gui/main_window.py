@@ -48,6 +48,8 @@ from src.utils.ui_manager import UIManager
 from src.utils.sidebar import ModernSidebar
 # 导入更新对话框
 from src.gui.dialogs.update_dialog import UpdateDialog
+# 导入服务器管理对话框
+from src.gui.dialogs.server_manager_dialog import ServerManagerDialog
 # 导入版本信息
 from src import __version__
 # 导入操作类型常量
@@ -92,7 +94,12 @@ class GameTradingSystemGUI:
         
         # 添加版本信息到窗口标题
         self.version = __version__
-        self.root.title(f"GameTrad交易管理系统 v{self.version}")
+        
+        # 初始化数据库管理器（移到这里）
+        self.db_manager = DatabaseManager()
+        
+        # 显示当前数据库名称
+        self.root.title(f"GameTrad交易管理系统 v{self.version} - {self.db_manager.config['db']}")
         
         # 使用路径解析器处理配置文件路径
         try:
@@ -118,8 +125,6 @@ class GameTradingSystemGUI:
         
         # 确保配置目录存在
         os.makedirs(os.path.join("data", "config"), exist_ok=True)
-        
-        self.db_manager = DatabaseManager()
         
         # 设置默认中文字体
         self.chinese_font = 'Microsoft YaHei'
@@ -150,7 +155,7 @@ class GameTradingSystemGUI:
         file_menu.add_command(label="导入数据", command=self.open_import_data_dialog)
         file_menu.add_command(label="导出报告", command=self.export_reports)
         file_menu.add_separator()
-        file_menu.add_command(label="退出", command=self.root.quit)
+        file_menu.add_command(label="退出", command=self.on_exit)
         
         # 设置菜单
         settings_menu = tb.Menu(menubar, tearoff=0)
@@ -160,6 +165,11 @@ class GameTradingSystemGUI:
         settings_menu.add_command(label="公式管理", command=self.open_formula_manager)
         settings_menu.add_command(label="备注规则配置", command=self.open_note_rules_config)
         settings_menu.add_command(label="物品字典管理", command=self.open_item_dict_manager)
+        
+        # 游戏服务器菜单
+        server_menu = tb.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="游戏服务器", menu=server_menu)
+        server_menu.add_command(label="服务器管理", command=self.open_server_manager)
         
         # 帮助菜单
         help_menu = tb.Menu(menubar, tearoff=0)
@@ -2348,6 +2358,20 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
                 log['操作时间'],
                 json.dumps(log['数据'], ensure_ascii=False)
             ))
+
+    def open_server_manager(self):
+        """打开服务器管理对话框（集成创建和切换功能）"""
+        try:
+            dialog = ServerManagerDialog(self.root, self.db_manager, self)
+            dialog.grab_set()
+        except Exception as e:
+            self.logger.error(f"打开服务器管理对话框失败: {e}", exc_info=True)
+            messagebox.showerror("错误", f"打开服务器管理对话框失败: {str(e)}")
+            
+    def on_exit(self):
+        """退出应用程序"""
+        if messagebox.askyesno("确认退出", "确定要退出应用程序吗？"):
+            self.root.destroy()
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 使用flatly主题

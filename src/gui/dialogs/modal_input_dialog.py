@@ -8,7 +8,7 @@ class ModalInputDialog:
     """
     通用的模态输入对话框，用于统一风格的数据输入界面
     """
-    def __init__(self, parent, title, fields, callback, initial_values=None, validators=None):
+    def __init__(self, parent, title, fields, callback, initial_values=None, validators=None, explanation=None):
         """
         初始化模态输入对话框
         
@@ -20,6 +20,7 @@ class ModalInputDialog:
         - callback: 回调函数，接收字段值的字典作为参数
         - initial_values: 初始值字典，可选
         - validators: 额外的验证器字典，格式为 {field_name: validator_func, ...}
+        - explanation: 说明文本，显示在字段上方，可选
         """
         self.parent = parent
         self.title = title
@@ -27,9 +28,11 @@ class ModalInputDialog:
         self.callback = callback
         self.initial_values = initial_values or {}
         self.validators = validators or {}
+        self.explanation = explanation
         
         self.entries = {}
         self.error_labels = {}
+        self.field_labels = {}  # 保存字段标签的引用
         
         self.create_dialog()
         
@@ -56,6 +59,11 @@ class ModalInputDialog:
         # 窗口居中
         w = 480  # 增大默认宽度
         h = max(320, 100 + len(self.fields) * 60)
+        
+        # 如果有说明文本，增加窗口高度
+        if self.explanation:
+            h += 80
+            
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
         x = (screen_width - w) // 2
@@ -67,16 +75,29 @@ class ModalInputDialog:
         style.configure('Dialog.TFrame', background='#f4f8fb')
         style.configure('Dialog.TLabel', font=('微软雅黑', 11), background='#f4f8fb')
         style.configure('Dialog.TEntry', font=('微软雅黑', 11))
-        style.configure('Dialog.TButton', font=('微软雅黑', 12, 'bold'), padding=10)
+        style.configure('Dialog.TButton', font=('微软雅黑', 11), padding=(8, 6))
         style.map('Dialog.TButton', background=[('active', '#4f686e')], foreground=[('active', '#ffffff')])
         
         # 创建主容器框架，使用place布局
         main_container = tb.Frame(self.dialog, style='Dialog.TFrame')
         main_container.place(x=0, y=0, relwidth=1, relheight=1)
         
+        # 添加说明文本（如果有）
+        y_offset = 20
+        if self.explanation:
+            explanation_label = tb.Label(
+                main_container,
+                text=self.explanation,
+                justify="left",
+                style='Dialog.TLabel',
+                bootstyle="primary"
+            )
+            explanation_label.place(x=20, y=y_offset, width=w-40, height=60)
+            y_offset += 80
+        
         # 主内容框架
         content_frame = tb.Frame(main_container, style='Dialog.TFrame')
-        content_frame.place(x=20, y=20, relwidth=0.95, height=h-100)
+        content_frame.place(x=20, y=y_offset, relwidth=0.95, height=h-y_offset-80)
         
         # 添加字段
         for i, (label, field_name, field_type) in enumerate(self.fields):
@@ -91,6 +112,7 @@ class ModalInputDialog:
                 anchor='e'  # 右对齐文本
             )
             label_widget.place(x=10, y=label_y, width=80, height=30)
+            self.field_labels[field_name] = label_widget  # 保存标签引用
             
             # 设置输入验证
             vcmd = None
@@ -131,23 +153,23 @@ class ModalInputDialog:
         button_container.place(x=0, rely=1.0, relwidth=1, height=80, anchor='sw')
         
         # 使用place布局来精确放置按钮
-        # 取消按钮
+        # 取消按钮 - 增加宽度从100到120
         cancel_button = tb.Button(
             button_container, 
             text="取消", 
             command=self.dialog.destroy, 
             style='Dialog.TButton'
         )
-        cancel_button.place(relx=0.35, rely=0.5, width=100, height=36, anchor='center')
+        cancel_button.place(relx=0.35, rely=0.5, width=120, height=36, anchor='center')
         
-        # 提交按钮
+        # 提交按钮 - 改文字为"确定"，增加宽度从100到120
         submit_button = tb.Button(
             button_container, 
-            text="提交", 
+            text="确定", 
             command=self.validate_and_submit, 
             style='Dialog.TButton'
         )
-        submit_button.place(relx=0.65, rely=0.5, width=100, height=36, anchor='center')
+        submit_button.place(relx=0.65, rely=0.5, width=120, height=36, anchor='center')
         
         # 确保窗口大小变化时按钮位置也相应调整
         def on_resize(event):
@@ -157,6 +179,22 @@ class ModalInputDialog:
             submit_button.place_configure(relx=0.65, rely=0.5, anchor='center')
             
         self.dialog.bind("<Configure>", on_resize)
+    
+    def set_field_style(self, field_name, style_name, bootstyle=None):
+        """
+        设置特定字段标签的样式
+        
+        参数:
+        - field_name: 字段名称
+        - style_name: 样式名称
+        - bootstyle: 引导样式名称（可选）
+        """
+        if field_name in self.field_labels:
+            label_widget = self.field_labels[field_name]
+            if style_name:
+                label_widget.configure(style=style_name)
+            if bootstyle:
+                label_widget.configure(bootstyle=bootstyle)
     
     def validate_and_submit(self):
         """验证输入并提交数据"""

@@ -135,8 +135,8 @@ class NvwaPriceTab:
         
         # 平台选择
         ttk.Label(control_frame, text="平台:", style="Unified.TLabel").grid(row=0, column=0, padx=(5, 2), pady=5, sticky="e")
-        self.platform = ttk.Combobox(control_frame, values=["全部", "7881", "DD373"], state="readonly", width=8, style="Unified.TCombobox")
-        self.platform.set("全部")
+        self.platform = ttk.Combobox(control_frame, values=["DD373", "7881", "全部"], state="readonly", width=8, style="Unified.TCombobox")
+        self.platform.set("DD373")
         self.platform.grid(row=0, column=1, padx=2, pady=5, sticky="w")
         self.platform.bind("<<ComboboxSelected>>", lambda e: self.refresh_nvwa_price())
         

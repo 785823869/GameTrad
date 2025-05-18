@@ -134,7 +134,7 @@ def import_stock_out(df, progress_callback=None):
         db_manager = DatabaseManager()
         
         # 检查必要的列是否存在
-        required_columns = ['物品', '数量', '单价', '手续费']
+        required_columns = ['物品', '出库数量', '出库单价', '手续费']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             print(f"CSV文件缺少必要的列: {', '.join(missing_columns)}")
@@ -169,8 +169,8 @@ def import_stock_out(df, progress_callback=None):
                         transaction_time = datetime.now()
                 
                 # 计算总金额
-                quantity = safe_int(row['数量'])
-                unit_price = safe_int(row['单价'])
+                quantity = safe_int(row['出库数量'])
+                unit_price = safe_int(row['出库单价'])
                 fee = safe_int(row['手续费'])
                 deposit = safe_int(row.get('押金', 0))
                 total_amount = quantity * unit_price - fee + deposit

@@ -77,43 +77,52 @@ class OCRPreviewDialog:
         toolbar_frame = tb.Frame(main_frame, bootstyle="light")
         toolbar_frame.pack(fill='x', pady=(0, 5))
         
-        # 添加全选按钮
+        # 配置工具栏按钮样式 - 新增
+        style = tb.Style()
+        style.configure(f"{bootstyle}-ToolButton.TButton", 
+                      font=(self.chinese_font, 10))
+        
+        # 添加全选按钮 - 增加宽度从10到12，移除font参数
         select_all_btn = tb.Button(
             toolbar_frame,
             text="全选",
             command=self._select_all_items,
             bootstyle=f"{bootstyle}-outline",
-            width=10
+            width=12,
+            style=f"{bootstyle}-ToolButton.TButton"
         )
         select_all_btn.pack(side='left', padx=(0, 5))
         
-        # 添加取消选择按钮
+        # 添加取消选择按钮 - 增加宽度从10到12，移除font参数
         deselect_all_btn = tb.Button(
             toolbar_frame,
             text="取消选择",
             command=self._deselect_all_items,
             bootstyle="secondary-outline",
-            width=10
+            width=12,
+            style=f"{bootstyle}-ToolButton.TButton"
         )
         deselect_all_btn.pack(side='left', padx=5)
         
-        # 添加删除选中记录按钮
+        # 添加删除选中记录按钮 - 增加宽度从10到12，移除font参数
         delete_selected_btn = tb.Button(
             toolbar_frame,
             text="删除选中",
             command=self._delete_selected_items,
             bootstyle="danger-outline",
-            width=10
+            width=12,
+            style=f"{bootstyle}-ToolButton.TButton"
         )
         delete_selected_btn.pack(side='left', padx=5)
         
-        # 添加批量设置备注按钮
+        # 添加批量设置备注按钮 - 增加宽度从10到12，移除font参数
         batch_note_btn = tb.Button(
             toolbar_frame,
             text="批量备注",
             command=self._batch_add_note,
             bootstyle=f"{bootstyle}-outline",
-            width=10
+            width=12,
+            style=f"{bootstyle}-ToolButton.TButton"
         )
         batch_note_btn.pack(side='left', padx=5)
         
@@ -226,23 +235,29 @@ class OCRPreviewDialog:
         button_frame = tb.Frame(button_container)
         button_frame.pack(expand=True, fill='both')
         
-        # 取消按钮
+        # 为底部按钮配置样式 - 新增
+        style.configure(f"{bootstyle}-ActionButton.TButton", 
+                      font=(self.chinese_font, 11))
+        
+        # 取消按钮 - 修改宽度从15到12，减小ipady从8到5，移除font参数
         tb.Button(
             button_frame, 
             text="取消", 
             command=self.window.destroy,
             bootstyle="secondary",
-            width=15
-        ).pack(side='left', padx=40, pady=5, ipady=8, ipadx=15)
+            width=12,
+            style=f"{bootstyle}-ActionButton.TButton"
+        ).pack(side='left', padx=40, pady=5, ipady=5, ipadx=10)
         
-        # 导入按钮
+        # 导入按钮 - 修改宽度从15到12，减小ipady从8到5，移除font参数
         tb.Button(
             button_frame, 
             text="确认导入", 
             command=self._import_data,
             bootstyle=bootstyle,
-            width=15
-        ).pack(side='right', padx=40, pady=5, ipady=8, ipadx=15)
+            width=12,
+            style=f"{bootstyle}-ActionButton.TButton"
+        ).pack(side='right', padx=40, pady=5, ipady=5, ipadx=10)
         
         # 设置模态
         self.window.transient(self.parent)
@@ -593,9 +608,13 @@ class OCRPreviewDialog:
                 self.note_text = ""
                 self.bootstyle = bootstyle
                 self.chinese_font = chinese_font
+                # 在初始化父类之前保存实例变量
                 super().__init__(parent, title)
             
             def body(self, master):
+                # 设置窗口大小 - 调用self而不是self.geometry
+                self.minsize(400, 250)
+                
                 tb.Label(
                     master,
                     text="请输入要批量添加的备注内容：",
@@ -629,7 +648,49 @@ class OCRPreviewDialog:
                         bootstyle="secondary"
                     ).grid(row=2, column=0, sticky="w", padx=10, pady=5)
                 
+                # 配置布局
+                master.columnconfigure(0, weight=1)
+                master.rowconfigure(1, weight=1)
+                
                 return self.note_entry  # 初始聚焦组件
+                
+            def buttonbox(self):
+                """重写按钮框，使用ttkbootstrap按钮替代标准按钮"""
+                # 创建按钮框架
+                box = tb.Frame(self)
+                box.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
+                
+                # 配置按钮样式
+                style = tb.Style()
+                style.configure(f"{self.bootstyle}-DialogButton.TButton", 
+                              font=(self.chinese_font, 10))
+                
+                # 取消按钮 - 使用宽度12而不是固定文本宽度，移除font参数
+                cancel_btn = tb.Button(
+                    box, 
+                    text="取消", 
+                    width=12, 
+                    command=self.cancel,
+                    bootstyle="secondary",
+                    style=f"{self.bootstyle}-DialogButton.TButton"
+                )
+                cancel_btn.pack(side="right", padx=5)
+                
+                # 确定按钮 - 使用宽度12而不是固定文本宽度，移除font参数
+                ok_btn = tb.Button(
+                    box, 
+                    text="确定", 
+                    width=12, 
+                    command=self.ok,
+                    bootstyle=self.bootstyle,
+                    style=f"{self.bootstyle}-DialogButton.TButton"
+                )
+                ok_btn.pack(side="right", padx=5)
+                
+                # 绑定回车键到确定按钮
+                self.bind("<Return>", lambda event: self.ok())
+                # 绑定ESC键到取消按钮
+                self.bind("<Escape>", lambda event: self.cancel())
             
             def apply(self):
                 self.note_text = self.note_entry.get("1.0", "end-1c")

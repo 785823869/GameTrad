@@ -296,47 +296,53 @@ class TradeMonitorTab:
             "- 目标买入价、计划卖出价、出库策略为人工编辑字段"
         )
         
-        # 使用自定义样式创建对话框
+        # 使用自定义样式创建对话框，并传入说明文本
         dialog = ModalInputDialog(
             self.main_gui.root,
             "添加交易监控记录",
             fields,
-            self.process_add_monitor
+            self.process_add_monitor,
+            explanation=explanation  # 使用新增的参数传入说明文本
         )
         
-        # 修改对话框框架，添加说明文本
-        explanation_label = tb.Label(
-            dialog.dialog,
-            text=explanation,
-            justify="left",
-            font=(self.chinese_font, 10),
-            bootstyle="primary",
-            padding=10
-        )
-        explanation_label.place(x=20, y=20, width=440, height=80)
+        # 使用新的set_field_style方法设置字段样式
+        # 人工编辑字段（目标买入价、计划卖出价、出库策略）使用不同样式
+        dialog.set_field_style("target_price", "Manual.TLabel", "success")
+        dialog.set_field_style("planned_price", "Manual.TLabel", "success")
+        dialog.set_field_style("strategy", "Manual.TLabel", "success")
         
-        # 调整内容框架位置，为说明文本留出空间
-        dialog.content_frame.place(x=20, y=100, relwidth=0.95, height=dialog.h-180)
-        
-        # 为不同类型的字段设置不同样式
-        for i, (label, field_name, _) in enumerate(fields):
-            label_widget = dialog.content_frame.winfo_children()[i*3]  # 每个字段有3个子组件：标签、输入框、错误提示
-            
-            # 设置标签样式
-            if i >= 3:  # 目标买入价、计划卖出价、出库策略是人工编辑字段
-                label_widget.configure(style='Manual.TLabel', bootstyle="success")
-                
         # 等待对话框完成
 
     def process_add_monitor(self, values):
         """处理添加监控记录的回调"""
         try:
+            # 数据验证
             item = values["item_name"]
+            if not item or item.strip() == "":
+                raise ValueError("物品名称不能为空")
+                
             quantity = values["quantity"]
+            if not isinstance(quantity, (int, float)) or quantity <= 0:
+                raise ValueError("数量必须是大于0的数字")
+                
             market_price = values["market_price"]
+            if not isinstance(market_price, (int, float)) or market_price <= 0:
+                raise ValueError("一口价必须是大于0的数字")
+                
             target_price = values["target_price"]
+            if not isinstance(target_price, (int, float)) or target_price <= 0:
+                raise ValueError("目标买入价必须是大于0的数字")
+                
             planned_price = values["planned_price"]
+            if not isinstance(planned_price, (int, float)) or planned_price <= 0:
+                raise ValueError("计划卖出价必须是大于0的数字")
+                
             strategy = values["strategy"]
+            
+            # 业务逻辑验证
+            if target_price >= planned_price:
+                if not messagebox.askyesno("价格异常", f"目标买入价 {target_price} 大于或等于计划卖出价 {planned_price}，可能导致亏损。确定继续吗？"):
+                    return
             
             # 计算保本价、利润和利润率
             break_even_price = round(target_price * 1.03) if target_price else 0
@@ -345,8 +351,8 @@ class TradeMonitorTab:
             
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # 保存数据
-            self.db_manager.save_trade_monitor({
+            # 准备保存的数据
+            monitor_data = {
                 'item_name': item,
                 'monitor_time': now,
                 'quantity': quantity,
@@ -357,15 +363,31 @@ class TradeMonitorTab:
                 'profit': profit,
                 'profit_rate': profit_rate,
                 'strategy': strategy
-            })
+            }
             
+            # 保存数据
+            self.db_manager.save_trade_monitor(monitor_data)
+            
+            # 刷新显示
             self.refresh_monitor()
-            self.main_gui.log_operation('修改', '交易监控')
+            
+            # 使用操作类型常量记录日志
+            try:
+                from src.utils.operation_types import OperationType, TabName
+                self.main_gui.log_operation(OperationType.ADD, TabName.TRADE_MONITOR, monitor_data)
+            except ImportError:
+                # 兼容旧版本，使用字符串
+                self.main_gui.log_operation('修改', '交易监控')
+                
             messagebox.showinfo("成功", "监控记录添加成功！")
             self.status_var.set(f"已添加: {item}")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
             self.status_var.set(f"添加记录失败: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("系统错误", f"发生意外错误: {str(e)}")
+            self.status_var.set(f"系统错误: {str(e)}")
+            print(f"交易监控记录添加错误: {e}")
 
     def upload_ocr_import_monitor(self):
         """上传图片进行OCR识别导入"""
@@ -847,29 +869,40 @@ class TradeMonitorTab:
 
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
-        # 识别当前鼠标位置的行
-        row_id = self.monitor_tree.identify_row(event.y)
-        
-        # 如果鼠标离开了上一个高亮行，恢复其原始样式
-        if self.last_hover_row and self.last_hover_row != row_id:
-            # 获取行的当前标签
-            current_tags = list(self.monitor_tree.item(self.last_hover_row, 'tags'))
-            # 移除悬停标签
-            if 'hovering' in current_tags:
-                current_tags.remove('hovering')
-                self.monitor_tree.item(self.last_hover_row, tags=current_tags)
+        try:
+            # 识别当前鼠标位置的行
+            row_id = self.monitor_tree.identify_row(event.y)
+            
+            # 如果鼠标离开了上一个高亮行，恢复其原始样式
+            if self.last_hover_row and self.last_hover_row != row_id:
+                # 检查项目是否仍然存在于树视图中
+                if self.last_hover_row in self.monitor_tree.get_children():
+                    # 获取行的当前标签
+                    current_tags = list(self.monitor_tree.item(self.last_hover_row, 'tags'))
+                    # 移除悬停标签
+                    if 'hovering' in current_tags:
+                        current_tags.remove('hovering')
+                        self.monitor_tree.item(self.last_hover_row, tags=current_tags)
                 
-        # 如果鼠标位于一个有效行上，应用悬停高亮效果
-        if row_id and row_id != self.last_hover_row:
-            # 获取行的当前标签
-            current_tags = list(self.monitor_tree.item(row_id, 'tags'))
-            # 添加悬停标签
-            if 'hovering' not in current_tags:
-                current_tags.append('hovering')
-                self.monitor_tree.item(row_id, tags=current_tags)
+            # 如果鼠标位于一个有效行上，应用悬停高亮效果
+            if row_id and row_id != self.last_hover_row and row_id in self.monitor_tree.get_children():
+                # 获取行的当前标签
+                current_tags = list(self.monitor_tree.item(row_id, 'tags'))
+                # 添加悬停标签
+                if 'hovering' not in current_tags:
+                    current_tags.append('hovering')
+                    self.monitor_tree.item(row_id, tags=current_tags)
+                    
+            # 更新上一个高亮行的记录，确保是有效的行
+            if row_id and row_id in self.monitor_tree.get_children():
+                self.last_hover_row = row_id
+            else:
+                self.last_hover_row = None
                 
-        # 更新上一个高亮行的记录
-        self.last_hover_row = row_id if row_id else None
+        except Exception as e:
+            # 捕获任何异常，避免UI中断
+            print(f"悬停效果处理出错: {str(e)}")
+            self.last_hover_row = None
 
     def parse_monitor_ocr_text(self, text):
         """

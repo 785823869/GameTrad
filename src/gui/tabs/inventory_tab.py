@@ -116,7 +116,7 @@ class InventoryTab:
         # 刷新按钮增加图标风格
         refresh_btn = tb.Button(action_frame, 
                               text="刷新数据", 
-                              command=self.refresh_inventory,
+                              command=lambda: self.refresh_inventory(show_dialog=True),
                               bootstyle="success-outline")
         refresh_btn.pack(side='right', padx=5, ipady=2)
         
@@ -176,14 +176,6 @@ class InventoryTab:
         self.inventory_tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         
-        # 配置交替行颜色和悬停高亮
-        self.inventory_tree.tag_configure('evenrow', background='#f5f9fc')  # 更淡的蓝灰色
-        self.inventory_tree.tag_configure('oddrow', background='#ffffff')
-        self.inventory_tree.tag_configure('profit_positive', foreground='#27ae60')  # 深绿色
-        self.inventory_tree.tag_configure('profit_negative', foreground='#c0392b')  # 深红色
-        # 添加悬停高亮标签
-        self.inventory_tree.tag_configure('hovering', background='#f0f7ff')  # 鼠标悬停效果
-        
         # 绑定鼠标移动事件
         self.inventory_tree.bind("<Motion>", self.on_treeview_motion)
         # 记录上一个高亮的行
@@ -207,22 +199,60 @@ class InventoryTab:
         status_label.pack(side='left')
         
         # 初始加载数据
-        self.refresh_inventory()
+        self.refresh_inventory(show_dialog=False)
 
     def filter_inventory(self):
         search_text = self.search_var.get().lower()
         for item in self.inventory_tree.get_children():
             self.inventory_tree.delete(item)
             
-        self.refresh_inventory(search_text)
+        self.refresh_inventory(search_text, show_dialog=False)
 
-    def refresh_inventory(self, search_text=""):
+    def refresh_inventory(self, search_text="", show_dialog=False):
         """刷新库存数据，支持搜索过滤"""
         # 清空现有数据
         for item in self.inventory_tree.get_children():
             self.inventory_tree.delete(item)
             
         try:
+            # 设置标签样式
+            # 交替行颜色标签
+            self.inventory_tree.tag_configure('evenrow', background='#f5f9fc')  # 更淡的蓝灰色
+            self.inventory_tree.tag_configure('oddrow', background='#ffffff')
+            
+            # 利润标签样式
+            self.inventory_tree.tag_configure("profit_positive", foreground="#28a745")  # 绿色代表盈利
+            self.inventory_tree.tag_configure("profit_negative", foreground="#dc3545")  # 红色代表亏损
+            
+            # 库存数量标签样式 - 使用更鲜明的颜色
+            self.inventory_tree.tag_configure("stock_negative", background="#ffcc00", foreground="#000000", font=(self.chinese_font, 10, "bold"))  # 负库存用亮黄色背景
+            self.inventory_tree.tag_configure("stock_zero", background="#ff9966", foreground="#000000", font=(self.chinese_font, 10, "bold"))  # 零库存用橙色背景
+            self.inventory_tree.tag_configure("stock_low", background="#ff9999", foreground="#cc0000", font=(self.chinese_font, 10, "bold"))  # 低库存用红色
+            self.inventory_tree.tag_configure("stock_high", background="#99ff99", foreground="#006600", font=(self.chinese_font, 10, "bold"))  # 高库存用绿色
+            
+            # 悬停高亮效果 - 使用非常淡的颜色，确保不会覆盖其他标签的效果
+            self.inventory_tree.tag_configure("hovering", background="#e6f2ff")
+            
+            # 只有当show_dialog为True时才询问用户是否重新计算库存
+            recalculate = False
+            if show_dialog:
+                recalculate = messagebox.askyesno("刷新数据", "是否重新计算库存数据？\n\n选择\"是\"将从入库和出库记录重新计算库存数据\n选择\"否\"将仅刷新显示")
+            
+            if recalculate:
+                # 导入库存计算模块
+                from src.core.inventory_calculator import calculate_inventory
+                
+                # 显示计算中的状态
+                self.status_var.set("正在重新计算库存数据...")
+                self.parent_frame.update()
+                
+                # 重新计算库存数据
+                calculate_inventory(db_manager=self.db_manager, update_db=True, silent=True)
+                
+                # 更新状态
+                self.status_var.set("库存数据计算完成，正在刷新显示...")
+                self.parent_frame.update()
+            
             # 确保从数据库获取最新数据
             inventory_data = self.db_manager.get_inventory()
             
@@ -265,10 +295,19 @@ class InventoryTab:
                     else:
                         tags.append('oddrow')
                     
-                    # 库存和利润标签
-                    if int(quantity) <= 0:
-                        tags.append('no_stock')
-                    elif float(profit) < 0:
+                    # 库存数量标签
+                    quantity_int = int(quantity)
+                    if quantity_int < 0:
+                        tags.append('stock_negative')
+                    elif quantity_int == 0:
+                        tags.append('stock_zero')
+                    elif quantity_int < 50:
+                        tags.append('stock_low')
+                    elif quantity_int > 150:
+                        tags.append('stock_high')
+                    
+                    # 利润标签
+                    if float(profit) < 0:
                         tags.append('profit_negative')
                     elif float(profit) > 0:
                         tags.append('profit_positive')
@@ -284,11 +323,6 @@ class InventoryTab:
                 except Exception as e:
                     print(f"添加库存数据到表格错误: {e}")
                     continue
-            
-            # 设置行标签样式
-            self.inventory_tree.tag_configure("profit_positive", foreground="#28a745")  # 绿色代表盈利
-            self.inventory_tree.tag_configure("profit_negative", foreground="#dc3545")  # 红色代表亏损
-            self.inventory_tree.tag_configure("no_stock", foreground="#ff6000", background="#fff3e0")  # 橙色背景代表无库存/负库存
             
             # 更新状态栏
             self.status_var.set(f"共 {len(filtered_data)} 条记录  |  上次更新: {datetime.now().strftime('%H:%M:%S')}")
@@ -362,7 +396,7 @@ class InventoryTab:
         if messagebox.askyesno("确认删除", msg):
             for item in selected_items:
                 self.inventory_tree.delete(item)
-            self.refresh_inventory()
+            self.refresh_inventory(show_dialog=False)
     
     def copy_item_name(self):
         """复制选中的物品名称到剪贴板"""
@@ -393,10 +427,11 @@ class InventoryTab:
         if row_id and row_id != self.last_hover_row:
             # 获取行的当前标签
             current_tags = list(self.inventory_tree.item(row_id, 'tags'))
-            # 添加悬停标签
-            if 'hovering' not in current_tags:
-                current_tags.append('hovering')
-                self.inventory_tree.item(row_id, tags=current_tags)
+            # 确保悬停标签是最后一个应用的标签，这样不会覆盖其他标签的效果
+            if 'hovering' in current_tags:
+                current_tags.remove('hovering')
+            current_tags.append('hovering')
+            self.inventory_tree.item(row_id, tags=current_tags)
                 
         # 更新上一个高亮行的记录
         self.last_hover_row = row_id if row_id else None 

@@ -272,12 +272,26 @@ class StockOutTab:
             ("备注", "note", "str")
         ]
         
-        ModalInputDialog(
+        # 添加解释说明
+        explanation = (
+            "出库记录说明:\n"
+            "- 物品会自动检查库存是否足够\n"
+            "- 总金额 = 数量×单价 - 手续费\n"
+            "- 出库后会自动更新库存"
+        )
+        
+        # 使用增强的ModalInputDialog类
+        dialog = ModalInputDialog(
             self.main_gui.root,
             "添加出库记录",
             fields,
-            self.process_add_stock_out
+            self.process_add_stock_out,
+            explanation=explanation  # 使用新增的参数传入说明文本
         )
+        
+        # 使用新的set_field_style方法设置字段样式
+        dialog.set_field_style("item_name", "Dialog.TLabel", "warning")
+        dialog.set_field_style("quantity", "Dialog.TLabel", "warning")
     
     def process_add_stock_out(self, values):
         """处理添加出库记录的回调"""
@@ -315,7 +329,7 @@ class StockOutTab:
             
             # 确保库存页面也更新
             if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
-                self.main_gui.inventory_tab.refresh_inventory()
+                self.main_gui.inventory_tab.refresh_inventory(show_dialog=False)
                 
             self.main_gui.refresh_inventory()
             # 使用正确的操作类型常量

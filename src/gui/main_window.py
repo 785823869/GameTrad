@@ -60,9 +60,47 @@ def safe_float(val, default=0.0):
         return default
 
 class GameTradingSystemGUI:
-    def __init__(self, root):
+    def __init__(self, root, debug=False):
+        """
+        初始化应用程序主窗口
+        
+        Args:
+            root: Tkinter根窗口
+            debug: 是否启用调试模式
+        """
+        # 初始化调试标志和日志
+        self.debug = debug
+        
+        try:
+            from src.utils.logger import get_module_logger
+            self.logger = get_module_logger(__name__)
+            self.logger.info("初始化主窗口")
+            
+            # 记录环境信息
+            from src.utils.path_resolver import is_frozen
+            self.logger.info(f"运行环境: {'打包环境' if is_frozen() else '开发环境'}")
+            
+            if debug:
+                self.logger.info("调试模式已启用")
+        except ImportError:
+            import logging
+            self.logger = logging.getLogger(__name__)
+            print("警告: 无法加载日志模块，将使用基本日志")
+        
+        # 继续原来的初始化逻辑
         self.root = root
-        self.root.title("游戏交易系统")
+        
+        # 添加版本信息到窗口标题
+        self.version = __version__
+        self.root.title(f"GameTrad交易管理系统 v{self.version}")
+        
+        # 使用路径解析器处理配置文件路径
+        try:
+            from src.utils.path_resolver import get_config_path
+            self.config_path = get_config_path("server_chan_config.json")
+        except ImportError:
+            self.config_path = "server_chan_config.json"
+            
         self.root.geometry("1713x852")
         self.root.resizable(True, True)  # 允许调整窗口大小
         
@@ -129,20 +167,33 @@ class GameTradingSystemGUI:
         
     def check_for_updates(self):
         """检查应用程序更新"""
-        # 使用GitHub Releases作为更新源
-        update_url = "https://api.github.com/repos/785823869/GameTrad/releases/latest"
-        direct_download_url = "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
+        self.logger.info("开始检查更新")
         
-        print(f"开始检查更新，API URL: {update_url}, 下载URL: {direct_download_url}")
-        
-        # 创建更新器实例并设置直接下载URL
-        from src.utils.updater import AppUpdater
-        updater = AppUpdater(update_url)
-        updater.direct_download_url = direct_download_url
-        
-        # 创建并显示更新对话框
-        update_dialog = UpdateDialog(self.root, updater=updater)
-        update_dialog.show()
+        try:
+            # 使用GitHub Releases作为更新源
+            update_url = "https://api.github.com/repos/785823869/GameTrad/releases/latest"
+            direct_download_url = "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
+            
+            self.logger.debug(f"更新API URL: {update_url}")
+            self.logger.debug(f"直接下载URL: {direct_download_url}")
+            
+            # 创建更新器实例并设置直接下载URL
+            from src.utils.updater import AppUpdater
+            updater = AppUpdater(update_url)
+            updater.direct_download_url = direct_download_url
+            
+            # 创建并显示更新对话框
+            from src.gui.dialogs.update_dialog import UpdateDialog
+            update_dialog = UpdateDialog(self.root, updater=updater)
+            update_dialog.show()
+            
+        except Exception as e:
+            self.logger.error(f"检查更新失败: {e}", exc_info=True)
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("更新检查失败", f"检查更新时发生错误:\n{str(e)}\n\n请检查网络连接或手动访问官网获取更新。")
+            except:
+                self.logger.error("无法显示错误对话框")
         
     def open_server_chan_config(self):
         """打开Server酱配置窗口"""
@@ -226,27 +277,52 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
     def load_server_chan_config(self):
         """加载Server酱配置"""
         try:
-            with open('server_chan_config.json', 'r', encoding='utf-8') as f:
+            # 使用路径解析器获取配置文件路径
+            self.logger.info(f"加载Server酱配置: {self.config_path}")
+            
+            with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 self.server_chan_key.set(config.get('key', ''))
                 self.server_chan_enabled.set(config.get('enabled', '0'))
                 self.price_threshold.set(str(config.get('price_threshold', 1000000)))
                 self.last_push_time = config.get('last_push_time', '')
+                
+                self.logger.debug(f"配置加载成功: enabled={self.server_chan_enabled.get()}, threshold={self.price_threshold.get()}")
         except FileNotFoundError:
+            self.logger.warning(f"配置文件不存在: {self.config_path}，将使用默认值")
             self.last_push_time = ''
-            pass
+        except Exception as e:
+            self.logger.error(f"加载配置出错: {e}")
+            self.last_push_time = ''
             
     def save_server_chan_config(self):
         """保存Server酱配置"""
-        config = {
-            'key': self.server_chan_key.get(),
-            'enabled': self.server_chan_enabled.get(),
-            'price_threshold': float(self.price_threshold.get()),
-            'last_push_time': self.last_push_time
-        }
-        with open('server_chan_config.json', 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        try:
+            config = {
+                'key': self.server_chan_key.get(),
+                'enabled': self.server_chan_enabled.get(),
+                'price_threshold': float(self.price_threshold.get()),
+                'last_push_time': self.last_push_time
+            }
             
+            # 确保目录存在
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+                
+            self.logger.info(f"配置保存成功: {self.config_path}")
+        except Exception as e:
+            self.logger.error(f"保存配置出错: {e}")
+            # 尝试回退到原始位置
+            try:
+                backup_path = "server_chan_config.json"
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+                self.logger.warning(f"配置已保存到备用位置: {backup_path}")
+            except:
+                self.logger.error("无法保存配置到任何位置")
+
     def should_send_daily_notification(self):
         """检查是否应该发送每日通知"""
         if not self.last_push_time:

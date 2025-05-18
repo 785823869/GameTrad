@@ -1223,7 +1223,7 @@ class DashboardTab(Frame):
         # 下方区域
         bottom_frame = Frame(self, bootstyle="light")
         bottom_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
-        
+
         # 创建左侧容器框架来容纳库存详情
         left_container = Frame(bottom_frame)
         left_container.pack(side='left', fill='both', expand=False, padx=(0, 10), pady=10)
@@ -1317,7 +1317,7 @@ class DashboardTab(Frame):
         # 创建右侧容器框架来容纳月度收入图表
         right_container = Frame(bottom_frame)
         right_container.pack(side='left', fill='both', expand=True, pady=10)
-        
+
         # 柱状图
         chart_frame2 = LabelFrame(right_container, text="月度收入", bootstyle="primary")
         chart_frame2.pack(fill='both', expand=True)

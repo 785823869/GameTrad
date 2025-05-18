@@ -325,10 +325,21 @@ def get_clipboard_image_temp_file():
         }}
         '''
         
-        # 执行PowerShell脚本
-        logger.info("执行PowerShell脚本获取剪贴板图片")
-        result = subprocess.run(['powershell', '-Command', ps_script], 
-                               capture_output=True, text=True)
+        # 设置启动信息，隐藏命令行窗口
+        startupinfo = None
+        if sys.platform == 'win32':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+        
+        # 执行PowerShell脚本，添加-WindowStyle Hidden参数并使用startupinfo
+        logger.info("执行PowerShell脚本获取剪贴板图片(静默模式)")
+        result = subprocess.run(
+            ['powershell', '-WindowStyle', 'Hidden', '-Command', ps_script], 
+            capture_output=True, 
+            text=True,
+            startupinfo=startupinfo
+        )
         
         if "SUCCESS" in result.stdout:
             # 从临时文件加载图片

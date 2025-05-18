@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-1.3.0-blue)
+![Version](https://img.shields.io/badge/Version-1.3.1-blue)
 ![Language](https://img.shields.io/badge/Language-Python-blue)
 ![Framework](https://img.shields.io/badge/Framework-TKinter%20|%20PyQt6-orange)
 ![License](https://img.shields.io/badge/License-专有软件-red)
@@ -20,6 +20,7 @@
 
 ### 最新更新
 
+- **价格显示优化**：银两行情和女娲石行情默认显示DD373平台的图表，其他平台可通过选择框切换
 - **图表UI优化**：改进仪表盘中物价趋势图表显示，解决中文字体乱码问题
 - **X轴显示优化**：优化图表X轴日期标签显示，实现均匀间距，提升美观度
 - **搜索功能增强**：为物品下拉框增加搜索功能，支持实时过滤，快速定位物品
@@ -81,6 +82,7 @@
 - 异常价格自动通知
 - 可设置价格异常提醒和通过Server酱推送
 - 优化的价格数据缓存机制，减少API请求次数
+- 银两行情和女娲石行情默认显示DD373平台的图表，其他平台可通过选择框切换
 
 ### 7. 数据管理
 
@@ -122,6 +124,10 @@
 3. 运行应用程序：
    - **TKinter版本**：`python -m src.gui.main_window`
    - **PyQt6版本**：`python -m src_qt.run_app`
+
+#### 3. 自行构建
+
+如需自行构建可执行文件和安装包，请参考[构建指南](docs/build_guide.md)。
 
 ### 使用说明
 
@@ -198,6 +204,11 @@
 
 ## 更新日志
 
+### v1.3.1 (2024-07)
+- 银两行情和女娲石行情默认显示DD373平台的图表，其他平台可通过选择框切换
+- 优化代码结构和性能
+- 修复其他已知问题
+
 ### v1.3.0 (2024-07)
 - 更新图标资源，改进程序快捷方式显示
 - 优化安装程序配置，确保任务栏图标显示正确
@@ -226,7 +237,7 @@
 ## 开发团队
 
 - **开发者**：三只小猪
-- **版本**：1.3.0
+- **版本**：1.3.1
 
 ---
 

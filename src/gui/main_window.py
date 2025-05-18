@@ -1516,15 +1516,28 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
 
     def open_data_migration(self):
         """打开数据迁移窗口"""
-        migration_window = tk.Toplevel(self.root)
-        migration_window.title("数据迁移")
-        migration_window.geometry("400x300")
-        
-        main_frame = ttk.Frame(migration_window, padding=20)
-        main_frame.pack(fill='both', expand=True)
-        
-        # 添加说明标签
-        ttk.Label(main_frame, text="数据迁移功能正在开发中，敬请期待。").pack(pady=10)
+        try:
+            # 使用子进程启动迁移工具
+            import subprocess
+            import sys
+            import os
+            from src.utils.path_resolver import get_script_path
+            
+            # 获取迁移工具脚本路径
+            migration_script_path = get_script_path("scripts/migrate_data_gui.py")
+            
+            # 检查脚本是否存在
+            if not os.path.exists(migration_script_path):
+                messagebox.showerror("错误", f"找不到数据迁移工具: {migration_script_path}")
+                return
+            
+            # 启动迁移工具
+            self.logger.info(f"启动数据迁移工具: {migration_script_path}")
+            subprocess.Popen([sys.executable, migration_script_path])
+            
+        except Exception as e:
+            self.logger.error(f"启动数据迁移工具失败: {e}", exc_info=True)
+            messagebox.showerror("错误", f"启动数据迁移工具失败: {e}")
 
     def _load_operation_logs(self):
         """加载操作日志"""

@@ -201,6 +201,9 @@ class LogTab:
         # 绑定双击事件
         self.log_tree.bind("<Double-1>", self.show_log_detail)
         
+        # 绑定Ctrl+A全选快捷键
+        self.log_tree.bind('<Control-a>', self.select_all_logs)
+        
         # 绑定窗口大小变化事件
         self.main_gui.root.bind("<Configure>", self.on_window_resize)
         
@@ -511,9 +514,11 @@ class LogTab:
         deleted_count = 0
         for item in selected_items:
             values = self.log_tree.item(item)['values']
+            # 通过操作类型、标签页、操作时间唯一定位日志
             op_type = values[0].replace("（已回退）", "")
             tab = values[1]
             op_time = values[2]
+            # 删除数据库中的日志
             try:
                 conn = self.db_manager.get_connection()
                 cursor = conn.cursor()
@@ -526,9 +531,11 @@ class LogTab:
                 conn.close()
             except Exception as e:
                 print(f"删除数据库日志失败: {e}")
+            # 删除界面上的
             self.log_tree.delete(item)
             deleted_count += 1
         messagebox.showinfo("成功", f"已删除 {deleted_count} 条日志记录！")
+        # 完全刷新日志界面，确保显示与数据库同步
         self.refresh_log_tab()
         
     def show_log_detail(self, event):
@@ -1010,3 +1017,9 @@ class LogTab:
         """调用主窗口的恢复操作方法"""
         if hasattr(self.main_gui, 'redo_last_operation'):
             self.main_gui.redo_last_operation()
+
+    def select_all_logs(self, event=None):
+        """全选所有日志记录"""
+        for item in self.log_tree.get_children():
+            self.log_tree.selection_add(item)
+        return "break"  # 阻止事件继续传播

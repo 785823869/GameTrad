@@ -103,6 +103,7 @@ class GameTradingSystemGUI:
             
         self.root.geometry("1713x852")
         self.root.resizable(True, True)  # 允许调整窗口大小
+        self.root.state('zoomed')  # 设置窗口默认最大化
         
         # 设置窗口图标 - 使用项目中的icon.ico文件
         icon_path = os.path.join("data", "icon.ico")

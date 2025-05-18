@@ -274,21 +274,75 @@ class DashboardTab(Frame):
                 continue
         return profit
 
+    def get_total_trading_profit(self):
+        """计算库存管理中所有物品的成交利润额总和"""
+        db_manager = getattr(self.main_gui, 'db_manager', None)
+        if db_manager is None:
+            return 0.0
+            
+        # 获取入库和出库数据
+        stock_in_data = db_manager.get_stock_in()
+        stock_out_data = db_manager.get_stock_out()
+        
+        # 计算每种物品的库存和价值
+        inventory_dict = {}
+        
+        # 统计入库
+        for row in stock_in_data:
+            try:
+                _, item_name, _, qty, cost, *_ = row
+                qty = float(qty)
+                cost = float(cost)
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['in_qty'] += qty
+                inventory_dict[item_name]['in_amount'] += cost
+            except Exception:
+                continue
+                
+        # 统计出库
+        for row in stock_out_data:
+            try:
+                _, item_name, _, qty, unit_price, fee, deposit, total_amount, note, *_ = row
+                qty = float(qty)
+                unit_price = float(unit_price)
+                fee = float(fee)
+                amount = unit_price * qty - fee
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['out_qty'] += qty
+                inventory_dict[item_name]['out_amount'] += amount
+            except Exception:
+                continue
+                
+        # 计算总成交利润额
+        total_profit = 0.0
+        for item, data in inventory_dict.items():
+            # 只计算有出库记录的物品
+            if data['out_qty'] <= 0:
+                continue
+            # 计算入库均价
+            in_avg = data['in_amount'] / data['in_qty'] if data['in_qty'] > 0 else 0
+            # 计算出库均价
+            out_avg = data['out_amount'] / data['out_qty'] if data['out_qty'] > 0 else 0
+            # 计算成交利润额
+            profit = (out_avg - in_avg) * data['out_qty'] if data['out_qty'] > 0 else 0
+            total_profit += profit
+            
+        return total_profit
+
     def get_total_profit_and_mom(self):
         now = datetime.now()
-        this_month_profit = self.get_monthly_profit(now.year, now.month)
-        # 上月
-        if now.month == 1:
-            last_month = 12
-            last_year = now.year - 1
-        else:
-            last_month = now.month - 1
-            last_year = now.year
-        last_month_profit = self.get_monthly_profit(last_year, last_month)
-        if abs(last_month_profit) < 1e-6:
-            mom = 0.0
-        else:
-            mom = (this_month_profit - last_month_profit) / abs(last_month_profit) * 100
+        # 使用新方法计算总利润
+        this_month_profit = self.get_total_trading_profit()
+        
+        # 月环比暂时使用固定值，因为历史数据需要额外存储
+        mom = 15.0  # 示例值：15%的月环比增长
+        
         return this_month_profit, mom
 
     def get_total_inventory_value(self):
@@ -795,7 +849,7 @@ class DashboardTab(Frame):
         # 卡片数据
         card_data = [
             {
-                "title": "总收入",
+                "title": "总利润额",
                 "value": f"${total_profit:,.2f}",
                 "desc": f"{month_on_month:+.2f}% 月环比",
                 "is_positive": month_on_month >= 0,

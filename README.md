@@ -28,9 +28,82 @@
 - **价格显示优化**：改进银两行情和女娲石行情数据的自动加载和缓存机制
 - **UI响应性提升**：改进界面响应速度和整体用户体验
 
+## 项目文件结构
+
+```
+GameTrad/
+├── main.py                     # 程序主入口文件
+├── run_migration_tool.py       # 数据迁移工具启动脚本
+├── test_db_connection.py       # 数据库连接测试脚本
+├── requirements.txt            # 项目依赖列表
+├── game_trad.spec              # PyInstaller配置文件
+├── README.md                   # 项目说明文档(当前文件)
+├── update_notes.md             # 更新说明文档
+├── LICENSE                     # 许可证文件
+├── build_installer.bat         # 安装包构建脚本
+├── installer_utf8.nsi          # NSIS安装包配置文件
+├── src/                        # 源代码目录
+│   ├── __init__.py             # 包初始化文件
+│   ├── clear_all_data.py       # 数据清理工具
+│   │   ├── __init__.py
+│   │   ├── core/                   # 核心功能模块
+│   │   │   ├── __init__.py
+│   │   │   ├── db_manager.py       # 数据库管理
+│   │   │   ├── formula_manager.py  # 公式管理
+│   │   │   ├── inventory_calculator.py # 库存计算
+│   │   │   ├── inventory_manager.py # 库存管理
+│   │   │   └── trade_analyzer.py   # 交易分析
+│   │   ├── gui/                    # 图形界面模块
+│   │   │   ├── __init__.py
+│   │   │   ├── main_window.py      # 主窗口
+│   │   │   ├── import_data_dialog.py # 数据导入对话框
+│   │   │   ├── components/         # UI组件
+│   │   │   ├── dialogs/            # 对话框
+│   │   │   ├── tabs/               # 标签页
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── dashboard_tab.py # 仪表盘页面
+│   │   │   │   ├── inventory_tab.py # 库存管理页面
+│   │   │   │   ├── stock_in_tab.py  # 入库管理页面
+│   │   │   │   ├── stock_out_tab.py # 出库管理页面
+│   │   │   │   ├── trade_monitor_tab.py # 交易监控页面
+│   │   │   │   ├── nvwa_price_tab.py # 女娲石价格页面
+│   │   │   │   ├── silver_price_tab.py # 银两价格页面
+│   │   │   │   └── log_tab.py       # 日志页面
+│   │   │   └── utils/              # GUI工具
+│   │   ├── scripts/                # 脚本工具
+│   │   │   ├── __init__.py
+│   │   │   ├── check_tabs.py       # 标签页检查
+│   │   │   ├── import_data_overwrite.py # 数据导入覆盖
+│   │   │   ├── import_to_db.py     # 数据导入到数据库
+│   │   │   ├── init_db.py          # 数据库初始化
+│   │   │   ├── migrate_data.py     # 数据迁移
+│   │   │   ├── migrate_data_gui.py # 数据迁移GUI
+│   │   │   └── test_data_migration.py # 数据迁移测试
+│   │   └── utils/                  # 工具类
+│   │       ├── __init__.py
+│   │       ├── clipboard_helper.py # 剪贴板助手
+│   │       ├── logger.py           # 日志工具
+│   │       ├── ocr.py              # OCR识别
+│   │       ├── operation_types.py  # 操作类型
+│   │       ├── path_resolver.py    # 路径解析
+│   │       ├── recipe_parser.py    # 配方解析
+│   │       ├── restore_logs.py     # 日志恢复
+│   │       ├── sidebar.py          # 侧边栏
+│   │       ├── ui_manager.py       # UI管理
+│   │       └── updater.py          # 更新工具
+│   ├── data/                       # 数据目录
+│   │   └── icon.ico                # 程序图标
+│   ├── docs/                       # 文档目录
+│   ├── config/                     # 配置目录
+│   │   └── server_chan_config.json # Server酱配置
+│   └── dist/                       # 打包输出目录
+├── build/                      # 构建临时目录
+└── logs/                       # 日志目录
+```
+
 ## 主要功能
 
-### 1. 仪表盘
+### 1. 仪表盘（dashboard_tab.py）
 
 提供全面的数据概览和可视化分析：
 - 总库存价值、利润率分析
@@ -41,7 +114,7 @@
 - 库存详情一览，支持自动滚动显示
 - 用户库存监控，实时掌握客户物品库存情况
 
-### 2. 库存管理
+### 2. 库存管理（inventory_tab.py）
 
 全面管理游戏物品库存：
 - 实时掌握剩余数量、平均成本和库存价值
@@ -50,7 +123,7 @@
 - 单个物品的完整入库/出库历史
 - 包含所有库存管理物品，即使库存为0
 
-### 3. 入库管理
+### 3. 入库管理（stock_in_tab.py）
 
 管理所有入库记录：
 - 记录物品名称、入库时间、数量、成本和库存价值
@@ -58,7 +131,7 @@
 - OCR图像识别自动录入数据
 - 批量导入CSV文件
 
-### 4. 出库管理
+### 4. 出库管理（stock_out_tab.py）
 
 管理所有出库记录：
 - 记录物品名称、出库时间、数量、单价和总金额
@@ -66,7 +139,7 @@
 - 支持OCR识别、自动添加
 - 批量导入CSV文件
 
-### 5. 交易监控
+### 5. 交易监控（trade_monitor_tab.py）
 
 自动监控交易市场情况：
 - 实时价格、目标价提醒、策略建议
@@ -74,7 +147,7 @@
 - 资金效率分析
 - OCR识别市场情况，快速添加
 
-### 6. 价格监控
+### 6. 价格监控（silver_price_tab.py, nvwa_price_tab.py）
 
 监控游戏货币价格：
 - 自动抓取多个平台价格数据
@@ -84,7 +157,7 @@
 - 优化的价格数据缓存机制，减少API请求次数
 - 银两行情和女娲石行情默认显示DD373平台的图表，其他平台可通过选择框切换
 
-### 7. 数据管理
+### 7. 数据管理（migrate_data.py, migrate_data_gui.py）
 
 完善的数据输入输出功能：
 - 支持CSV格式数据输入输出
@@ -92,13 +165,47 @@
 - 详细的数据日志记录
 - 支持数据迁移和备份
 
-### 8. 自定义公式与物品词典
+### 8. 自定义公式与物品词典（formula_manager.py）
 
 丰富的自定义功能：
 - 灵活扩展的库存价值计算公式
 - 物品名称词典管理
 - Server酱推送配置
 - 图表显示和资源配置
+
+## 核心模块说明
+
+### main.py
+主入口文件，负责初始化程序环境、创建GUI窗口，并处理程序启动和关闭流程。
+
+### src/core/
+包含核心业务逻辑模块：
+- `db_manager.py`: 数据库连接和操作管理
+- `inventory_calculator.py`: 库存价值和利润计算
+- `inventory_manager.py`: 库存物品管理
+- `formula_manager.py`: 自定义计算公式管理
+- `trade_analyzer.py`: 交易数据分析
+
+### src/gui/
+包含所有GUI相关代码：
+- `main_window.py`: 主窗口实现，整合各个标签页
+- `tabs/`: 各功能标签页实现（仪表盘、库存、入库、出库等）
+- `components/`: 可复用UI组件
+- `dialogs/`: 对话框实现
+
+### src/utils/
+包含各种工具类：
+- `logger.py`: 日志记录工具
+- `path_resolver.py`: 文件路径解析（兼容开发环境和打包环境）
+- `updater.py`: 在线更新功能
+- `ocr.py`: OCR图像识别集成
+- `clipboard_helper.py`: 剪贴板操作助手
+
+### src/scripts/
+包含各种脚本工具：
+- `migrate_data.py`: 数据迁移核心功能
+- `migrate_data_gui.py`: 数据迁移GUI界面
+- `init_db.py`: 数据库初始化脚本
 
 ## 安装与使用
 
@@ -122,12 +229,23 @@
    pip install -r requirements.txt
    ```
 3. 运行应用程序：
-   - **TKinter版本**：`python -m src.gui.main_window`
-   - **PyQt6版本**：`python -m src_qt.run_app`
+   ```
+   python main.py
+   ```
 
 #### 3. 自行构建
 
-如需自行构建可执行文件和安装包，请参考[构建指南](docs/build_guide.md)。
+如需自行构建可执行文件和安装包，按以下步骤操作：
+
+1. 构建可执行文件：
+   ```
+   pyinstaller game_trad.spec
+   ```
+
+2. 构建安装包（需要安装NSIS）：
+   ```
+   build_installer.bat
+   ```
 
 ### 使用说明
 

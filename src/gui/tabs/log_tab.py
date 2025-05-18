@@ -328,30 +328,29 @@ class LogTab:
         threading.Thread(target=self._load_data_thread, daemon=True).start()
     
     def _load_data_thread(self):
-        """在后台线程中加载数据"""
+        """后台线程加载数据"""
         try:
-            # 动态计算页面大小
-            page_size = self.calculate_page_size()
-            
             # 获取过滤条件
-            tab_name = self.filter_tab.get() if hasattr(self, 'filter_tab') else None
-            if tab_name == "全部": tab_name = None
-                
-            op_type = self.filter_type.get() if hasattr(self, 'filter_type') else None
-            if op_type == "全部": op_type = None
-            
-            # 处理操作类别筛选
-            category = self.filter_category.get() if hasattr(self, 'filter_category') else None
-            if category == "全部": category = None
-                
+            tab_name = self.filter_tab.get() if self.filter_tab.get() != "全部" else None
+            op_type = self.filter_type.get() if self.filter_type.get() != "全部" else None
+            keyword = self.log_search_var.get() if self.log_search_var.get().strip() else None
             reverted = None
-            if hasattr(self, 'filter_reverted'):
-                if self.filter_reverted.get() == "是": reverted = True
-                elif self.filter_reverted.get() == "否": reverted = False
-                
-            keyword = self.log_search_var.get() if self.log_search_var.get() else None
+            if self.filter_reverted.get() == "是":
+                reverted = True
+            elif self.filter_reverted.get() == "否":
+                reverted = False
             
-            # 单独获取总记录数
+            # 获取数据
+            logs = self.db_manager.get_operation_logs(
+                tab_name=tab_name, 
+                op_type=op_type, 
+                keyword=keyword, 
+                reverted=reverted,
+                page=self.log_page,
+                page_size=self.log_page_size
+            )
+            
+            # 获取总记录数
             total = self.db_manager.count_operation_logs(
                 tab_name=tab_name,
                 op_type=op_type,
@@ -359,55 +358,61 @@ class LogTab:
                 reverted=reverted
             )
             
-            # 特殊情况处理：如果总记录数较少，自动调整页面大小以避免过多空白
-            if total > 0 and total < page_size:
-                # 如果总记录数小于计算出的页面大小，则使用总记录数作为页面大小
-                adjusted_page_size = max(total, self.min_records_per_page)
-                if adjusted_page_size != page_size:
-                    page_size = adjusted_page_size
-            
-            # 查询数据
-            logs = self.db_manager.get_operation_logs(
-                tab_name=tab_name,
-                op_type=op_type,
-                keyword=keyword,
-                reverted=reverted,
-                page=self.log_page,
-                page_size=page_size
-            )
-            
-            # 如果有操作类别筛选，过滤结果
-            if category:
-                logs = [log for log in logs if log.get('操作类别') == category]
-            
-            # 记录当前使用的页面大小
-            self.log_page_size = page_size
-            
-            # 更新分页信息
-            self.log_total_records = total
+            # 计算总页数
             self.log_total_pages = max(1, (total + self.log_page_size - 1) // self.log_page_size)
+            self.log_total_records = total
             
             # 如果当前页码超出范围，重置为第一页
             if self.log_page > self.log_total_pages:
                 self.log_page = 1
-                # 重新查询第一页数据
+                # 重新获取第一页数据
                 logs = self.db_manager.get_operation_logs(
-                    tab_name=tab_name,
-                    op_type=op_type,
-                    keyword=keyword,
+                    tab_name=tab_name, 
+                    op_type=op_type, 
+                    keyword=keyword, 
                     reverted=reverted,
                     page=self.log_page,
                     page_size=self.log_page_size
                 )
             
-            # 在UI线程中更新界面
-            self.log_frame.after(0, lambda: self._update_ui(logs, total))
+            # 使用线程安全的方式传递数据
+            self._log_data_ready = (logs, total)
+            
+            # 在主线程中安排UI更新
+            if hasattr(self, 'log_frame'):
+                try:
+                    def update_ui():
+                        if hasattr(self, '_log_data_ready'):
+                            logs, total = self._log_data_ready
+                            self._update_ui(logs, total)
+                            delattr(self, '_log_data_ready')
+                    
+                    # 使用after_idle而不是after，避免定时器问题
+                    self.log_frame.after_idle(update_ui)
+                except Exception as e:
+                    print(f"安排日志UI更新失败: {e}")
+                    
         except Exception as e:
             import traceback
-            print(f"加载日志数据失败: {e}")
             traceback.print_exc()
-            # 在UI线程中更新错误状态
-            self.log_frame.after(0, lambda: self.show_loading(False, f"加载失败: {str(e)}"))
+            print(f"加载日志数据失败: {e}")
+            
+            # 使用线程安全的方式传递错误
+            self._log_error = str(e)
+            
+            # 在主线程中处理错误
+            if hasattr(self, 'log_frame'):
+                try:
+                    def handle_error():
+                        if hasattr(self, '_log_error'):
+                            error_msg = self._log_error
+                            self.show_loading(False, f"加载失败: {error_msg}")
+                            delattr(self, '_log_error')
+                    
+                    # 使用after_idle而不是after
+                    self.log_frame.after_idle(handle_error)
+                except Exception as e:
+                    print(f"安排日志错误处理失败: {e}")
     
     def _update_ui(self, logs, total):
         """在主线程中更新UI元素"""

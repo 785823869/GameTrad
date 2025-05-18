@@ -878,96 +878,104 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
 
     def _fetch_and_draw_inventory(self):
         # 数据库操作放到后台线程
-        stock_in_data = self.db_manager.get_stock_in()
-        stock_out_data = self.db_manager.get_stock_out()
-        inventory_dict = {}
-        # 统计入库
-        for row in stock_in_data:
-            try:
-                _, item_name, _, qty, cost, *_ = row
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"入库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
-                continue
-            if item_name not in inventory_dict:
-                inventory_dict[item_name] = {
-                    'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
-                }
-            inventory_dict[item_name]['in_qty'] += qty
-            inventory_dict[item_name]['in_amount'] += cost
-        # 统计出库
-        for row in stock_out_data:
-            try:
-                _, item_name, _, qty, unit_price, fee, deposit, total_amount, note, *_ = row
-            except Exception as e:
-                messagebox.showerror("数据结构异常", f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
-                continue
-            amount = unit_price * qty - fee
-            if item_name not in inventory_dict:
-                inventory_dict[item_name] = {
-                    'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
-                }
-            inventory_dict[item_name]['out_qty'] += qty
-            inventory_dict[item_name]['out_amount'] += amount
-        # 加载自定义公式
-        formula_dict = {}
         try:
-            import json
-            if os.path.exists("field_formulas.json"):
-                with open("field_formulas.json", "r", encoding="utf-8") as f:
-                    formula_json = json.load(f)
-                    formula_dict = formula_json.get("库存管理", {})
-        except Exception as e:
-            formula_dict = {}
-        # 生成库存表数据
-        table_data = []
-        for item, data in inventory_dict.items():
-            remain_qty = data['in_qty'] - data['out_qty']
-            in_avg = data['in_amount'] / data['in_qty'] if data['in_qty'] else 0
-            out_avg = data['out_amount'] / data['out_qty'] if data['out_qty'] else 0
-            default_formula = {
-                '利润': '(out_avg - in_avg) * out_qty if out_qty else 0',
-                '利润率': '((out_avg - in_avg) / in_avg * 100) if in_avg else 0',
-                '成交利润额': '(out_avg - in_avg) * out_qty if out_qty else 0',
-                '库存价值': 'remain_qty * in_avg'
-            }
-            ctx = {
-                'in_qty': data['in_qty'],
-                'in_amount': data['in_amount'],
-                'out_qty': data['out_qty'],
-                'out_amount': data['out_amount'],
-                'remain_qty': remain_qty,
-                'in_avg': in_avg,
-                'out_avg': out_avg
-            }
-            def calc_field(field):
-                formula = None
-                if field in formula_dict:
-                    formulas = formula_dict[field]
-                    if formulas:
-                        formula = list(formulas.values())[0]
-                if not formula:
-                    formula = default_formula.get(field, '0')
+            stock_in_data = self.db_manager.get_stock_in()
+            stock_out_data = self.db_manager.get_stock_out()
+            inventory_dict = {}
+            # 统计入库
+            for row in stock_in_data:
                 try:
-                    return eval(formula, {}, ctx)
-                except Exception:
-                    return 0
-            profit = calc_field('利润')
-            profit_rate = calc_field('利润率')
-            total_profit = calc_field('成交利润额')
-            value = calc_field('库存价值')
-            table_data.append((
-                item,
-                remain_qty,
-                f"{in_avg:.2f}",
-                f"{in_avg:.2f}",
-                f"{out_avg:.2f}",
-                f"{profit:.2f}",
-                f"{profit_rate:.2f}%",
-                f"{total_profit:.2f}",
-                f"{value:.2f}"
-            ))
-        # 回到主线程刷新表格
-        self.root.after(0, lambda: self._draw_inventory(table_data))
+                    _, item_name, _, qty, cost, *_ = row
+                except Exception as e:
+                    # 在后台线程中记录错误，不弹出对话框
+                    print(f"入库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
+                    continue
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['in_qty'] += qty
+                inventory_dict[item_name]['in_amount'] += cost
+            # 统计出库
+            for row in stock_out_data:
+                try:
+                    _, item_name, _, qty, unit_price, fee, deposit, total_amount, note, *_ = row
+                except Exception as e:
+                    # 在后台线程中记录错误，不弹出对话框
+                    print(f"出库数据结构异常: {e}\n请检查表结构与代码字段一致性。\nrow={row}")
+                    continue
+                amount = unit_price * qty - fee
+                if item_name not in inventory_dict:
+                    inventory_dict[item_name] = {
+                        'in_qty': 0, 'in_amount': 0, 'out_qty': 0, 'out_amount': 0
+                    }
+                inventory_dict[item_name]['out_qty'] += qty
+                inventory_dict[item_name]['out_amount'] += amount
+            # 加载自定义公式
+            formula_dict = {}
+            try:
+                import json
+                if os.path.exists("field_formulas.json"):
+                    with open("field_formulas.json", "r", encoding="utf-8") as f:
+                        formula_json = json.load(f)
+                        formula_dict = formula_json.get("库存管理", {})
+            except Exception as e:
+                formula_dict = {}
+            # 生成库存表数据
+            table_data = []
+            for item, data in inventory_dict.items():
+                remain_qty = data['in_qty'] - data['out_qty']
+                in_avg = data['in_amount'] / data['in_qty'] if data['in_qty'] else 0
+                out_avg = data['out_amount'] / data['out_qty'] if data['out_qty'] else 0
+                default_formula = {
+                    '利润': '(out_avg - in_avg) * out_qty if out_qty else 0',
+                    '利润率': '((out_avg - in_avg) / in_avg * 100) if in_avg else 0',
+                    '成交利润额': '(out_avg - in_avg) * out_qty if out_qty else 0',
+                    '库存价值': 'remain_qty * in_avg'
+                }
+                ctx = {
+                    'in_qty': data['in_qty'],
+                    'in_amount': data['in_amount'],
+                    'out_qty': data['out_qty'],
+                    'out_amount': data['out_amount'],
+                    'remain_qty': remain_qty,
+                    'in_avg': in_avg,
+                    'out_avg': out_avg
+                }
+                def calc_field(field):
+                    formula = None
+                    if field in formula_dict:
+                        formulas = formula_dict[field]
+                        if formulas:
+                            formula = list(formulas.values())[0]
+                    if not formula:
+                        formula = default_formula.get(field, '0')
+                    try:
+                        return eval(formula, {}, ctx)
+                    except Exception:
+                        return 0
+                profit = calc_field('利润')
+                profit_rate = calc_field('利润率')
+                total_profit = calc_field('成交利润额')
+                value = calc_field('库存价值')
+                table_data.append((
+                    item,
+                    remain_qty,
+                    f"{in_avg:.2f}",
+                    f"{in_avg:.2f}",
+                    f"{out_avg:.2f}",
+                    f"{profit:.2f}",
+                    f"{profit_rate:.2f}%",
+                    f"{total_profit:.2f}",
+                    f"{value:.2f}"
+                ))
+            # 回到主线程刷新表格
+            self.root.after(0, lambda: self._draw_inventory(table_data))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # 在主线程中显示错误
+            self.root.after(0, lambda e=e: print(f"获取库存数据失败: {e}"))
 
     def _draw_inventory(self, table_data):
         for item in self.inventory_tab.inventory_tree.get_children():
@@ -1700,10 +1708,15 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
             import subprocess
             import sys
             import os
-            from src.utils.path_resolver import get_script_path
             
-            # 获取迁移工具脚本路径
-            migration_script_path = get_script_path("scripts/migrate_data_gui.py")
+            try:
+                from src.utils.path_resolver import get_script_path
+                # 获取迁移工具脚本路径
+                migration_script_path = get_script_path("scripts/migrate_data_gui.py")
+            except ImportError:
+                # 如果找不到path_resolver模块，则使用相对路径
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                migration_script_path = os.path.join(base_dir, "src", "scripts", "migrate_data_gui.py")
             
             # 检查脚本是否存在
             if not os.path.exists(migration_script_path):

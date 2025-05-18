@@ -16,6 +16,7 @@ import threading
 import time
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
+import queue
 
 # 禁用SSL警告
 warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -602,7 +603,7 @@ class DashboardTab(Frame):
         
         # 设置图表样式
         plt.style.use('seaborn-v0_8-whitegrid')
-        fig, ax = plt.subplots(figsize=(5,3), dpi=100)
+        fig, ax = plt.subplots(figsize=(8,5), dpi=100)
         fig.patch.set_facecolor('#f9f9f9')
         ax.set_facecolor('#f9f9f9')
         
@@ -1505,6 +1506,16 @@ class DashboardTab(Frame):
         if not hasattr(self, 'silver_price_label') or not hasattr(self, 'nvwa_price_label'):
             return
 
+        # 检查是否在主线程中运行
+        if threading.current_thread() != threading.main_thread():
+            print("警告: refresh_price_data在非主线程中调用，将使用after方法确保UI更新在主线程中执行")
+            # 在主线程中安全调用此方法
+            if hasattr(self, 'main_gui') and hasattr(self.main_gui, 'root'):
+                self.main_gui.root.after(0, self.refresh_price_data)
+            else:
+                self.after(0, self.refresh_price_data)
+            return
+
         # 立即显示缓存的价格数据（如果有）
         if self.silver_price_cache:
             self.silver_price_label.config(text=self.silver_price_cache)
@@ -1529,18 +1540,53 @@ class DashboardTab(Frame):
             print(f"使用缓存的价格数据，上次更新时间: {datetime.fromtimestamp(self.last_price_update)}")
 
         # 只有当无法从API和缓存获取数据时，才尝试从其他Tab或数据库获取
-        if not self.silver_price_cache and not self.nvwa_price_cache:
+        if (not self.silver_price_cache and not self.nvwa_price_cache) or \
+           (hasattr(self, 'silver_price_label') and self.silver_price_label.cget("text") == "加载中..."):
             # 从银两行情和女娲石行情标签页获取当前价格
+            # 这个方法必须在主线程中调用，这里已经确保我们在主线程中
             self._legacy_price_fetch()
 
     def fetch_prices_in_thread(self):
         """在后台线程中获取价格数据"""
         def fetch_task():
-            silver_price = self.fetch_silver_price()
-            nvwa_price = self.fetch_nvwa_price()
-            
-            # 在主线程中更新UI
-            self.after(0, lambda: self.update_price_labels(silver_price, nvwa_price))
+            try:
+                # 获取价格数据
+                silver_price = self.fetch_silver_price()
+                nvwa_price = self.fetch_nvwa_price()
+                
+                # 使用队列传递数据到主线程
+                import queue
+                data_queue = queue.Queue()
+                data_queue.put((silver_price, nvwa_price))
+                
+                # 在主线程中检查队列并更新UI
+                def check_queue():
+                    try:
+                        if not hasattr(self, 'main_gui') or not hasattr(self.main_gui, 'root'):
+                            # 组件可能已被销毁
+                            return
+                            
+                        if data_queue.empty():
+                            # 如果队列为空，继续等待
+                            self.main_gui.root.after(100, check_queue)
+                            return
+                            
+                        silver_price, nvwa_price = data_queue.get()
+                        # 在主线程中安全地更新UI
+                        self.update_price_labels(silver_price, nvwa_price)
+                    except Exception as e:
+                        print(f"更新价格标签失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # 在主窗口上下文中启动检查队列
+                if hasattr(self, 'main_gui') and hasattr(self.main_gui, 'root'):
+                    self.main_gui.root.after(100, check_queue)
+                
+            except Exception as e:
+                print(f"获取价格数据失败: {e}")
+                import traceback
+                traceback.print_exc()
         
         threading.Thread(target=fetch_task, daemon=True).start()
     
@@ -1654,26 +1700,7 @@ class DashboardTab(Frame):
             except Exception as e:
                 print(f"从main_gui获取银两价格失败: {e}")
             
-            # 所有URL都失败，尝试从SilverPriceTab直接获取当前价格
-            if hasattr(self.main_gui, 'silver_price_tab') and self.main_gui.silver_price_tab:
-                if hasattr(self.main_gui.silver_price_tab, 'current_price_label'):
-                    try:
-                        silver_text = self.main_gui.silver_price_tab.current_price_label.cget("text")
-                        if silver_text and silver_text != "--":
-                            print(f"从SilverPriceTab获取到价格: {silver_text}")
-                            # 转换格式为¥xx.xx/万
-                            try:
-                                price_value = float(silver_text)
-                                silver_text = f"¥{price_value:.2f}/万"
-                            except:
-                                pass
-                            self.silver_price_cache = silver_text
-                            self.last_price_update = time.time()
-                            self.save_price_cache()
-                            return silver_text
-                    except Exception as e:
-                        print(f"从SilverPriceTab获取价格失败: {e}")
-            
+            # 不要在后台线程中尝试直接访问UI组件
             # 如果缓存中有数据，返回缓存
             if self.silver_price_cache:
                 print(f"使用缓存的银两价格: {self.silver_price_cache}")
@@ -1736,6 +1763,11 @@ class DashboardTab(Frame):
             
     def _legacy_price_fetch(self):
         """实现旧的从其他Tab或数据库获取价格的方法"""
+        # 这个方法应该只在主线程中调用，不应该在后台线程中执行
+        if threading.current_thread() != threading.main_thread():
+            print("警告: _legacy_price_fetch在非主线程中调用，可能导致UI错误")
+            return
+        
         # 获取银两价格
         silver_price = "加载中..."
         silver_from_ui = False
@@ -1762,7 +1794,8 @@ class DashboardTab(Frame):
             except Exception as e:
                 print(f"从数据库获取银两价格数据失败: {e}")
         
-        self.silver_price_label.config(text=silver_price)
+        if hasattr(self, 'silver_price_label'):
+            self.silver_price_label.config(text=silver_price)
         if silver_price != "加载中...":
             self.silver_price_cache = silver_price
             self.last_price_update = time.time()
@@ -1794,7 +1827,8 @@ class DashboardTab(Frame):
             except Exception as e:
                 print(f"从数据库获取女娲石价格数据失败: {e}")
         
-        self.nvwa_price_label.config(text=nvwa_price)
+        if hasattr(self, 'nvwa_price_label'):
+            self.nvwa_price_label.config(text=nvwa_price)
         if nvwa_price != "加载中...":
             self.nvwa_price_cache = nvwa_price
             self.last_price_update = time.time()

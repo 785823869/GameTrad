@@ -12,12 +12,16 @@ from src.gui.utils.monitor_ocr_parser import parse_monitor_ocr_text
 
 class TradeMonitorTab:
     def __init__(self, notebook, main_gui):
+        """初始化交易监控标签页"""
+        self.notebook = notebook
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
-        self.notebook = notebook
-        
-        # 设置中文字体
+        self.ui_manager = main_gui.ui_manager
         self.chinese_font = main_gui.chinese_font
+        
+        # 添加线程安全标志
+        self.is_destroyed = False
+        self.active_threads = []
         
         # 添加OCR图片存储列表
         self._pending_ocr_images = []
@@ -25,7 +29,11 @@ class TradeMonitorTab:
         # 创建样式
         self.setup_styles()
         
+        # 创建标签页
         self.create_tab()
+        
+        # 绑定销毁事件
+        self.monitor_frame.bind("<Destroy>", self.on_destroy)
 
     def setup_styles(self):
         """设置自定义样式"""
@@ -94,14 +102,14 @@ class TradeMonitorTab:
         # 检查是否在新UI结构中运行
         if isinstance(self.notebook, tb.Frame):
             # 新UI结构，notebook实际上是框架
-            monitor_frame = self.notebook
+            self.monitor_frame = self.notebook
         else:
             # 旧UI结构，notebook是Notebook
-            monitor_frame = tb.Frame(self.notebook, padding=10, bootstyle="light")
-            self.notebook.add(monitor_frame, text="交易监控")
+            self.monitor_frame = tb.Frame(self.notebook, padding=10, bootstyle="light")
+            self.notebook.add(self.monitor_frame, text="交易监控")
         
         # 创建上方的工具栏
-        toolbar = tb.Frame(monitor_frame, bootstyle="light")
+        toolbar = tb.Frame(self.monitor_frame, bootstyle="light")
         toolbar.pack(fill='x', pady=(0, 5))
         
         # 过滤器区域
@@ -126,7 +134,7 @@ class TradeMonitorTab:
         tb.Label(legend_frame, text="人工编辑", bootstyle="success", font=(self.chinese_font, 9)).pack(side='left', padx=2)
         
         # 主区域分割
-        main_area = tb.Frame(monitor_frame, bootstyle="light")
+        main_area = tb.Frame(self.monitor_frame, bootstyle="light")
         main_area.pack(fill='both', expand=True)
         
         # 表格区域
@@ -263,7 +271,7 @@ class TradeMonitorTab:
         self.monitor_tree.bind("<Double-1>", self.edit_monitor_item)
         
         # 底部状态栏
-        status_frame = tb.Frame(monitor_frame, bootstyle="light")
+        status_frame = tb.Frame(self.monitor_frame, bootstyle="light")
         status_frame.pack(fill='x', side='bottom', pady=(5, 0))
         
         self.status_var = tb.StringVar(value="就绪")
@@ -1240,29 +1248,52 @@ class TradeMonitorTab:
 
     def refresh_monitor(self):
         """刷新交易监控数据"""
+        if self.is_destroyed:
+            print("交易监控标签页已被销毁，不再刷新数据")
+            return
+            
         self.status_var.set("正在加载数据...")
-        threading.Thread(target=self._fetch_and_draw_monitor).start()
+        # 创建一个后台线程来获取数据
+        thread = threading.Thread(target=self._fetch_and_draw_monitor, daemon=True)
+        thread.start()
+        self.active_threads.append(thread)
 
     def _fetch_and_draw_monitor(self):
         """后台线程获取并显示交易监控数据"""
         try:
+            # 检查组件是否已被销毁
+            if self.is_destroyed:
+                print("交易监控标签页已被销毁，取消数据获取")
+                return
+                
+            # 获取数据（在后台线程中执行）
             monitor_data = self.db_manager.get_trade_monitor()
             
-            # 过滤数据
-            filter_text = self.monitor_filter_var.get().strip() if hasattr(self, 'monitor_filter_var') else ""
+            # 再次检查组件是否已被销毁
+            if self.is_destroyed:
+                print("交易监控标签页已被销毁，取消数据处理")
+                return
+                
+            # 安全地获取过滤文本 - 不在后台线程中直接访问UI变量
+            filter_text = ""
             
+            # 处理和过滤数据（在后台线程中执行）
             filtered_data = []
             for item in monitor_data:
                 try:
                     _, item_name, *rest = item
-                    if filter_text and filter_text.lower() not in item_name.lower():
-                        continue
+                    # 稍后在主线程中应用过滤
                     filtered_data.append(item)
                 except Exception as e:
                     print(f"过滤交易监控数据错误: {e}")
                     continue
             
-            # 转换为表格数据
+            # 再次检查组件是否已被销毁
+            if self.is_destroyed:
+                print("交易监控标签页已被销毁，取消数据转换")
+                return
+                
+            # 转换为表格数据（在后台线程中执行）
             table_data = []
             for row in filtered_data:
                 try:
@@ -1284,12 +1315,77 @@ class TradeMonitorTab:
                     print(f"处理交易监控数据错误: {e}")
                     continue
             
-            # 在UI线程中绘制表格
-            self.monitor_tree.after(0, lambda: self._draw_monitor(table_data))
+            # 再次检查组件是否已被销毁
+            if self.is_destroyed:
+                print("交易监控标签页已被销毁，取消UI更新")
+                return
+                
+            # 使用线程安全的方式更新UI
+            # 避免使用after和queue，而是使用一个全局变量来传递数据
+            self._monitor_data_ready = table_data
+            
+            # 使用事件标志通知主线程
+            if hasattr(self, 'main_gui') and hasattr(self.main_gui, 'root') and not self.is_destroyed:
+                # 创建一个定时检查函数，在主线程中执行
+                def check_data_ready():
+                    if self.is_destroyed:
+                        return
+                    
+                    if hasattr(self, '_monitor_data_ready'):
+                        data = self._monitor_data_ready
+                        # 获取过滤文本
+                        filter_text = ""
+                        if hasattr(self, 'monitor_filter_var'):
+                            filter_text = self.monitor_filter_var.get().strip().lower()
+                            
+                        # 应用过滤
+                        filtered_table_data = []
+                        for item in data:
+                            if filter_text and filter_text.lower() not in item['item_name'].lower():
+                                continue
+                            filtered_table_data.append(item)
+                        
+                        # 绘制表格
+                        self._draw_monitor(filtered_table_data)
+                        
+                        # 更新状态
+                        if hasattr(self, 'status_var'):
+                            import datetime
+                            self.status_var.set(f"共 {len(filtered_table_data)} 条记录  |  上次更新: {datetime.datetime.now().strftime('%H:%M:%S')}")
+                        
+                        # 清理临时数据
+                        delattr(self, '_monitor_data_ready')
+                    
+                # 在主线程中安排检查
+                try:
+                    if not self.is_destroyed and hasattr(self, 'main_gui') and hasattr(self.main_gui, 'root'):
+                        self.main_gui.root.after_idle(check_data_ready)
+                except Exception as e:
+                    print(f"安排主线程更新失败: {e}")
+                    
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.status_var.set(f"加载数据失败: {str(e)}")
+            print(f"交易监控数据获取失败: {e}")
+            
+            # 更新状态 - 使用线程安全的方式
+            self._monitor_error = str(e)
+            
+            # 在主线程中处理错误
+            if hasattr(self, 'main_gui') and hasattr(self.main_gui, 'root') and not self.is_destroyed:
+                try:
+                    def handle_error():
+                        if self.is_destroyed:
+                            return
+                        
+                        if hasattr(self, '_monitor_error') and hasattr(self, 'status_var'):
+                            error_msg = self._monitor_error
+                            self.status_var.set(f"加载数据失败: {error_msg}")
+                            delattr(self, '_monitor_error')
+                    
+                    self.main_gui.root.after_idle(handle_error)
+                except Exception as e:
+                    print(f"安排错误处理失败: {e}")
 
     def _calc_field(self, value, default_value, convert_func=None):
         """安全计算字段值"""
@@ -1385,7 +1481,56 @@ class TradeMonitorTab:
                 profit_display,
                 profit_rate_display,
                 strategy_display
-            ), tags=tags)
+            ), tags=tags) 
+
+    def on_destroy(self, event):
+        """处理销毁事件"""
+        if event.widget == self.monitor_frame:
+            self.is_destroyed = True
+            # 清理资源
+            print("交易监控标签页被销毁，停止所有后台线程")
             
-        # 更新状态栏
-        self.status_var.set(f"共 {len(table_data)} 条记录  |  上次更新: {datetime.now().strftime('%H:%M:%S')}") 
+            # 清理线程
+            for thread in self.active_threads:
+                if thread.is_alive():
+                    # 无法强制终止线程，但可以标记已销毁，线程会自行检查
+                    pass
+            self.active_threads.clear()
+            
+            # 清理资源
+            self._pending_ocr_images.clear()
+            if hasattr(self, 'ocr_preview'):
+                # 添加安全检查，确保组件仍然存在
+                try:
+                    if self.ocr_preview.winfo_exists():
+                        self.ocr_preview.clear_images()
+                except (tk.TclError, AttributeError):
+                    # 如果组件已经被销毁，忽略错误
+                    pass
+            
+            # 清理树形视图
+            if hasattr(self, 'monitor_tree'):
+                self.monitor_tree.delete(*self.monitor_tree.get_children())
+                
+                # 解绑所有事件
+                events = ["<Motion>", "<Button-3>", "<Control-a>", "<Double-1>", "<Return>", "<Destroy>"]
+                for event in events:
+                    try:
+                        self.monitor_tree.unbind(event)
+                    except:
+                        pass
+            
+            # 清理状态变量
+            if hasattr(self, 'status_var'):
+                self.status_var.set("已销毁")
+            
+            # 清理过滤变量
+            if hasattr(self, 'monitor_filter_var'):
+                self.monitor_filter_var.set("")
+                
+            # 清理右键菜单
+            if hasattr(self, 'monitor_menu'):
+                self.monitor_menu.delete(0, 'end')
+                
+            # 清理其他引用
+            self.last_hover_row = None

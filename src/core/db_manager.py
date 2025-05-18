@@ -52,9 +52,16 @@ class DatabaseManager:
                     for key in default_config:
                         if key not in config:
                             config[key] = default_config[key]
-                    # 确保端口是整数
-                    config['port'] = int(config['port'])
-                    config['connect_timeout'] = int(config['connect_timeout'])
+                    # 确保端口和超时时间是整数
+                    try:
+                        config['port'] = int(config['port'])
+                    except (ValueError, TypeError):
+                        config['port'] = default_config['port']
+                        
+                    try:
+                        config['connect_timeout'] = int(config['connect_timeout'])
+                    except (ValueError, TypeError):
+                        config['connect_timeout'] = default_config['connect_timeout']
                     return config
             except Exception as e:
                 print(f"加载数据库配置失败: {e}")
@@ -80,6 +87,17 @@ class DatabaseManager:
         config_file = os.path.join(config_dir, "db_config.json")
         
         try:
+            # 确保端口和超时时间是整数
+            try:
+                config['port'] = int(config['port'])
+            except (ValueError, TypeError):
+                config['port'] = 33306  # 默认端口
+                
+            try:
+                config['connect_timeout'] = int(config['connect_timeout'])
+            except (ValueError, TypeError):
+                config['connect_timeout'] = 10  # 默认超时时间
+            
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             # 更新当前配置
@@ -93,12 +111,12 @@ class DatabaseManager:
         try:
             return MySQLdb.connect(
                 host=self.config['host'],
-                port=self.config['port'],
+                port=int(self.config['port']),
                 user=self.config['user'],
                 passwd=self.config['passwd'],
                 db=self.config['db'],
                 charset=self.config['charset'],
-                connect_timeout=self.config['connect_timeout']
+                connect_timeout=int(self.config['connect_timeout'])
             )
         except MySQLdb.Error as e:
             print(f"MySQL连接错误: {e}")

@@ -1223,10 +1223,16 @@ class DashboardTab(Frame):
         # 下方区域
         bottom_frame = Frame(self, bootstyle="light")
         bottom_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
-
+        
+        # 创建左侧容器框架来容纳库存详情
+        left_container = Frame(bottom_frame)
+        left_container.pack(side='left', fill='both', expand=False, padx=(0, 10), pady=10)
+        # 设置固定宽度，避免被挤压
+        left_container.config(width=400)
+        
         # 数据表
-        table_frame = LabelFrame(bottom_frame, text="库存详情", bootstyle="primary", padding=10)
-        table_frame.pack(side='left', padx=(0, 10), pady=10, fill='both', expand=True)
+        table_frame = LabelFrame(left_container, text="库存详情", bootstyle="primary", padding=10)
+        table_frame.pack(fill='both', expand=True)
         
         # 创建内部框架，便于控制内边距
         inner_frame = Frame(table_frame, bootstyle="light")
@@ -1308,13 +1314,18 @@ class DashboardTab(Frame):
         # 保存库存详情表格的引用供自动滚动使用
         self.inventory_detail_tree = source_tree
 
+        # 创建右侧容器框架来容纳月度收入图表
+        right_container = Frame(bottom_frame)
+        right_container.pack(side='left', fill='both', expand=True, pady=10)
+        
         # 柱状图
-        chart_frame2 = LabelFrame(bottom_frame, text="月度收入", bootstyle="primary")
-        chart_frame2.pack(side='left', pady=10, fill='both', expand=True)
+        chart_frame2 = LabelFrame(right_container, text="月度收入", bootstyle="primary")
+        chart_frame2.pack(fill='both', expand=True)
         
         # 绘制柱状图
         plt.style.use('seaborn-v0_8-whitegrid')
-        fig2, ax2 = plt.subplots(figsize=(4, 3), dpi=100)
+        # 减小图表尺寸，给更紧凑的显示效果
+        fig2, ax2 = plt.subplots(figsize=(5, 3), dpi=100)
         fig2.patch.set_facecolor('#f9f9f9')
         ax2.set_facecolor('#f9f9f9')
         

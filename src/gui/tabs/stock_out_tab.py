@@ -19,18 +19,31 @@ from src.utils import clipboard_helper
 
 class StockOutTab:
     def __init__(self, notebook, main_gui):
+        """初始化出库管理标签页"""
+        self.notebook = notebook
         self.main_gui = main_gui
         self.db_manager = main_gui.db_manager
-        self.notebook = notebook
-        self._pending_ocr_images_out = []
-        
         # 设置中文字体
         self.chinese_font = main_gui.chinese_font
         
-        # 创建样式
+        # 保存图片列表
+        self._pending_ocr_images_out = []
+        
+        # 悬停行索引
+        self.last_hover_row = None
+        
+        # 添加剪贴板监听状态标志
+        self.monitoring_clipboard = False
+        self.monitor_job_id = None
+        
+        # 创建标签页
+        self.create_tab()
+        
+        # 设置样式
         self.setup_styles()
         
-        self.create_tab()
+        # 绑定标签页切换事件
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
     def setup_styles(self):
         """设置自定义样式"""
@@ -218,6 +231,15 @@ class StockOutTab:
                 
         tb.Button(ocr_tools_frame, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_out,
                 bootstyle="warning-outline").pack(fill='x', pady=2, ipady=2)
+        
+        # 添加监听剪贴板按钮
+        self.monitor_button = tb.Button(
+            ocr_tools_frame, 
+            text="监听剪贴板", 
+            command=self.toggle_clipboard_monitoring,
+            bootstyle="warning"
+        )
+        self.monitor_button.pack(fill='x', pady=2, ipady=2)
         
         # 使用键盘快捷键提示
         shortcut_frame = tb.Frame(right_panel, bootstyle="light")
@@ -1213,6 +1235,118 @@ class StockOutTab:
                 
         # 更新上一个高亮行的记录
         self.last_hover_row = row_id if row_id else None
+
+    def toggle_clipboard_monitoring(self):
+        """切换剪贴板监听状态"""
+        if self.monitoring_clipboard:
+            # 正在监听，停止监听
+            self.stop_clipboard_monitoring()
+        else:
+            # 未监听，确认后开始监听
+            confirm = messagebox.askyesno(
+                "确认操作", 
+                "将清除当前剪贴板内容并开始监听剪贴板图片。\n\n点击确认后将自动将检测到的图片添加到预览区，需手动点击批量识别按钮进行识别，是否继续？",
+                icon='warning'
+            )
+            if confirm:
+                self.start_clipboard_monitoring()
+    
+    def start_clipboard_monitoring(self):
+        """开始监听剪贴板"""
+        # 清除剪贴板内容
+        try:
+            if clipboard_helper.PYPERCLIP_AVAILABLE:
+                import pyperclip
+                pyperclip.copy('')
+            elif clipboard_helper.WIN32_AVAILABLE:
+                import win32clipboard
+                win32clipboard.OpenClipboard()
+                win32clipboard.EmptyClipboard()
+                win32clipboard.CloseClipboard()
+        except Exception as e:
+            self.status_var.set(f"清除剪贴板失败: {str(e)}")
+            
+        # 更新UI
+        self.monitoring_clipboard = True
+        self.monitor_button.config(text="停止监听剪贴板", bootstyle="danger")
+        self.status_var.set("剪贴板监听已启动，等待图片...")
+        
+        # 开始监听循环
+        self.check_clipboard()
+    
+    def stop_clipboard_monitoring(self):
+        """停止监听剪贴板"""
+        # 取消定时任务
+        if self.monitor_job_id is not None:
+            self.main_gui.root.after_cancel(self.monitor_job_id)
+            self.monitor_job_id = None
+            
+        # 更新UI
+        self.monitoring_clipboard = False
+        self.monitor_button.config(text="监听剪贴板", bootstyle="warning")
+        self.status_var.set("剪贴板监听已停止")
+    
+    def check_clipboard(self):
+        """检查剪贴板是否有图片"""
+        if not self.monitoring_clipboard:
+            return
+            
+        try:
+            # 检查剪贴板是否有图片
+            img = clipboard_helper.get_clipboard_image()
+            if img is not None:
+                # 有图片，处理它
+                self.process_clipboard_image(img)
+                
+                # 处理完后清除剪贴板
+                try:
+                    if clipboard_helper.PYPERCLIP_AVAILABLE:
+                        import pyperclip
+                        pyperclip.copy('')
+                    elif clipboard_helper.WIN32_AVAILABLE:
+                        import win32clipboard
+                        win32clipboard.OpenClipboard()
+                        win32clipboard.EmptyClipboard()
+                        win32clipboard.CloseClipboard()
+                except Exception as e:
+                    self.status_var.set(f"清除剪贴板失败: {str(e)}")
+        except Exception as e:
+            self.status_var.set(f"检查剪贴板出错: {str(e)}")
+            
+        # 继续监听，设置下一次检查
+        self.monitor_job_id = self.main_gui.root.after(1000, self.check_clipboard)  # 每秒检查一次
+    
+    def process_clipboard_image(self, img):
+        """处理从剪贴板获取的图片"""
+        try:
+            # 添加到待处理图片列表
+            self._pending_ocr_images_out.append(img)
+            
+            # 更新预览
+            self.refresh_ocr_image_preview_out()
+            
+            # 更新状态
+            self.status_var.set("已从剪贴板获取图片并添加到预览区，请点击批量识别按钮进行识别")
+            
+            # 不再自动调用批量识别
+            # self.batch_ocr_import_stock_out()
+        except Exception as e:
+            self.status_var.set(f"处理剪贴板图片出错: {str(e)}")
+
+    def on_tab_changed(self, event):
+        """标签页切换事件处理"""
+        # 检查当前标签页是否为出库管理
+        current_tab = self.notebook.index("current")
+        if current_tab != self.notebook.index(self.notebook.select()):
+            # 如果切换到其他标签页，停止剪贴板监听
+            if self.monitoring_clipboard:
+                self.stop_clipboard_monitoring()
+    
+    def cleanup(self):
+        """清理资源，在窗口关闭时调用"""
+        # 停止剪贴板监听
+        if self.monitoring_clipboard:
+            self.stop_clipboard_monitoring()
 
     # 其余方法：add_stock_out, refresh_stock_out, edit_stock_out_item, delete_stock_out_item, OCR相关等
     # ...（后续补全所有出库管理相关方法）... 

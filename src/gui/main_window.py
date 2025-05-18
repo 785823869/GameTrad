@@ -2371,6 +2371,25 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
     def on_exit(self):
         """退出应用程序"""
         if messagebox.askyesno("确认退出", "确定要退出应用程序吗？"):
+            # 清理资源
+            try:
+                # 调用入库管理标签页的清理方法
+                if hasattr(self, 'stock_in_tab') and hasattr(self.stock_in_tab, 'cleanup'):
+                    self.stock_in_tab.cleanup()
+                
+                # 调用出库管理标签页的清理方法
+                if hasattr(self, 'stock_out_tab') and hasattr(self.stock_out_tab, 'cleanup'):
+                    self.stock_out_tab.cleanup()
+                    
+                # 调用其他可能需要清理的标签页
+                if hasattr(self, 'trade_monitor_tab') and hasattr(self.trade_monitor_tab, 'cleanup'):
+                    self.trade_monitor_tab.cleanup()
+                    
+            except Exception as e:
+                # 记录错误但继续关闭应用程序
+                self.logger.error(f"清理资源时出错: {e}", exc_info=True)
+                
+            # 关闭窗口
             self.root.destroy()
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ import tkinter as tk
 from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
 from src.utils import clipboard_helper
+import os
+import math
 
 class StockInTab:
     def __init__(self, notebook, main_gui):
@@ -26,11 +28,24 @@ class StockInTab:
         # 设置中文字体
         self.chinese_font = main_gui.chinese_font
         
+        # 获取选项
+        self.options = main_gui.options if hasattr(main_gui, 'options') else {}
+        
+        # 悬停行索引
+        self.last_hover_row = None
+        
+        # 添加剪贴板监听状态标志
+        self.monitoring_clipboard = False
+        self.monitor_job_id = None
+        
         # 创建样式
         self.setup_styles()
         
         self.create_tab()
         
+        # 绑定标签页切换事件
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
     def setup_styles(self):
         """设置自定义样式"""
         style = tb.Style()
@@ -98,13 +113,17 @@ class StockInTab:
                       foreground="#2c3e50")
 
     def create_tab(self):
+        """创建入库管理标签页"""
         # 检查是否在新UI结构中运行
+        is_new_ui = hasattr(self, 'options') and self.options.get('use_new_ui', False)
+        
+        # 检查notebook是Frame还是Notebook
         if isinstance(self.notebook, tk.Frame) or isinstance(self.notebook, tb.Frame):
             # 新UI结构，notebook实际上是框架
             stock_in_frame = self.notebook
         else:
             # 旧UI结构，notebook是Notebook
-            stock_in_frame = tb.Frame(self.notebook, padding=10, bootstyle="light")
+            stock_in_frame = ttk.Frame(self.notebook)
             self.notebook.add(stock_in_frame, text="入库管理")
         
         # 创建上方的工具栏
@@ -183,8 +202,6 @@ class StockInTab:
         
         # 绑定鼠标移动事件
         self.stock_in_tree.bind("<Motion>", self.on_treeview_motion)
-        # 记录上一个高亮的行
-        self.last_hover_row = None
         
         # 右侧面板
         right_panel = tb.Frame(main_area, width=260, bootstyle="light")
@@ -215,6 +232,15 @@ class StockInTab:
         
         tb.Button(ocr_tools_frame, text="批量识别粘贴图片", command=self.batch_ocr_import_stock_in,
                 bootstyle="info-outline").pack(fill='x', pady=2, ipady=2)
+        
+        # 添加监听剪贴板按钮
+        self.monitor_button = tb.Button(
+            ocr_tools_frame, 
+            text="监听剪贴板", 
+            command=self.toggle_clipboard_monitoring,
+            bootstyle="warning"
+        )
+        self.monitor_button.pack(fill='x', pady=2, ipady=2)
         
         # 使用键盘快捷键提示
         shortcut_frame = tb.Frame(right_panel, bootstyle="light")
@@ -255,6 +281,9 @@ class StockInTab:
         self.status_var = tb.StringVar(value="就绪")
         status_label = tb.Label(status_frame, textvariable=self.status_var, bootstyle="secondary")
         status_label.pack(side='left')
+        
+        # 初始加载数据
+        self.refresh_stock_in()
 
     def show_add_stock_in_dialog(self):
         """显示添加入库记录的模态对话框"""
@@ -1063,29 +1092,103 @@ class StockInTab:
                 self.stock_in_tree.selection_set(item)
             self.stock_in_menu.post(event.x_root, event.y_root)
 
-    def paste_ocr_import_stock_in(self, event=None):
-        """从剪贴板粘贴图片进行OCR识别"""
-        if not PIL_AVAILABLE:
-            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片粘贴功能。请确保正确安装Pillow库。")
+    def toggle_clipboard_monitoring(self):
+        """切换剪贴板监听状态"""
+        if self.monitoring_clipboard:
+            # 正在监听，停止监听
+            self.stop_clipboard_monitoring()
+        else:
+            # 未监听，确认后开始监听
+            confirm = messagebox.askyesno(
+                "确认操作", 
+                "将清除当前剪贴板内容并开始监听剪贴板图片。\n\n点击确认后将自动将检测到的图片添加到预览区，需手动点击批量识别按钮进行识别，是否继续？",
+                icon='warning'
+            )
+            if confirm:
+                self.start_clipboard_monitoring()
+    
+    def start_clipboard_monitoring(self):
+        """开始监听剪贴板"""
+        # 清除剪贴板内容
+        try:
+            if clipboard_helper.PYPERCLIP_AVAILABLE:
+                import pyperclip
+                pyperclip.copy('')
+            elif clipboard_helper.WIN32_AVAILABLE:
+                import win32clipboard
+                win32clipboard.OpenClipboard()
+                win32clipboard.EmptyClipboard()
+                win32clipboard.CloseClipboard()
+        except Exception as e:
+            self.status_var.set(f"清除剪贴板失败: {str(e)}")
+            
+        # 更新UI
+        self.monitoring_clipboard = True
+        self.monitor_button.config(text="停止监听剪贴板", bootstyle="danger")
+        self.status_var.set("剪贴板监听已启动，等待图片...")
+        
+        # 开始监听循环
+        self.check_clipboard()
+    
+    def stop_clipboard_monitoring(self):
+        """停止监听剪贴板"""
+        # 取消定时任务
+        if self.monitor_job_id is not None:
+            self.main_gui.root.after_cancel(self.monitor_job_id)
+            self.monitor_job_id = None
+            
+        # 更新UI
+        self.monitoring_clipboard = False
+        self.monitor_button.config(text="监听剪贴板", bootstyle="warning")
+        self.status_var.set("剪贴板监听已停止")
+    
+    def check_clipboard(self):
+        """检查剪贴板是否有图片"""
+        if not self.monitoring_clipboard:
             return
             
         try:
-            # 使用辅助模块获取剪贴板图片
+            # 检查剪贴板是否有图片
             img = clipboard_helper.get_clipboard_image()
-            
-            # 验证获取到的是否为图片
             if img is not None:
-                self._pending_ocr_images.append(img)
-                # 使用refresh_ocr_image_preview方法刷新图片显示
-                self.refresh_ocr_image_preview()
-                messagebox.showinfo("提示", "图片已添加并显示在下方OCR预览区，请点击'批量识别粘贴图片'按钮进行识别导入。")
-            else:
-                # 显示详细的错误信息
-                clipboard_helper.show_clipboard_error()
+                # 有图片，处理它
+                self.process_clipboard_image(img)
+                
+                # 处理完后清除剪贴板
+                try:
+                    if clipboard_helper.PYPERCLIP_AVAILABLE:
+                        import pyperclip
+                        pyperclip.copy('')
+                    elif clipboard_helper.WIN32_AVAILABLE:
+                        import win32clipboard
+                        win32clipboard.OpenClipboard()
+                        win32clipboard.EmptyClipboard()
+                        win32clipboard.CloseClipboard()
+                except Exception as e:
+                    self.status_var.set(f"清除剪贴板失败: {str(e)}")
         except Exception as e:
-            print(f"粘贴图片异常: {str(e)}")  # 调试输出
-            messagebox.showerror("错误", f"粘贴图片失败: {str(e)}\n请尝试使用'上传图片'按钮。")
+            self.status_var.set(f"检查剪贴板出错: {str(e)}")
             
+        # 继续监听，设置下一次检查
+        self.monitor_job_id = self.main_gui.root.after(1000, self.check_clipboard)  # 每秒检查一次
+    
+    def process_clipboard_image(self, img):
+        """处理从剪贴板获取的图片"""
+        try:
+            # 添加到待处理图片列表
+            self._pending_ocr_images.append(img)
+            
+            # 更新预览
+            self.refresh_ocr_image_preview()
+            
+            # 更新状态
+            self.status_var.set("已从剪贴板获取图片并添加到预览区，请点击批量识别按钮进行识别")
+            
+            # 不再自动调用批量识别
+            # self.batch_ocr_import_stock_in()
+        except Exception as e:
+            self.status_var.set(f"处理剪贴板图片出错: {str(e)}")
+
     def on_treeview_motion(self, event):
         """处理鼠标在表格上的移动，动态应用悬停高亮效果"""
         try:
@@ -1124,4 +1227,42 @@ class StockInTab:
             print(f"处理表格悬停效果时出错: {e}")
             # 重置悬停行记录
             self.last_hover_row = None
+
+    def on_tab_changed(self, event):
+        """标签页切换事件处理"""
+        # 检查当前标签页是否为入库管理
+        current_tab = self.notebook.index("current")
+        if current_tab != self.notebook.index(self.notebook.select()):
+            # 如果切换到其他标签页，停止剪贴板监听
+            if self.monitoring_clipboard:
+                self.stop_clipboard_monitoring()
+    
+    def paste_ocr_import_stock_in(self, event=None):
+        """从剪贴板粘贴图片进行OCR识别"""
+        if not PIL_AVAILABLE:
+            messagebox.showwarning("功能不可用", "PIL图像处理模块不可用，无法使用图片粘贴功能。请确保正确安装Pillow库。")
+            return
+            
+        try:
+            # 使用辅助模块获取剪贴板图片
+            img = clipboard_helper.get_clipboard_image()
+            
+            # 验证获取到的是否为图片
+            if img is not None:
+                self._pending_ocr_images.append(img)
+                # 使用refresh_ocr_image_preview方法刷新图片显示
+                self.refresh_ocr_image_preview()
+                messagebox.showinfo("提示", "图片已添加并显示在下方OCR预览区，请点击'批量识别粘贴图片'按钮进行识别导入。")
+            else:
+                # 显示详细的错误信息
+                clipboard_helper.show_clipboard_error()
+        except Exception as e:
+            print(f"粘贴图片异常: {str(e)}")  # 调试输出
+            messagebox.showerror("错误", f"粘贴图片失败: {str(e)}\n请尝试使用'上传图片'按钮。")
+    
+    def cleanup(self):
+        """清理资源，在窗口关闭时调用"""
+        # 停止剪贴板监听
+        if self.monitoring_clipboard:
+            self.stop_clipboard_monitoring()
     # ...后续补全所有入库管理相关方法... 

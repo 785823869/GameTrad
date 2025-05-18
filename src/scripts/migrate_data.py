@@ -332,13 +332,13 @@ class DataMigrator:
     def close_connections(self):
         """关闭数据库连接"""
         if self.local_cursor:
-            self.local_cursor.close()
+        self.local_cursor.close()
         if self.remote_cursor:
-            self.remote_cursor.close()
+        self.remote_cursor.close()
         if self.local_conn:
-            self.local_conn.close()
+        self.local_conn.close()
         if self.remote_conn:
-            self.remote_conn.close()
+        self.remote_conn.close()
         print("已关闭所有数据库连接")
 
     def test_local_connection(self, db_name, user, passwd):
@@ -392,12 +392,12 @@ class DataMigrator:
         """列出所有迁移报告"""
         reports = []
         if os.path.exists(self.backup_dir):
-            for file in os.listdir(self.backup_dir):
+        for file in os.listdir(self.backup_dir):
                 if file.endswith('.json'):
                     with open(os.path.join(self.backup_dir, file), 'r', encoding='utf-8') as f:
-                        try:
+                try:
                             data = json.load(f)
-                            reports.append({
+                reports.append({
                                 'file': file,
                                 'timestamp': data.get('timestamp', ''),
                                 'status': data.get('status', ''),
@@ -449,7 +449,7 @@ class DataMigrator:
             result = os.system(f"mysql -h {db_ip} -P {port} -u {user} -p{passwd} {db_name} < {backup_path}")
             if result == 0:
                 print(f"数据库恢复成功: {backup_path} -> {db_name}")
-                return True
+            return True
             else:
                 print(f"数据库恢复失败，错误代码: {result}")
                 return False

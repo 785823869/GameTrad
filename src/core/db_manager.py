@@ -116,6 +116,19 @@ class DatabaseManager:
         query = "SELECT * FROM inventory"
         return self.fetch_all(query)
 
+    def get_item_inventory(self, item_name):
+        """获取特定物品的库存信息
+        
+        Args:
+            item_name: 物品名称
+            
+        Returns:
+            如果物品存在，返回包含(数量, 均价)的元组
+            如果物品不存在，返回None
+        """
+        query = "SELECT quantity, avg_price FROM inventory WHERE item_name=%s"
+        return self.fetch_one(query, (item_name,))
+
     # 入库记录相关方法
     def save_stock_in(self, stock_in_data):
         """保存入库记录"""

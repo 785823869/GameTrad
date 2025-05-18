@@ -265,25 +265,51 @@ class StockInTab:
             ("备注", "note", "str")
         ]
         
-        ModalInputDialog(
+        # 添加解释说明
+        explanation = (
+            "入库记录说明:\n"
+            "- 物品名称和数量为必填项\n"
+            "- 入库花费将用于计算均价\n"
+            "- 备注可用于记录额外信息"
+        )
+        
+        # 使用增强的ModalInputDialog类
+        dialog = ModalInputDialog(
             self.main_gui.root,
             "添加入库记录",
             fields,
-            self.process_add_stock_in
+            self.process_add_stock_in,
+            explanation=explanation  # 使用新增的参数传入说明文本
         )
+        
+        # 使用新的set_field_style方法设置字段样式
+        dialog.set_field_style("item_name", "Dialog.TLabel", "success")
+        dialog.set_field_style("quantity", "Dialog.TLabel", "success")
     
     def process_add_stock_in(self, values):
         """处理添加入库记录的回调"""
         try:
+            # 数据验证
             item = values["item_name"]
+            if not item or item.strip() == "":
+                raise ValueError("物品名称不能为空")
+                
             quantity = values["quantity"]
+            if not isinstance(quantity, (int, float)) or quantity <= 0:
+                raise ValueError("入库数量必须是大于0的数字")
+                
             cost = values["cost"]
+            if not isinstance(cost, (int, float)) or cost <= 0:
+                raise ValueError("入库花费必须是大于0的数字")
+                
             note = values["note"]
             
+            # 计算均价
             avg_cost = cost / quantity if quantity > 0 else 0
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            self.db_manager.save_stock_in({
+            # 保存入库记录
+            save_result = self.db_manager.save_stock_in({
                 'item_name': item,
                 'transaction_time': now,
                 'quantity': quantity,
@@ -293,20 +319,45 @@ class StockInTab:
                 'note': note if note is not None else ''
             })
             
-            self.db_manager.increase_inventory(item, quantity, avg_cost)
+            if not save_result:
+                raise ValueError("保存入库记录失败，请检查数据格式")
+            
+            # 更新库存
+            increase_result = self.db_manager.increase_inventory(item, quantity, avg_cost)
+            if not increase_result:
+                raise ValueError("更新库存失败，请检查库存记录")
+                
+            # 刷新显示
             self.refresh_stock_in()
             
             # 确保库存页面也更新
             if hasattr(self.main_gui, 'inventory_tab') and self.main_gui.inventory_tab:
-                self.main_gui.inventory_tab.refresh_inventory()
+                self.main_gui.inventory_tab.refresh_inventory(show_dialog=False)
             self.main_gui.refresh_inventory()
             
-            self.main_gui.log_operation('修改', '入库管理')
+            # 使用操作类型常量记录日志
+            try:
+                from src.utils.operation_types import OperationType, TabName
+                self.main_gui.log_operation(OperationType.ADD, TabName.STOCK_IN, {
+                    'item_name': item,
+                    'quantity': quantity,
+                    'cost': cost,
+                    'avg_cost': avg_cost,
+                    'note': note if note is not None else ''
+                })
+            except ImportError:
+                # 兼容旧版本，使用字符串
+                self.main_gui.log_operation('修改', '入库管理')
+                
             messagebox.showinfo("成功", "入库记录添加成功！")
             self.status_var.set(f"已添加: {item} x {quantity}")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
             self.status_var.set(f"添加记录失败: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("系统错误", f"发生意外错误: {str(e)}")
+            self.status_var.set(f"系统错误: {str(e)}")
+            print(f"入库记录添加错误: {e}")
 
     def refresh_stock_in(self):
         for item in self.stock_in_tree.get_children():

@@ -588,7 +588,7 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         """刷新所有数据"""
         # 使用Tab类中的刷新方法，防止重复刷新
         if hasattr(self, 'inventory_tab'):
-            self.inventory_tab.refresh_inventory()
+            self.inventory_tab.refresh_inventory(show_dialog=False)
         else:
             # 只有在没有标签页时才使用主窗口方法
             self.refresh_inventory()
@@ -1588,6 +1588,13 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
 
     def refresh_after_import(self):
         """导入后刷新所有数据"""
+        # 导入库存计算模块
+        from src.core.inventory_calculator import calculate_inventory
+        
+        # 重新计算库存数据
+        calculate_inventory(db_manager=self.db_manager, update_db=True, silent=True)
+        
+        # 刷新界面显示
         self.refresh_inventory()
         self.refresh_stock_out()
 

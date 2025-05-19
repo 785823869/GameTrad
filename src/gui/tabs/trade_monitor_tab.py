@@ -1510,15 +1510,20 @@ class TradeMonitorTab:
             
             # 清理树形视图
             if hasattr(self, 'monitor_tree'):
-                self.monitor_tree.delete(*self.monitor_tree.get_children())
-                
-                # 解绑所有事件
-                events = ["<Motion>", "<Button-3>", "<Control-a>", "<Double-1>", "<Return>", "<Destroy>"]
-                for event in events:
-                    try:
-                        self.monitor_tree.unbind(event)
-                    except:
-                        pass
+                try:
+                    if self.monitor_tree.winfo_exists():
+                        self.monitor_tree.delete(*self.monitor_tree.get_children())
+                        
+                        # 解绑所有事件
+                        events = ["<Motion>", "<Button-3>", "<Control-a>", "<Double-1>", "<Return>", "<Destroy>"]
+                        for event in events:
+                            try:
+                                self.monitor_tree.unbind(event)
+                            except:
+                                pass
+                except (tk.TclError, AttributeError):
+                    # 如果组件已经被销毁，忽略错误
+                    pass
             
             # 清理状态变量
             if hasattr(self, 'status_var'):
@@ -1530,7 +1535,13 @@ class TradeMonitorTab:
                 
             # 清理右键菜单
             if hasattr(self, 'monitor_menu'):
-                self.monitor_menu.delete(0, 'end')
+                try:
+                    # 尝试获取菜单的index，如果菜单已被销毁，会引发TclError
+                    self.monitor_menu.index('end')
+                    self.monitor_menu.delete(0, 'end')
+                except (tk.TclError, AttributeError):
+                    # 如果菜单已经被销毁，忽略错误
+                    pass
                 
             # 清理其他引用
             self.last_hover_row = None

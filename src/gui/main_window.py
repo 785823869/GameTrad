@@ -696,6 +696,17 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         # 在 __init__ 里添加：
         self.current_ocr_tab = None
         
+        # 在程序启动时，手动调用一次_on_tab_changed_ocr方法
+        # 获取当前活动的标签页
+        active_tab = self.sidebar.get_active_tab()
+        if active_tab:
+            # 将当前活动标签页的标题传递给_on_tab_changed_ocr方法
+            self._on_tab_changed_ocr(tab_title=active_tab['title'])
+        else:
+            # 如果没有活动标签页，确保设置为默认状态（禁用剪贴板图片功能）
+            from src.utils import clipboard_helper
+            clipboard_helper.enable_image_clipboard = False
+
     def load_saved_data(self):
         """从数据库加载数据"""
         try:
@@ -1354,9 +1365,13 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         formula_manager._build_fields()
 
     def _on_tab_changed_ocr(self, event=None, tab_title=None):
-        """处理标签页切换事件，重新绑定OCR相关的快捷键"""
-        if isinstance(event, str):
-            # 如果event是字符串，说明是从ModernSidebar传来的标签页标题
+        """根据当前标签页切换OCR功能"""
+        # 确定当前选中的标签页
+        if event and hasattr(event, 'widget'):
+            # 从事件获取标签页
+            tab = event.widget.tab(event.widget.select(), 'text')
+        elif isinstance(event, str):
+            # 兼容传入字符串
             tab = event
         elif tab_title:
             # 使用传入的标签页标题
@@ -1368,10 +1383,18 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         # 先解绑所有
         self.root.unbind_all('<Control-v>')
         
+        # 导入clipboard_helper模块
+        from src.utils import clipboard_helper
+        
+        # 默认禁用图片剪贴板功能
+        clipboard_helper.enable_image_clipboard = False
+        
         # 根据标签页标题重新绑定
         if tab == '入库管理' or '入库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_in_tab.paste_ocr_import_stock_in)
             self.current_ocr_tab = 'in'
+            # 启用图片剪贴板功能
+            clipboard_helper.enable_image_clipboard = True
             # 清空其他标签页的预览区域
             if hasattr(self, 'stock_out_tab') and hasattr(self.stock_out_tab, 'ocr_preview'):
                 self.stock_out_tab.ocr_preview.clear_images()
@@ -1380,6 +1403,8 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         elif tab == '出库管理' or '出库管理' in str(tab):
             self.root.bind_all('<Control-v>', self.stock_out_tab.paste_ocr_import_stock_out)
             self.current_ocr_tab = 'out'
+            # 启用图片剪贴板功能
+            clipboard_helper.enable_image_clipboard = True
             # 清空其他标签页的预览区域
             if hasattr(self, 'stock_in_tab') and hasattr(self.stock_in_tab, 'ocr_preview'):
                 self.stock_in_tab.ocr_preview.clear_images()
@@ -1388,6 +1413,8 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
         elif tab == '交易监控' or '交易监控' in str(tab):
             self.root.bind_all('<Control-v>', self.trade_monitor_tab.paste_ocr_import_monitor)
             self.current_ocr_tab = 'monitor'
+            # 启用图片剪贴板功能
+            clipboard_helper.enable_image_clipboard = True
             # 清空其他标签页的预览区域
             if hasattr(self, 'stock_in_tab') and hasattr(self.stock_in_tab, 'ocr_preview'):
                 self.stock_in_tab.ocr_preview.clear_images()
@@ -1395,6 +1422,8 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
                 self.stock_out_tab.ocr_preview.clear_images()
         else:
             self.current_ocr_tab = None
+            # 其他标签页禁用图片剪贴板功能
+            clipboard_helper.enable_image_clipboard = False
 
     def parse_stock_out_ocr_text(self, text):
         """解析出库OCR文本，所有金额字段转为整数，正则兼容多种格式。"""

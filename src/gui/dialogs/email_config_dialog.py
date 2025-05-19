@@ -3,6 +3,7 @@ import ttkbootstrap as tb
 from tkinter import messagebox, scrolledtext
 from src.utils.email_sender import QQEmailSender
 from src.gui.dialogs.email_preview_dialog import EmailPreviewDialog
+from src.utils import clipboard_helper
 
 class EmailConfigDialog(tk.Toplevel):
     """邮件配置对话框"""
@@ -12,9 +13,15 @@ class EmailConfigDialog(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         
+        # 记录打开对话框前的图片剪贴板状态
+        self.previous_clipboard_state = clipboard_helper.enable_image_clipboard
+        
+        # 临时禁用图片剪贴板功能
+        clipboard_helper.enable_image_clipboard = False
+        
         # 设置对话框属性
         self.title("QQ邮箱推送设置")
-        self.geometry("700x700")  # 进一步增加窗口尺寸
+        self.geometry("700x750")  # 增加窗口高度确保底部按钮可见
         self.resizable(False, False)
         self.transient(parent)  # 设置为父窗口的临时窗口
         self.grab_set()  # 模态对话框
@@ -31,6 +38,17 @@ class EmailConfigDialog(tk.Toplevel):
         
         # 居中显示
         self.center_window()
+        
+        # 设置关闭事件处理
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def on_close(self):
+        """关闭窗口时恢复之前的图片剪贴板状态"""
+        # 恢复之前的图片剪贴板状态
+        clipboard_helper.enable_image_clipboard = self.previous_clipboard_state
+        
+        # 关闭窗口
+        self.destroy()
     
     def create_widgets(self):
         """创建对话框控件"""
@@ -174,6 +192,38 @@ class EmailConfigDialog(tk.Toplevel):
         self.recipients_text.config(yscrollcommand=recipient_scrollbar.set)
         
         tb.Label(self.config_frame, text="每行一个邮箱地址", bootstyle="secondary").grid(row=6, column=1, sticky="w", pady=2)
+        
+        # 底部按钮区域
+        bottom_frame = tb.Frame(self.basic_config_tab)
+        bottom_frame.pack(fill=tk.X, pady=10)
+        
+        # 添加单独的保存基本设置按钮
+        tb.Button(
+            bottom_frame,
+            text="保存基本设置",
+            bootstyle="primary",
+            command=self.save_basic_settings,
+            width=15
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 添加测试连接按钮
+        tb.Button(
+            bottom_frame,
+            text="测试连接",
+            bootstyle="info",
+            command=self.test_connection,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 创建基本设置标签页中的测试邮件按钮
+        self.tab_test_send_btn = tb.Button(
+            bottom_frame,
+            text="发送测试邮件",
+            bootstyle="success",
+            command=self.send_test_email,
+            width=15
+        )
+        self.tab_test_send_btn.pack(side=tk.RIGHT, padx=5)
         
         # 设置列权重，让第一列填充空间
         self.config_frame.columnconfigure(1, weight=1)
@@ -403,6 +453,10 @@ class EmailConfigDialog(tk.Toplevel):
         # 设置测试发送按钮状态
         self.test_send_btn.configure(state=state)
         
+        # 设置标签页中的测试邮件按钮状态
+        if hasattr(self, 'tab_test_send_btn'):
+            self.tab_test_send_btn.configure(state=state)
+        
         # 设置所有配置控件的状态
         for child in self.config_frame.winfo_children():
             try:
@@ -596,15 +650,24 @@ class EmailConfigDialog(tk.Toplevel):
                 "size": "1.2 MB"
             }
             
-            # 发送测试邮件
+            # 从UI获取收件人列表
+            recipients_text = self.recipients_text.get(1.0, tk.END).strip()
+            recipients = [r.strip() for r in recipients_text.split("\n") if r.strip()]
+            
+            if not recipients:
+                messagebox.showwarning("警告", "收件人列表为空，请在基本设置标签页的收件人列表中添加至少一个邮箱地址")
+                return
+            
+            # 发送测试邮件，明确指定收件人参数
             success = self.email_sender.send_template_email(
                 template_name=template_name,
                 context=context,
+                recipients=recipients,  # 直接传递收件人列表
                 immediate=True  # 立即发送，而不是加入队列
             )
             
             if success:
-                messagebox.showinfo("成功", "测试邮件已发送，请检查收件箱")
+                messagebox.showinfo("成功", f"测试邮件已发送至以下收件人：\n{', '.join(recipients)}\n\n请检查收件箱")
             else:
                 messagebox.showerror("错误", "测试邮件发送失败，请检查日志")
         except Exception as e:
@@ -823,4 +886,57 @@ class EmailConfigDialog(tk.Toplevel):
             import traceback
             error_msg = f"预览模板时出错: {str(e)}\n{traceback.format_exc()}"
             messagebox.showerror("错误", f"无法显示预览: {str(e)}")
-            self.email_sender.logger.error(error_msg) 
+            self.email_sender.logger.error(error_msg)
+    
+    def save_basic_settings(self):
+        """仅保存基本设置标签页中的配置信息"""
+        try:
+            # 收集基本设置中的值
+            new_config = self.config.copy()  # 保留其他设置
+            
+            # 更新基本设置
+            new_config.update({
+                "enabled": self.enable_var.get(),
+                "smtp_server": self.smtp_server_var.get(),
+                "smtp_port": int(self.smtp_port_var.get()),
+                "username": self.username_var.get(),
+                "password": self.password_var.get(),
+                "sender": self.sender_var.get(),
+            })
+            
+            # 收集收件人列表
+            recipients_text = self.recipients_text.get(1.0, tk.END).strip()
+            recipients = [r.strip() for r in recipients_text.split("\n") if r.strip()]
+            new_config["recipients"] = recipients
+            
+            # 验证必要字段
+            if new_config["enabled"]:
+                required_fields = [
+                    ("smtp_server", "SMTP服务器"),
+                    ("smtp_port", "SMTP端口"),
+                    ("username", "邮箱账号"),
+                    ("password", "邮箱授权码")
+                ]
+                
+                for field, name in required_fields:
+                    if not new_config[field]:
+                        messagebox.showerror("错误", f"{name}不能为空")
+                        return
+                
+                if not new_config.get("recipients"):
+                    messagebox.showerror("错误", "请至少添加一个收件人")
+                    return
+            
+            # 保存配置
+            success = self.email_sender.save_config(new_config)
+            if success:
+                messagebox.showinfo("成功", "基本设置已保存")
+                # 更新本地配置副本
+                self.config = new_config
+            else:
+                messagebox.showerror("错误", "保存基本设置失败，请查看日志")
+                
+        except ValueError as e:
+            messagebox.showerror("错误", f"数值格式错误: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("错误", f"保存基本设置时出错: {str(e)}") 

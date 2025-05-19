@@ -7,6 +7,7 @@ import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
+from email.utils import formataddr
 from pathlib import Path
 from queue import Queue
 from datetime import datetime, timedelta
@@ -289,7 +290,15 @@ class QQEmailSender:
             try:
                 # 创建邮件
                 msg = MIMEMultipart()
-                msg['From'] = f"{self.config['sender']} <{self.config['username']}>"
+                
+                # 设置发件人，确保格式正确
+                sender_name = self.config['sender']
+                sender_email = self.config['username']
+                
+                # 使用email.utils.formataddr函数确保地址格式完全符合RFC标准
+                from_addr = formataddr((sender_name, sender_email))
+                msg['From'] = from_addr
+                
                 msg['To'] = "; ".join(recipients)
                 msg['Subject'] = Header(subject, 'utf-8')
                 
@@ -304,7 +313,7 @@ class QQEmailSender:
                 server.ehlo()
                 server.starttls()
                 server.login(self.config["username"], self.config["password"])
-                server.sendmail(self.config["username"], recipients, msg.as_string())
+                server.sendmail(sender_email, recipients, msg.as_string())
                 server.quit()
                 
                 # 记录成功

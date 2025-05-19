@@ -10,11 +10,18 @@ import traceback
 from tkinter import messagebox
 import platform
 import logging
+import tempfile
+import subprocess
+import importlib
+from io import BytesIO
 
 # 配置日志系统
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('clipboard_helper')
+
+# 全局控制标志 - 控制是否启用图片剪贴板功能
+enable_image_clipboard = False
 
 # 状态变量，用于跟踪可用的功能
 PIL_AVAILABLE = False
@@ -28,7 +35,7 @@ CTYPES_AVAILABLE = False
 SYSTEM_INFO = {
     "platform": sys.platform,
     "python_version": platform.python_version(),
-    "os_version": platform.version(),
+    "os_version": platform.version() if hasattr(platform, 'version') else 'unknown',
     "machine": platform.machine()
 }
 
@@ -126,7 +133,6 @@ def get_clipboard_image_win32():
             
             try:
                 # 从内存中加载图像
-                from io import BytesIO
                 img = Image.open(BytesIO(bmp_data))
                 logger.info(f"成功从DIB数据创建图像，尺寸: {img.size}")
                 return img
@@ -266,7 +272,6 @@ def get_clipboard_image_ctypes():
                 bmp_data = header + buffer.raw
                 
                 # 从内存中加载图像
-                from io import BytesIO
                 img = Image.open(BytesIO(bmp_data))
                 logger.info(f"成功通过ctypes从DIB数据创建图像，尺寸: {img.size}")
                 return img
@@ -303,9 +308,6 @@ def get_clipboard_image_temp_file():
         return None
         
     try:
-        import tempfile
-        import subprocess
-        
         logger.info("尝试通过临时文件获取剪贴板图片")
         
         # 创建临时文件
@@ -379,6 +381,11 @@ def get_clipboard_image():
     返回:
         PIL.Image 或 None: 成功则返回PIL.Image对象，失败则返回None
     """
+    # 检查是否启用了图片剪贴板功能
+    if not enable_image_clipboard:
+        logger.info("图片剪贴板功能未启用，跳过获取")
+        return None
+    
     # 尝试各种方法，按优先级排序
     methods = [
         ("PIL", get_clipboard_image_pil),

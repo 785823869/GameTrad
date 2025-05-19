@@ -1,11 +1,17 @@
 {
-  "enabled": false,
+  "enabled": true,
   "smtp_server": "smtp.qq.com",
   "smtp_port": 587,
-  "username": "",
-  "password": "",
+  "username": "849523275@qq.com",
+  "password": "auhebkgpfetgbaii",
   "sender": "GameTrad系统",
-  "recipients": [],
+  "recipients": [
+    "17673426661@163.com"
+  ],
   "retry_count": 3,
-  "retry_delay": 5
+  "retry_delay": 5,
+  "enable_log": true,
+  "log_days": 30,
+  "enable_daily_report": false,
+  "daily_report_time": "20:00"
 }

@@ -154,3 +154,10 @@ class ModernSidebar:
             if tab['id'] == self.active_tab:
                 return tab['content']
         return None 
+    
+    def get_active_tab(self):
+        """获取当前活动选项卡的完整信息"""
+        for tab in self.tabs:
+            if tab['id'] == self.active_tab:
+                return tab
+        return None 

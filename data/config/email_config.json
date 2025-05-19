@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "smtp_server": "smtp.qq.com",
+  "smtp_port": 587,
+  "username": "",
+  "password": "",
+  "sender": "GameTrad系统",
+  "recipients": [],
+  "retry_count": 3,
+  "retry_delay": 5
+}

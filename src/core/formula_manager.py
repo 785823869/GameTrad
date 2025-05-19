@@ -20,6 +20,10 @@ class FormulaManagerWindow(tb.Toplevel):
         self.title("公式管理")
         self.geometry("900x650")
         self.main_gui = main_gui
+        
+        # 记录原始主题
+        self.original_theme = tb.Style().theme.name
+        
         self.formula_dict = {}
         self.note_rules_dict = {}  # 新增备注规则字典
         self.page_var = tb.StringVar(value="库存管理")
@@ -27,6 +31,16 @@ class FormulaManagerWindow(tb.Toplevel):
         self._load_formulas()
         self._load_note_rules()  # 加载备注规则
         self._build_ui()
+        
+        # 绑定关闭事件
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+    def on_close(self):
+        """关闭窗口前恢复原主题"""
+        # 恢复原主题
+        tb.Style().theme_use(self.original_theme)
+        # 销毁窗口
+        super().destroy()
 
     def _load_formulas(self):
         if os.path.exists("field_formulas.json"):
@@ -81,7 +95,7 @@ class FormulaManagerWindow(tb.Toplevel):
         btn_frame = ttk.Frame(self, padding=10)
         btn_frame.pack()
         ttk.Button(btn_frame, text="保存", command=self._save).pack(side='left', padx=10)
-        ttk.Button(btn_frame, text="关闭", command=self.destroy).pack(side='left', padx=10)
+        ttk.Button(btn_frame, text="关闭", command=self.on_close).pack(side='left', padx=10)
 
     def _build_fields(self):
         for widget in self.fields_frame.winfo_children():

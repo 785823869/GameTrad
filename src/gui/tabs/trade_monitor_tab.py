@@ -9,6 +9,7 @@ from src.gui.dialogs import ModalInputDialog
 from src.gui.components import OCRPreview, OCRPreviewDialog
 from src.utils import clipboard_helper
 from src.gui.utils.monitor_ocr_parser import parse_monitor_ocr_text
+import logging
 
 class TradeMonitorTab:
     def __init__(self, notebook, main_gui):
@@ -322,80 +323,70 @@ class TradeMonitorTab:
         # 等待对话框完成
 
     def process_add_monitor(self, values):
-        """处理添加监控记录的回调"""
+        """处理添加监控物品"""
         try:
-            # 数据验证
-            item = values["item_name"]
-            if not item or item.strip() == "":
-                raise ValueError("物品名称不能为空")
+            # 获取所有字段值
+            item_name = values.get("物品", "").strip()
+            price = self.ui_manager.safe_int_convert(values.get("一口价", "0"))
+            quantity = self.ui_manager.safe_int_convert(values.get("数量", "0"))
+            server = values.get("服务器", "").strip()
+            note = values.get("备注", "").strip()
+            
+            # 验证所有必填字段
+            if not item_name:
+                messagebox.showerror("错误", "物品名称不能为空")
+                return False
                 
-            quantity = values["quantity"]
-            if not isinstance(quantity, (int, float)) or quantity <= 0:
-                raise ValueError("数量必须是大于0的数字")
+            if not server:
+                messagebox.showerror("错误", "服务器不能为空")
+                return False
                 
-            market_price = values["market_price"]
-            if not isinstance(market_price, (int, float)) or market_price <= 0:
-                raise ValueError("一口价必须是大于0的数字")
-                
-            target_price = values["target_price"]
-            if not isinstance(target_price, (int, float)) or target_price <= 0:
-                raise ValueError("目标买入价必须是大于0的数字")
-                
-            planned_price = values["planned_price"]
-            if not isinstance(planned_price, (int, float)) or planned_price <= 0:
-                raise ValueError("计划卖出价必须是大于0的数字")
-                
-            strategy = values["strategy"]
+            # 获取当前时间
+            update_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            # 业务逻辑验证
-            if target_price >= planned_price:
-                if not messagebox.askyesno("价格异常", f"目标买入价 {target_price} 大于或等于计划卖出价 {planned_price}，可能导致亏损。确定继续吗？"):
-                    return
+            # 添加数据到数据库
+            self.db_manager.add_trade_monitor(
+                item_name=item_name,
+                price=price,
+                quantity=quantity,
+                server=server,
+                update_date=update_date,
+                note=note
+            )
             
-            # 计算保本价、利润和利润率
-            break_even_price = round(target_price * 1.03) if target_price else 0
-            profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
-            profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
-            
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # 准备保存的数据
-            monitor_data = {
-                'item_name': item,
-                'monitor_time': now,
-                'quantity': quantity,
-                'market_price': market_price,
-                'target_price': target_price,
-                'planned_price': planned_price,
-                'break_even_price': break_even_price,
-                'profit': profit,
-                'profit_rate': profit_rate,
-                'strategy': strategy
-            }
-            
-            # 保存数据
-            self.db_manager.save_trade_monitor(monitor_data)
-            
-            # 刷新显示
-            self.refresh_monitor()
-            
-            # 使用操作类型常量记录日志
-            try:
+            # 如果有主界面，则记录操作日志
+            if hasattr(self.main_gui, 'log_operation'):
                 from src.utils.operation_types import OperationType, TabName
-                self.main_gui.log_operation(OperationType.ADD, TabName.TRADE_MONITOR, monitor_data)
-            except ImportError:
-                # 兼容旧版本，使用字符串
-                self.main_gui.log_operation('修改', '交易监控')
+                data = {
+                    'id': self.db_manager.get_last_inserted_id(),
+                    'item_name': item_name,
+                    'price': price,
+                    'quantity': quantity,
+                    'server': server,
+                    'update_date': update_date,
+                    'note': note
+                }
+                self.main_gui.log_operation(OperationType.ADD, TabName.TRADE_MONITOR, data)
                 
-            messagebox.showinfo("成功", "监控记录添加成功！")
-            self.status_var.set(f"已添加: {item}")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
-            self.status_var.set(f"添加记录失败: {str(e)}")
+            # 尝试发送邮件通知
+            try:
+                self._send_email_notification(item_name, price, quantity, server, note)
+            except Exception as e:
+                # 邮件发送失败不影响主流程
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"发送邮件通知失败: {e}", exc_info=True)
+                
+            # 刷新表格
+            self.refresh_monitor()
+            return True
+            
         except Exception as e:
-            messagebox.showerror("系统错误", f"发生意外错误: {str(e)}")
-            self.status_var.set(f"系统错误: {str(e)}")
-            print(f"交易监控记录添加错误: {e}")
+            messagebox.showerror("错误", f"添加监控物品失败: {str(e)}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"添加监控物品失败: {str(e)}", exc_info=True)
+            return False
 
     def upload_ocr_import_monitor(self):
         """上传图片进行OCR识别导入"""
@@ -663,131 +654,116 @@ class TradeMonitorTab:
             messagebox.showerror("错误", f"显示OCR预览对话框失败: {str(e)}")
 
     def import_confirmed_ocr_data(self, confirmed_data):
-        """导入确认后的OCR数据"""
-        success_count = 0
-        error_count = 0
-        error_messages = []
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        for data in confirmed_data:
-            try:
-                # 确保所有必要的字段都存在
-                if not isinstance(data, dict):
-                    error_count += 1
-                    error_messages.append(f"数据格式错误: {data}")
-                    continue
-                
-                # 获取必要字段，支持英文和中文字段名
-                item_name = data.get('item_name', '') or data.get('物品', '')
-                if not item_name:
-                    error_count += 1
-                    error_messages.append("缺少物品名称")
-                    continue
-                    
-                quantity = data.get('quantity', 0) or data.get('数量', 0)
-                if not quantity:
-                    error_count += 1
-                    error_messages.append(f"{item_name}: 缺少数量")
-                    continue
-                
-                # 确保数据类型正确
-                try:
-                    quantity = int(quantity)
-                except (ValueError, TypeError):
-                    error_count += 1
-                    error_messages.append(f"{item_name}: 数量必须是整数")
-                    continue
-                
-                # 获取价格字段
-                market_price = data.get('market_price', 0) or data.get('一口价', 0)
-                try:
-                    market_price = int(market_price)
-                except (ValueError, TypeError):
-                    error_count += 1
-                    error_messages.append(f"{item_name}: 一口价必须是数字")
-                    continue
-                
-                # 获取或计算目标买入价
-                target_price = data.get('target_price', 0) or data.get('目标买入价', 0)
-                if not target_price and market_price:
-                    # 如果没有提供目标买入价，默认设置为一口价的95%
-                    target_price = int(market_price * 0.95)
-                    print(f"未提供目标买入价，自动设置为一口价的95%: {target_price}")
-                
-                try:
-                    target_price = int(target_price)
-                except (ValueError, TypeError):
-                    error_count += 1
-                    error_messages.append(f"{item_name}: 目标买入价必须是数字")
-                    continue
-                
-                # 获取或计算计划卖出价
-                planned_price = data.get('planned_price', 0) or data.get('计划卖出价', 0)
-                if not planned_price and target_price:
-                    # 如果没有提供计划卖出价，默认设置为目标买入价的110%
-                    planned_price = int(target_price * 1.1)
-                    print(f"未提供计划卖出价，自动设置为目标买入价的110%: {planned_price}")
-                
-                try:
-                    planned_price = int(planned_price)
-                except (ValueError, TypeError):
-                    error_count += 1
-                    error_messages.append(f"{item_name}: 计划卖出价必须是数字")
-                    continue
-                
-                # 计算保本价、利润和利润率
-                break_even_price = round(target_price * 1.03) if target_price else 0
-                profit = (planned_price - target_price) * quantity if planned_price and target_price else 0
-                profit_rate = round((planned_price - target_price) / target_price * 100, 2) if planned_price and target_price and target_price != 0 else 0
-                
-                # 备注/策略
-                strategy = data.get('strategy', '') or data.get('出库策略', '') or data.get('note', '') or data.get('备注', '')
-                
-                # 保存数据
-                saved_data = {
-                    'item_name': item_name,
-                    'monitor_time': now,
-                    'quantity': quantity,
-                    'market_price': market_price,
-                    'target_price': target_price,
-                    'planned_price': planned_price,
-                    'break_even_price': break_even_price,
-                    'profit': profit,
-                    'profit_rate': profit_rate,
-                    'strategy': strategy
-                }
-                
-                # 调试输出
-                print(f"保存交易监控数据: {saved_data}")
-                
-                # 保存到数据库
-                self.db_manager.save_trade_monitor(saved_data)
-                success_count += 1
-                
-            except Exception as e:
-                error_count += 1
-                error_message = f"{data.get('item_name', '未知物品')}: {str(e)}"
-                error_messages.append(error_message)
-                print(f"保存交易监控数据错误: {error_message}")
-        
-        if success_count > 0:
-            self.refresh_monitor()
-            self.main_gui.log_operation('批量修改', '交易监控', confirmed_data)
-            messagebox.showinfo("成功", f"成功导入 {success_count} 条监控记录")
-            self.status_var.set(f"已导入 {success_count} 条记录")
+        """导入确认的OCR数据"""
+        if not confirmed_data:
+            messagebox.showinfo("信息", "没有数据需要导入")
+            return
             
-            # 清空已处理的图片列表
-            self._pending_ocr_images.clear()
-            # 清空OCR预览显示
-            self.ocr_preview.clear_images()
-        else:
-            error_details = "\n".join(error_messages[:5])
-            if len(error_messages) > 5:
-                error_details += f"\n... 等共{len(error_messages)}个错误"
+        try:
+            # 记录成功导入的数据
+            imported_count = 0
+            success_items = []
+            failed_count = 0
+            failed_items = []
+            
+            # 获取当前日期和时间
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 批量导入
+            for item in confirmed_data:
+                try:
+                    # 从item字典中获取数据
+                    item_name = item.get("物品", "").strip()
+                    price = self.ui_manager.safe_int_convert(item.get("一口价", "0"))
+                    quantity = self.ui_manager.safe_int_convert(item.get("数量", "0"))
+                    server = item.get("服务器", "")
+                    note = item.get("备注", "")
+                    
+                    # 如果没有服务器，使用默认服务器
+                    if not server and hasattr(self, 'server_combobox'):
+                        server = self.server_combobox.get()
+                    
+                    # 验证关键字段
+                    if not item_name:
+                        failed_count += 1
+                        failed_items.append("空物品名")
+                        continue
+                        
+                    if not server:
+                        failed_count += 1
+                        failed_items.append(f"{item_name}(无服务器)")
+                        continue
+                    
+                    # 插入数据库
+                    self.db_manager.add_trade_monitor(
+                        item_name=item_name,
+                        price=price,
+                        quantity=quantity,
+                        server=server,
+                        update_date=now,
+                        note=note
+                    )
+                    
+                    # 记录操作日志
+                    if hasattr(self.main_gui, 'log_operation'):
+                        from src.utils.operation_types import OperationType, TabName
+                        last_id = self.db_manager.get_last_inserted_id()
+                        data = {
+                            'id': last_id,
+                            'item_name': item_name,
+                            'price': price,
+                            'quantity': quantity,
+                            'server': server,
+                            'update_date': now,
+                            'note': note
+                        }
+                        self.main_gui.log_operation(OperationType.ADD, TabName.TRADE_MONITOR, data)
+                    
+                    # 尝试发送邮件通知
+                    try:
+                        self._send_email_notification(item_name, price, quantity, server, note)
+                    except Exception as e:
+                        # 邮件发送失败不影响主流程
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"发送邮件通知失败: {e}", exc_info=True)
+                        
+                    # 记录成功导入的项目
+                    imported_count += 1
+                    success_items.append(item_name)
+                    
+                except Exception as e:
+                    failed_count += 1
+                    failed_items.append(f"{item.get('物品', '未知')}({str(e)})")
+                    continue
+            
+            # 刷新表格显示
+            self.refresh_monitor()
+            
+            # 显示导入结果
+            result_message = f"成功导入: {imported_count} 项\n"
+            if success_items:
+                # 最多显示5个成功项
+                display_items = success_items[:5]
+                if len(success_items) > 5:
+                    display_items.append("...")
+                result_message += f"导入物品: {', '.join(display_items)}\n"
                 
-            messagebox.showerror("导入失败", 
-                               f"所有记录导入失败。\n\n错误详情:\n{error_details}")
-            self.status_var.set("未导入任何记录")
+            if failed_count > 0:
+                result_message += f"\n失败: {failed_count} 项\n"
+                # 最多显示5个失败项
+                display_failed = failed_items[:5]
+                if len(failed_items) > 5:
+                    display_failed.append("...")
+                result_message += f"失败物品: {', '.join(display_failed)}"
+                
+            messagebox.showinfo("导入结果", result_message)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"导入数据时发生错误: {str(e)}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"导入OCR数据失败: {e}", exc_info=True)
 
     def paste_ocr_import_monitor(self, event=None):
         """从剪贴板粘贴图片进行OCR识别"""
@@ -1545,3 +1521,38 @@ class TradeMonitorTab:
                 
             # 清理其他引用
             self.last_hover_row = None
+
+    def _send_email_notification(self, item_name, price, quantity, server, note):
+        """发送邮件通知"""
+        try:
+            # 导入邮件发送器
+            from src.utils.email_sender import QQEmailSender
+            email_sender = QQEmailSender()
+            
+            # 如果邮件功能未启用，则直接返回
+            if not email_sender.config["enabled"]:
+                return
+                
+            # 准备邮件内容
+            context = {
+                'item_name': item_name,
+                'new_price': price,
+                'old_price': 0,  # 新添加的物品没有旧价格
+                'price_change': price,  # 价格变化就是当前价格
+                'quantity': quantity,
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'server': server,
+                'note': note
+            }
+            
+            # 发送模板邮件
+            email_sender.send_template_email(
+                template_name="trade_update", 
+                context=context
+            )
+            
+            self.logger.info(f"已发送邮件通知: {item_name}")
+            
+        except Exception as e:
+            self.logger.error(f"发送邮件通知失败: {str(e)}", exc_info=True)
+            raise

@@ -50,6 +50,10 @@ from src.utils.sidebar import ModernSidebar
 from src.gui.dialogs.update_dialog import UpdateDialog
 # 导入服务器管理对话框
 from src.gui.dialogs.server_manager_dialog import ServerManagerDialog
+# 导入邮箱配置对话框
+from src.gui.dialogs.email_config_dialog import EmailConfigDialog
+# 导入备份对话框
+from src.gui.dialogs.backup_dialog import BackupDialog
 # 导入版本信息
 from src import __version__
 # 导入操作类型常量
@@ -161,6 +165,8 @@ class GameTradingSystemGUI:
         settings_menu = tb.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="设置", menu=settings_menu)
         settings_menu.add_command(label="Server酱配置", command=self.open_server_chan_config)
+        settings_menu.add_command(label="QQ邮箱推送设置", command=self.open_email_config)
+        settings_menu.add_command(label="数据库备份与恢复", command=self.open_backup_dialog)
         settings_menu.add_command(label="数据库连接设置", command=self.open_db_connection_config)
         settings_menu.add_command(label="公式管理", command=self.open_formula_manager)
         settings_menu.add_command(label="备注规则配置", command=self.open_note_rules_config)
@@ -2391,6 +2397,18 @@ GameTrad是一款专业的游戏物品交易管理系统，提供全面的库存
                 
             # 关闭窗口
             self.root.destroy()
+
+    def open_email_config(self):
+        """打开邮箱配置对话框"""
+        self.logger.info("打开邮箱配置对话框")
+        email_config_dialog = EmailConfigDialog(self.root)
+        self.root.wait_window(email_config_dialog)
+
+    def open_backup_dialog(self):
+        """打开数据库备份与恢复对话框"""
+        self.logger.info("打开数据库备份与恢复对话框")
+        backup_dialog = BackupDialog(self.root)
+        self.root.wait_window(backup_dialog)
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")  # 使用flatly主题

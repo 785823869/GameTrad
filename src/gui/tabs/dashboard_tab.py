@@ -17,6 +17,7 @@ import time
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
 import queue
+import calendar
 
 # 禁用SSL警告
 warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -1319,7 +1320,7 @@ class DashboardTab(Frame):
         right_container.pack(side='left', fill='both', expand=True, pady=10)
 
         # 柱状图
-        chart_frame2 = LabelFrame(right_container, text="月度收入", bootstyle="primary")
+        chart_frame2 = LabelFrame(right_container, text="收入情况", bootstyle="primary")
         chart_frame2.pack(fill='both', expand=True)
         
         # 绘制柱状图
@@ -1329,8 +1330,10 @@ class DashboardTab(Frame):
         fig2.patch.set_facecolor('#f9f9f9')
         ax2.set_facecolor('#f9f9f9')
         
-        months = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]
-        values = [random.randint(30000, 80000) for _ in months]
+        # 获取周收入数据
+        weekly_data = self.get_weekly_income()
+        weeks = [date for date, _ in weekly_data]
+        income_values = [income for _, income in weekly_data]
         
         # 获取合适的中文字体
         chinese_font = self.get_suitable_chinese_font()
@@ -1340,15 +1343,16 @@ class DashboardTab(Frame):
         plt.rcParams['font.sans-serif'] = [chinese_font, 'SimHei', 'Microsoft YaHei', 'STHeiti', 'WenQuanYi Micro Hei']
         plt.rcParams['axes.unicode_minus'] = False
         
-        # 使用渐变色
-        colors = ['#3498db' if i != datetime.now().month - 1 else '#e74c3c' for i in range(len(months))]
+        # 使用渐变色，当前周为红色高亮(而非上周)
+        current_week_idx = len(weeks) - 2  # 倒数第二个是当前周(不是最后一个)
+        colors = ['#3498db' if i != current_week_idx else '#e74c3c' for i in range(len(weeks))]
         
-        bars = ax2.bar(months, values, color=colors, width=0.6, edgecolor='white', linewidth=1)
+        bars = ax2.bar(weeks, income_values, color=colors, width=0.6, edgecolor='white', linewidth=1)
         
-        # 高亮当前月
-        current_month_idx = datetime.now().month - 1
-        if 0 <= current_month_idx < len(months):
-            ax2.text(current_month_idx, values[current_month_idx] + 2000, "当前", 
+        # 高亮当前周
+        if 0 <= current_week_idx < len(weeks):
+            # 将"当前周"文字放在稍低的位置（与数值交换）
+            ax2.text(current_week_idx, income_values[current_week_idx] + (max(income_values) * 0.05), "当前周", 
                     ha='center', va='bottom', color='#e74c3c', fontweight='bold', 
                     fontfamily=chinese_font, fontsize=9)
         
@@ -1360,8 +1364,8 @@ class DashboardTab(Frame):
         ax2.spines['bottom'].set_color('#bdc3c7')
         
         # 设置x轴刻度标签，显式指定字体和旋转角度
-        ax2.set_xticks(range(len(months)))
-        ax2.set_xticklabels(months, fontsize=8, color='#7f8c8d', rotation=45, fontfamily=chinese_font)
+        ax2.set_xticks(range(len(weeks)))
+        ax2.set_xticklabels(weeks, fontsize=8, color='#7f8c8d', rotation=45, fontfamily=chinese_font)
         
         # 设置y轴刻度标签字体
         for label in ax2.get_yticklabels():
@@ -1375,22 +1379,25 @@ class DashboardTab(Frame):
         # 添加网格线仅在y轴
         ax2.grid(True, axis='y', linestyle='--', alpha=0.3, color='#bdc3c7')
         
-        # 为当前月份的柱状添加数值标签
-        if 0 <= current_month_idx < len(months):
+        # 为当前周的柱状添加数值标签
+        if 0 <= current_week_idx < len(weeks) and income_values:
+            current_value = income_values[current_week_idx]
+            # 移除柱内部的数值显示
+            # 在柱子上方较高位置添加数值标签（与"当前周"文字交换）
             ax2.text(
-                current_month_idx, 
-                values[current_month_idx] / 2, 
-                f"¥{values[current_month_idx]:,}",
+                current_week_idx, 
+                current_value + (max(income_values) * 0.15), # 在柱子顶部上方添加较大间距
+                f"¥{current_value:,.0f}",
                 ha='center', 
-                va='center', 
-                fontsize=8,
-                color='white', 
+                va='bottom', 
+                fontsize=9,
+                color='#e74c3c', 
                 fontweight='bold', 
                 fontfamily=chinese_font
             )
         
         # 增加图表顶部标题
-        ax2.set_title("月度销售收入", fontsize=12, fontweight='bold', color='#2c3e50', 
+        ax2.set_title("收入情况", fontsize=12, fontweight='bold', color='#2c3e50', 
                       fontfamily=chinese_font, loc='left', pad=10)
         
         # 增加图表边距以确保所有标签可见
@@ -2399,3 +2406,130 @@ class DashboardTab(Frame):
         # 如果当前选中的物品不在过滤结果中，清空选择
         if self.selected_item.get() not in filtered_items and filtered_items != ["--无匹配物品--"]:
             self.selected_item.set("")
+
+    def get_weekly_income(self):
+        """
+        获取基于周的收入数据，从上周三早上8点到本周三早上8点为一个周期
+        返回最近12周的收入数据
+        """
+        from datetime import datetime, timedelta
+        import calendar
+        
+        # 获取当前时间
+        now = datetime.now()
+        
+        # 查找当前周的周三
+        days_offset = (calendar.WEDNESDAY - now.weekday()) % 7
+        if days_offset == 0 and now.hour < 8:  # 如果今天是周三但还不到早上8点
+            days_offset = 7  # 使用上周三
+            
+        current_wednesday = now.replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=days_offset)
+        
+        # 生成12个周三的日期，从当前周三向前
+        wednesdays = []
+        for i in range(12):
+            wednesday = current_wednesday - timedelta(days=i*7)
+            wednesdays.append(wednesday)
+        
+        # 按从早到晚排序
+        wednesdays.sort()
+        
+        # 计算每个周三到下个周三的收入
+        weekly_income = []
+        
+        for i in range(len(wednesdays)-1):
+            start_time = wednesdays[i]
+            end_time = wednesdays[i+1]
+            
+            # 获取日期范围内的出库数据
+            query_out = """
+                SELECT item_name, quantity, unit_price, fee, note 
+                FROM stock_out 
+                WHERE transaction_time BETWEEN %s AND %s
+            """
+            out_records = self.db_manager.fetch_all(query_out, (start_time, end_time))
+            
+            # 获取日期范围内的入库数据 - 用于查找成本
+            query_in = """
+                SELECT item_name, AVG(avg_cost) as avg_cost
+                FROM stock_in 
+                GROUP BY item_name
+            """
+            in_records = self.db_manager.fetch_all(query_in)
+            
+            # 构建入库均价字典
+            in_prices = {}
+            for record in in_records:
+                item_name, avg_cost = record
+                in_prices[item_name] = float(avg_cost) if avg_cost else 0
+            
+            # 计算总收入
+            income = 0
+            for record in out_records:
+                item_name, quantity, unit_price, fee, note = record
+                
+                # 转换为适当的类型
+                quantity = int(quantity) if quantity else 0
+                unit_price = float(unit_price) if unit_price else 0
+                fee = float(fee) if fee else 0
+                
+                # 查找入库均价（成本）
+                in_price = in_prices.get(item_name, 0)
+                
+                # 计算此次交易的收入 = (出库单价 - 入库均价) * 数量 - 手续费
+                transaction_income = (unit_price - in_price) * quantity - fee
+                income += transaction_income
+            
+            # 格式化日期为简洁显示
+            date_label = start_time.strftime("%m/%d")
+            weekly_income.append((date_label, income))
+        
+        # 添加最后一周的数据（当前周）
+        # 对于最后一周，结束时间是现在
+        start_time = wednesdays[-1]
+        end_time = now
+        
+        # 获取日期范围内的出库数据
+        query_out = """
+            SELECT item_name, quantity, unit_price, fee, note 
+            FROM stock_out 
+            WHERE transaction_time BETWEEN %s AND %s
+        """
+        out_records = self.db_manager.fetch_all(query_out, (start_time, end_time))
+        
+        # 获取入库均价数据
+        query_in = """
+            SELECT item_name, AVG(avg_cost) as avg_cost
+            FROM stock_in 
+            GROUP BY item_name
+        """
+        in_records = self.db_manager.fetch_all(query_in)
+        
+        # 构建入库均价字典
+        in_prices = {}
+        for record in in_records:
+            item_name, avg_cost = record
+            in_prices[item_name] = float(avg_cost) if avg_cost else 0
+        
+        # 计算最后一周的总收入
+        income = 0
+        for record in out_records:
+            item_name, quantity, unit_price, fee, note = record
+            
+            # 转换为适当的类型
+            quantity = int(quantity) if quantity else 0
+            unit_price = float(unit_price) if unit_price else 0
+            fee = float(fee) if fee else 0
+            
+            # 查找入库均价（成本）
+            in_price = in_prices.get(item_name, 0)
+            
+            # 计算此次交易的收入 = (出库单价 - 入库均价) * 数量 - 手续费
+            transaction_income = (unit_price - in_price) * quantity - fee
+            income += transaction_income
+        
+        # 格式化当前周日期
+        date_label = start_time.strftime("%m/%d")
+        weekly_income.append((date_label, income))
+        
+        return weekly_income

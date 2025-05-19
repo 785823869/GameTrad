@@ -1512,7 +1512,10 @@ class TradeMonitorTab:
             if hasattr(self, 'monitor_tree'):
                 try:
                     if self.monitor_tree.winfo_exists():
-                self.monitor_tree.delete(*self.monitor_tree.get_children())
+                        self.monitor_tree.delete(*self.monitor_tree.get_children())
+                except (tk.TclError, AttributeError):
+                    # 如果组件已经被销毁，忽略错误
+                    pass
                 
                 # 解绑所有事件
                 events = ["<Motion>", "<Button-3>", "<Control-a>", "<Double-1>", "<Return>", "<Destroy>"]
@@ -1520,9 +1523,6 @@ class TradeMonitorTab:
                     try:
                         self.monitor_tree.unbind(event)
                     except:
-                                pass
-                except (tk.TclError, AttributeError):
-                    # 如果组件已经被销毁，忽略错误
                         pass
             
             # 清理状态变量
@@ -1538,7 +1538,7 @@ class TradeMonitorTab:
                 try:
                     # 尝试获取菜单的index，如果菜单已被销毁，会引发TclError
                     self.monitor_menu.index('end')
-                self.monitor_menu.delete(0, 'end')
+                    self.monitor_menu.delete(0, 'end')
                 except (tk.TclError, AttributeError):
                     # 如果菜单已经被销毁，忽略错误
                     pass

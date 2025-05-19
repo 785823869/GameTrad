@@ -41,7 +41,7 @@ class ModalInputDialog:
         # 创建模态窗口
         self.dialog = tb.Toplevel(self.parent)
         self.dialog.title(self.title)
-        self.dialog.minsize(450, 300)  # 增加最小宽度确保按钮可见
+        self.dialog.minsize(450, 350)  # 增加最小高度确保按钮可见
         self.dialog.configure(bg='#f4f8fb')
         self.dialog.transient(self.parent)  # 设置为父窗口的临时窗口
         self.dialog.grab_set()  # 模态
@@ -62,7 +62,9 @@ class ModalInputDialog:
         
         # 如果有说明文本，增加窗口高度
         if self.explanation:
-            h += 80
+            lines = self.explanation.count('\n') + 1
+            explanation_height = max(60, lines * 20 + 10)
+            h += explanation_height + 20  # 动态调整窗口高度
             
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
@@ -85,15 +87,20 @@ class ModalInputDialog:
         # 添加说明文本（如果有）
         y_offset = 20
         if self.explanation:
+            # 计算文本大约需要的高度：每行约20像素，加上一些额外空间
+            lines = self.explanation.count('\n') + 1
+            explanation_height = max(60, lines * 20 + 10)  # 最小高度60，根据行数动态调整
+            
             explanation_label = tb.Label(
                 main_container,
                 text=self.explanation,
                 justify="left",
                 style='Dialog.TLabel',
-                bootstyle="primary"
+                bootstyle="primary",
+                wraplength=w-60  # 设置文本自动换行宽度
             )
-            explanation_label.place(x=20, y=y_offset, width=w-40, height=60)
-            y_offset += 80
+            explanation_label.place(x=20, y=y_offset, width=w-40, height=explanation_height)
+            y_offset += explanation_height + 20  # 增加额外间距
         
         # 主内容框架
         content_frame = tb.Frame(main_container, style='Dialog.TFrame')
@@ -209,8 +216,8 @@ class ModalInputDialog:
         for label, field_name, field_type in self.fields:
             value = self.entries[field_name].get().strip()
             
-            # 检查必填项
-            if not value:
+            # 允许备注字段为空
+            if not value and field_name.lower() != "note" and label != "备注":
                 self.error_labels[field_name].config(text=f"{label}不能为空")
                 self.entries[field_name].focus_set()
                 valid = False
@@ -218,7 +225,10 @@ class ModalInputDialog:
             
             # 根据类型验证并转换
             try:
-                if field_type == 'int':
+                if not value and (field_name.lower() == "note" or label == "备注"):
+                    # 备注字段可以为空
+                    values[field_name] = ""
+                elif field_type == 'int':
                     values[field_name] = int(value)
                 elif field_type == 'float':
                     values[field_name] = float(value)

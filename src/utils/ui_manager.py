@@ -257,6 +257,7 @@ class ModernDialog:
             self.dialog = tb.Toplevel(parent)
         self.dialog.title(title)
         self.dialog.geometry(f"{width}x{height}")
+        self.dialog.minsize(width, height)  # 设置最小尺寸
         
         # 设置对话框图标
         icon_path = os.path.join("data", "icon.ico")

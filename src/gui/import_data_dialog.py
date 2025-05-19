@@ -16,7 +16,7 @@ from src.utils.ui_manager import ModernDialog
 
 class ImportDataDialog(ModernDialog):
     def __init__(self, parent):
-        super().__init__(parent, "数据导入", 650, 600)
+        super().__init__(parent, "数据导入", 652, 707)
         
         # 创建变量
         self.stock_in_path = tk.StringVar()

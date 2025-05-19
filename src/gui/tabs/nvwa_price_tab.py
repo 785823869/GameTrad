@@ -39,7 +39,7 @@ class NvwaPriceTab:
         self._orig_xlim = None
         self._orig_ylim = None
         self._auto_refresh_var = tk.BooleanVar(value=False)
-        self._max_points = 100  # 显示的最大点数
+        self._max_points = 1000  # 显示的最大点数，与银两行情保持一致
         self._mpl_cursor = None
         
         # 设置中文字体
@@ -193,14 +193,14 @@ class NvwaPriceTab:
         chart_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
         # 创建图表，完全与银两行情相同的方式
-        self.nvwa_fig = Figure(figsize=(10, 6), dpi=100, facecolor='#ffffff')
+        self.nvwa_fig = Figure(figsize=(10, 6), dpi=100, facecolor='#f8f9fa')
         self.nvwa_ax1 = self.nvwa_fig.add_subplot(111)
-        self.nvwa_ax1.set_facecolor('#ffffff')
+        self.nvwa_ax1.set_facecolor('#f8f9fa')
         
         # 设置图表样式
         self.nvwa_fig.subplots_adjust(left=0.08, right=0.92, top=0.9, bottom=0.15)
         
-        self.nvwa_canvas = FigureCanvasTkAgg(self.nvwa_fig, chart_frame)
+        self.nvwa_canvas = FigureCanvasTkAgg(self.nvwa_fig, master=chart_frame)
         self.nvwa_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         # 设置鼠标事件
@@ -368,7 +368,7 @@ class NvwaPriceTab:
             
             # 调整布局
             self.nvwa_fig.tight_layout(pad=3.0)
-            self.nvwa_canvas.draw()
+            self.nvwa_canvas.draw_idle()
             
         except Exception as e:
             print(f"绘制女娲石价格图表错误: {e}")

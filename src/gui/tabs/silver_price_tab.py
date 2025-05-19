@@ -342,6 +342,9 @@ class SilverPriceTab:
                 label.set_color('#2c3e50')  # 深色文字
             
             self.silver_fig.autofmt_xdate(rotation=30)
+            
+            # 调整布局，与女娲石行情保持一致
+            self.silver_fig.tight_layout(pad=3.0)
             self.silver_canvas.draw_idle()
         except Exception as e:
             print(f"Error drawing silver price chart: {e}")

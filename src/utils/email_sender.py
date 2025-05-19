@@ -9,16 +9,24 @@ from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from pathlib import Path
 from queue import Queue
+from datetime import datetime, timedelta
+import re
 
 class QQEmailSender:
     """QQ邮箱推送工具类"""
     
     CONFIG_FILE = os.path.join("data", "config", "email_config.json")
+    CUSTOM_TEMPLATES_FILE = os.path.join("data", "config", "email_templates.json")
+    LOG_DIR = os.path.join("data", "logs", "email")
     
     def __init__(self):
         """初始化邮件发送器"""
         self.logger = logging.getLogger(__name__)
         self.config = self._load_config()
+        self.custom_templates = self._load_custom_templates()
+        
+        # 确保日志目录存在
+        os.makedirs(self.LOG_DIR, exist_ok=True)
         
         # 邮件发送队列和线程
         self.email_queue = Queue()
@@ -27,6 +35,60 @@ class QQEmailSender:
         
         # 启动邮件发送线程
         self._start_sending_thread()
+        
+        # 设置日志处理器
+        self._setup_logger()
+        
+        # 清理过期日志
+        self._clean_old_logs()
+    
+    def _setup_logger(self):
+        """设置专用日志处理器"""
+        # 创建文件处理器
+        today = datetime.now().strftime("%Y-%m-%d")
+        log_file = os.path.join(self.LOG_DIR, f"email_{today}.log")
+        
+        # 检查是否已经有此文件处理器
+        for handler in self.logger.handlers:
+            if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
+                return
+        
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        
+        # 设置格式
+        formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # 添加处理器
+        self.logger.addHandler(file_handler)
+        
+    def _clean_old_logs(self):
+        """清理过期日志"""
+        try:
+            # 获取日志保留天数
+            log_days = self.config.get("log_days", 30)
+            
+            # 计算截止日期
+            cutoff_date = datetime.now() - timedelta(days=log_days)
+            
+            # 遍历日志目录
+            for file_name in os.listdir(self.LOG_DIR):
+                if file_name.startswith("email_") and file_name.endswith(".log"):
+                    try:
+                        # 从文件名提取日期
+                        date_str = file_name[6:-4]  # 去掉 "email_" 和 ".log"
+                        file_date = datetime.strptime(date_str, "%Y-%m-%d")
+                        
+                        # 检查是否过期
+                        if file_date < cutoff_date:
+                            file_path = os.path.join(self.LOG_DIR, file_name)
+                            os.remove(file_path)
+                            self.logger.info(f"已删除过期日志: {file_name}")
+                    except Exception as e:
+                        self.logger.warning(f"无法处理日志文件 {file_name}: {e}")
+        except Exception as e:
+            self.logger.error(f"清理过期日志失败: {e}")
     
     def _load_config(self):
         """加载邮件配置"""
@@ -40,6 +102,10 @@ class QQEmailSender:
             "recipients": [],
             "retry_count": 3,
             "retry_delay": 5,
+            "enable_log": True,
+            "log_days": 30,
+            "enable_daily_report": False,
+            "daily_report_time": "20:00"
         }
         
         try:
@@ -62,6 +128,82 @@ class QQEmailSender:
             self.logger.error(f"加载邮件配置失败: {e}", exc_info=True)
             return default_config
     
+    def _load_custom_templates(self):
+        """加载自定义模板"""
+        default_templates = {
+            # 存储自定义模板
+            # 格式: "template_name": {"subject": "Subject template", "content": "Content template", "html": true/false}
+        }
+        
+        try:
+            templates_path = Path(self.CUSTOM_TEMPLATES_FILE)
+            if templates_path.exists():
+                with open(templates_path, 'r', encoding='utf-8') as f:
+                    loaded_templates = json.load(f)
+                    self.logger.info("自定义邮件模板已加载")
+                    return loaded_templates
+            else:
+                # 创建默认模板文件
+                os.makedirs(templates_path.parent, exist_ok=True)
+                with open(templates_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_templates, f, ensure_ascii=False, indent=2)
+                    self.logger.info("已创建默认邮件模板文件")
+                return default_templates
+        except Exception as e:
+            self.logger.error(f"加载邮件模板失败: {e}", exc_info=True)
+            return default_templates
+    
+    def save_custom_template(self, template_name, subject, content, is_html=True):
+        """保存自定义模板"""
+        try:
+            # 添加或更新模板
+            self.custom_templates[template_name] = {
+                "subject": subject,
+                "content": content,
+                "html": is_html
+            }
+            
+            # 保存到文件
+            templates_path = Path(self.CUSTOM_TEMPLATES_FILE)
+            os.makedirs(templates_path.parent, exist_ok=True)
+            
+            with open(templates_path, 'w', encoding='utf-8') as f:
+                json.dump(self.custom_templates, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"自定义模板已保存: {template_name}")
+            return True
+        except Exception as e:
+            self.logger.error(f"保存自定义模板失败: {e}", exc_info=True)
+            return False
+    
+    def delete_custom_template(self, template_name):
+        """删除自定义模板"""
+        try:
+            if template_name in self.custom_templates:
+                del self.custom_templates[template_name]
+                
+                # 保存更改
+                templates_path = Path(self.CUSTOM_TEMPLATES_FILE)
+                with open(templates_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.custom_templates, f, ensure_ascii=False, indent=2)
+                
+                self.logger.info(f"自定义模板已删除: {template_name}")
+                return True
+            else:
+                self.logger.warning(f"尝试删除不存在的模板: {template_name}")
+                return False
+        except Exception as e:
+            self.logger.error(f"删除自定义模板失败: {e}", exc_info=True)
+            return False
+    
+    def list_custom_templates(self):
+        """列出所有自定义模板"""
+        return list(self.custom_templates.keys())
+    
+    def get_custom_template(self, template_name):
+        """获取自定义模板"""
+        return self.custom_templates.get(template_name)
+        
     def save_config(self, new_config):
         """保存邮件配置"""
         try:
@@ -75,6 +217,11 @@ class QQEmailSender:
             
             self.config = new_config
             self.logger.info("邮件配置已保存")
+            
+            # 更新日志设置
+            self._setup_logger()
+            self._clean_old_logs()
+            
             return True
         except Exception as e:
             self.logger.error(f"保存邮件配置失败: {e}", exc_info=True)
@@ -91,6 +238,7 @@ class QQEmailSender:
             server.starttls()
             server.login(self.config["username"], self.config["password"])
             server.quit()
+            self.logger.info("邮件服务器连接测试成功")
             return True, "连接测试成功"
         except Exception as e:
             error_msg = f"连接测试失败: {str(e)}"
@@ -159,7 +307,13 @@ class QQEmailSender:
                 server.sendmail(self.config["username"], recipients, msg.as_string())
                 server.quit()
                 
+                # 记录成功
                 self.logger.info(f"邮件发送成功: {subject}")
+                
+                # 记录详细日志
+                if self.config.get("enable_log", True):
+                    self._log_email_sent(subject, recipients, True)
+                
                 return True
                 
             except Exception as e:
@@ -167,8 +321,31 @@ class QQEmailSender:
                 if attempt < retry_count - 1:
                     time.sleep(retry_delay)
         
+        # 记录最终失败
+        if self.config.get("enable_log", True):
+            self._log_email_sent(subject, recipients, False, "达到最大重试次数")
+        
         self.logger.error(f"邮件发送最终失败: {subject}")
         return False
+    
+    def _log_email_sent(self, subject, recipients, success, error=None):
+        """记录邮件发送日志"""
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            log_file = os.path.join(self.LOG_DIR, f"email_{today}.log")
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            status = "成功" if success else "失败"
+            recipients_str = ", ".join(recipients)
+            
+            log_entry = f"{timestamp} | {status} | 收件人: {recipients_str} | 主题: {subject}"
+            if error:
+                log_entry += f" | 错误: {error}"
+            
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(log_entry + "\n")
+        except Exception as e:
+            self.logger.error(f"记录邮件日志失败: {e}")
     
     def send_email(self, subject, content, recipients=None, html=False, immediate=False):
         """
@@ -205,6 +382,26 @@ class QQEmailSender:
             self.logger.error(f"准备邮件任务失败: {e}", exc_info=True)
             return False
     
+    def render_template(self, template, context):
+        """
+        渲染模板文本，替换变量
+        
+        Args:
+            template: 模板文本
+            context: 变量上下文
+            
+        Returns:
+            str: 渲染后的文本
+        """
+        rendered = template
+        
+        # 替换所有 {{variable}} 格式的变量
+        for key, value in context.items():
+            pattern = r'\{\{\s*' + key + r'\s*\}\}'
+            rendered = re.sub(pattern, str(value), rendered)
+        
+        return rendered
+    
     def send_template_email(self, template_name, context, recipients=None, immediate=False):
         """
         使用模板发送邮件
@@ -219,7 +416,19 @@ class QQEmailSender:
             bool: 是否成功
         """
         try:
-            # 根据模板名称获取对应的模板
+            # 首先检查是否是自定义模板
+            if template_name in self.custom_templates:
+                template_data = self.custom_templates[template_name]
+                
+                # 渲染模板
+                subject = self.render_template(template_data["subject"], context)
+                content = self.render_template(template_data["content"], context)
+                is_html = template_data.get("html", True)
+                
+                # 发送邮件
+                return self.send_email(subject, content, recipients, is_html, immediate)
+            
+            # 否则使用内置模板
             template_func = self._get_template(template_name)
             if not template_func:
                 self.logger.error(f"邮件模板不存在: {template_name}")
@@ -249,114 +458,220 @@ class QQEmailSender:
         """交易更新通知模板"""
         subject = f"GameTrad交易更新通知 - {context['item_name']}"
         
-        # HTML内容
-        content = f"""
+        content = f'''
         <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2 style="color: #4b7bec;">交易物品更新通知</h2>
-            <p>您关注的物品已更新：</p>
-            <div style="background-color: #f1f2f6; padding: 15px; border-radius: 5px;">
-                <p><strong>物品名称:</strong> {context['item_name']}</p>
-                <p><strong>价格变化:</strong> {context['old_price']} → <span style="color: {'#2ecc71' if context['price_change'] < 0 else '#e74c3c'}">{context['new_price']}</span></p>
-                <p><strong>数量:</strong> {context['quantity']}</p>
-                <p><strong>更新时间:</strong> {context['time']}</p>
+        <head>
+            <style>
+                body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4a86e8; color: white; padding: 10px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .item {{ margin-bottom: 10px; }}
+                .item .label {{ font-weight: bold; display: inline-block; width: 80px; }}
+                .footer {{ text-align: center; padding: 10px; font-size: 12px; color: #777; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>交易更新通知</h2>
+                </div>
+                <div class="content">
+                    <p>系统检测到以下交易信息更新：</p>
+                    
+                    <div class="item">
+                        <span class="label">物品名称:</span> {context['item_name']}
+                    </div>
+                    <div class="item">
+                        <span class="label">价格:</span> {context['price']}
+                    </div>
+                    <div class="item">
+                        <span class="label">数量:</span> {context['quantity']}
+                    </div>
+                    <div class="item">
+                        <span class="label">服务器:</span> {context['server']}
+                    </div>
+                    <div class="item">
+                        <span class="label">时间:</span> {context['time']}
+                    </div>
+                    
+                    <p>请登录GameTrad系统查看详细信息。</p>
+                </div>
+                <div class="footer">
+                    此邮件由GameTrad系统自动发送，请勿回复
+                </div>
             </div>
-            <p>请登录GameTrad查看详情。</p>
-            <p style="color: #7f8c8d; font-size: 12px;">此邮件由GameTrad系统自动发送，请勿回复。</p>
         </body>
         </html>
-        """
+        '''
         
-        return subject, content, True  # 返回主题、内容、是否HTML
+        return subject, content, True
     
     def _template_system_alert(self, context):
         """系统警报模板"""
-        subject = f"GameTrad系统警报 - {context['alert_type']}"
+        subject = f"GameTrad系统警报 - {context.get('status', '警告')}"
         
-        # HTML内容
-        content = f"""
+        content = f'''
         <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2 style="color: #e74c3c;">系统警报</h2>
-            <p>GameTrad系统检测到以下问题：</p>
-            <div style="background-color: #f1f2f6; padding: 15px; border-radius: 5px;">
-                <p><strong>警报类型:</strong> {context['alert_type']}</p>
-                <p><strong>严重程度:</strong> {context['severity']}</p>
-                <p><strong>详情:</strong> {context['details']}</p>
-                <p><strong>时间:</strong> {context['time']}</p>
+        <head>
+            <style>
+                body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #e06666; color: white; padding: 10px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .message {{ padding: 10px; background-color: #fff; border-left: 4px solid #e06666; margin-top: 10px; }}
+                .footer {{ text-align: center; padding: 10px; font-size: 12px; color: #777; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>系统警报</h2>
+                </div>
+                <div class="content">
+                    <p><strong>状态:</strong> {context.get('status', '警告')}</p>
+                    <p><strong>时间:</strong> {context.get('time', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}</p>
+                    
+                    <div class="message">
+                        {context.get('message', '系统检测到异常情况，请尽快处理！')}
+                    </div>
+                    
+                    <p>请尽快登录系统检查详情。</p>
+                </div>
+                <div class="footer">
+                    此邮件由GameTrad系统自动发送，请勿回复
+                </div>
             </div>
-            <p>请及时处理以上问题。</p>
-            <p style="color: #7f8c8d; font-size: 12px;">此邮件由GameTrad系统自动发送，请勿回复。</p>
         </body>
         </html>
-        """
+        '''
         
         return subject, content, True
     
     def _template_daily_report(self, context):
-        """日报模板"""
-        subject = f"GameTrad日报 - {context['date']}"
+        """每日报告模板"""
+        subject = f"GameTrad每日报告 - {context.get('date', datetime.now().strftime('%Y-%m-%d'))}"
         
-        # 构建表格内容
-        rows = ""
-        for item in context['items']:
-            rows += f"""
-            <tr>
-                <td style="padding: 8px; border: 1px solid #ddd;">{item['name']}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">{item['price']}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">{item['quantity']}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">{item['profit']}</td>
-            </tr>
-            """
-        
-        # HTML内容
-        content = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2 style="color: #2980b9;">GameTrad日报</h2>
-            <p>日期: {context['date']}</p>
-            
-            <h3>今日交易摘要</h3>
-            <p>总交易量: {context['total_trades']}</p>
-            <p>总利润: {context['total_profit']}</p>
-            
-            <h3>热门物品</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-                <tr style="background-color: #f8f9fa;">
-                    <th style="padding: 8px; border: 1px solid #ddd;">物品名称</th>
-                    <th style="padding: 8px; border: 1px solid #ddd;">价格</th>
-                    <th style="padding: 8px; border: 1px solid #ddd;">数量</th>
-                    <th style="padding: 8px; border: 1px solid #ddd;">利润</th>
+        # 使用表格格式展示数据
+        report_rows = ""
+        if 'items' in context and isinstance(context['items'], list):
+            for item in context['items']:
+                row = f'''
+                <tr>
+                    <td>{item.get('name', '-')}</td>
+                    <td>{item.get('quantity', '0')}</td>
+                    <td>{item.get('price', '0.00')}</td>
+                    <td>{item.get('total', '0.00')}</td>
                 </tr>
-                {rows}
-            </table>
-            
-            <p style="color: #7f8c8d; font-size: 12px;">此邮件由GameTrad系统自动发送，请勿回复。</p>
+                '''
+                report_rows += row
+        else:
+            report_rows = "<tr><td colspan='4'>无数据</td></tr>"
+        
+        content = f'''
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; color: #333; }}
+                .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #6aa84f; color: white; padding: 15px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                table, th, td {{ border: 1px solid #ddd; }}
+                th {{ background-color: #f2f2f2; padding: 10px; text-align: left; }}
+                td {{ padding: 8px; }}
+                .summary {{ margin-top: 20px; font-weight: bold; }}
+                .footer {{ text-align: center; padding: 10px; font-size: 12px; color: #777; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>GameTrad每日报告</h2>
+                </div>
+                <div class="content">
+                    <p><strong>报告日期:</strong> {context.get('date', datetime.now().strftime('%Y-%m-%d'))}</p>
+                    <p><strong>报告周期:</strong> {context.get('period', '过去24小时')}</p>
+                    
+                    <h3>交易概览</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>物品名称</th>
+                                <th>交易数量</th>
+                                <th>价格</th>
+                                <th>总金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {report_rows}
+                        </tbody>
+                    </table>
+                    
+                    <div class="summary">
+                        <p>交易总数: {context.get('total_trades', 0)}</p>
+                        <p>交易总额: {context.get('total_amount', '0.00')}</p>
+                    </div>
+                    
+                    <p>请登录系统查看完整报告。</p>
+                </div>
+                <div class="footer">
+                    此报告由GameTrad系统自动生成，请勿回复此邮件
+                </div>
+            </div>
         </body>
         </html>
-        """
+        '''
         
         return subject, content, True
     
     def _template_backup_success(self, context):
         """备份成功通知模板"""
-        subject = "GameTrad数据备份成功通知"
+        subject = "GameTrad数据库备份成功通知"
         
-        content = f"""
+        content = f'''
         <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2 style="color: #27ae60;">数据备份成功</h2>
-            <p>GameTrad系统已完成数据备份：</p>
-            <div style="background-color: #f1f2f6; padding: 15px; border-radius: 5px;">
-                <p><strong>备份时间:</strong> {context['time']}</p>
-                <p><strong>备份文件:</strong> {context['filename']}</p>
-                <p><strong>文件大小:</strong> {context['size']}</p>
-                <p><strong>备份路径:</strong> {context['path']}</p>
+        <head>
+            <style>
+                body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #45818e; color: white; padding: 10px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .info-item {{ margin-bottom: 10px; }}
+                .info-item .label {{ font-weight: bold; }}
+                .footer {{ text-align: center; padding: 10px; font-size: 12px; color: #777; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>数据库备份成功</h2>
+                </div>
+                <div class="content">
+                    <p>系统已成功完成数据库备份操作。</p>
+                    
+                    <div class="info-item">
+                        <span class="label">备份文件:</span> {context.get('filename', '未知')}
+                    </div>
+                    <div class="info-item">
+                        <span class="label">备份路径:</span> {context.get('path', '未知')}
+                    </div>
+                    <div class="info-item">
+                        <span class="label">文件大小:</span> {context.get('size', '未知')}
+                    </div>
+                    <div class="info-item">
+                        <span class="label">备份时间:</span> {context.get('time', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}
+                    </div>
+                    
+                    <p>您可以在系统中查看和管理所有备份文件。</p>
+                </div>
+                <div class="footer">
+                    此邮件由GameTrad系统自动发送，请勿回复
+                </div>
             </div>
-            <p style="color: #7f8c8d; font-size: 12px;">此邮件由GameTrad系统自动发送，请勿回复。</p>
         </body>
         </html>
-        """
+        '''
         
         return subject, content, True
     
@@ -364,5 +679,5 @@ class QQEmailSender:
         """停止邮件发送线程"""
         self.stop_flag = True
         if self.sending_thread and self.sending_thread.is_alive():
-            self.sending_thread.join(timeout=2)
-        self.logger.info("邮件发送线程已停止") 
+            self.sending_thread.join(timeout=1.0)
+            self.logger.info("邮件发送线程已停止") 

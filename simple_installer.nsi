@@ -3,7 +3,7 @@ Unicode true
 
 ; 安装程序初始定义常量
 !define PRODUCT_NAME "游戏交易系统"
-!define PRODUCT_VERSION "1.3.1"
+!define PRODUCT_VERSION "1.3.2"
 !define PRODUCT_PUBLISHER "三只小猪"
 !define PRODUCT_WEB_SITE "https://github.com/785823869/GameTrad"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\GameTrad.exe"
@@ -40,13 +40,13 @@ SetCompressor lzma
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
 ; 安装程序版本号
-VIProductVersion "1.3.1.0"
+VIProductVersion "1.3.2.0"
 VIAddVersionKey /LANG=2052 "ProductName" "游戏交易系统"
 VIAddVersionKey /LANG=2052 "Comments" "游戏交易管理系统"
 VIAddVersionKey /LANG=2052 "CompanyName" "三只小猪"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2024"
 VIAddVersionKey /LANG=2052 "FileDescription" "游戏交易系统安装程序"
-VIAddVersionKey /LANG=2052 "FileVersion" "1.3.1.0"
+VIAddVersionKey /LANG=2052 "FileVersion" "1.3.2.0"
 
 ; 安装程序名称
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"

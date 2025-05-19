@@ -3,12 +3,39 @@ REM 设置UTF-8编码
 chcp 65001 > nul
 echo ========================================
 echo GameTrad游戏交易系统 - 构建与打包脚本
-echo 版本: 1.3.1
 echo ========================================
 echo.
 
+REM 自动从src/__init__.py读取版本号
+echo 正在读取版本信息...
+
+REM 检查文件是否存在
+if not exist "src\__init__.py" (
+    echo 错误: src\__init__.py文件不存在!
+    echo 将使用默认版本号1.0.0
+    SET VERSION=1.0.0
+    goto AFTER_VERSION_CHECK
+)
+
+REM 使用FindStr提取版本号 - 更简单的方法
+for /f "tokens=2 delims=''" %%a in ('findstr "__version__" src\__init__.py') do (
+    set VERSION=%%a
+)
+
+:AFTER_VERSION_CHECK
+REM 检查版本号是否成功提取
+if "%VERSION%"=="" (
+    echo 错误: 无法从src\__init__.py提取版本号!
+    echo 将使用默认版本号1.0.0
+    SET VERSION=1.0.0
+) else (
+    echo 检测到版本号: %VERSION%
+)
+
+echo 版本: %VERSION%
+echo.
+
 REM 设置环境变量
-set VERSION=1.3.1
 set DIST_DIR=dist
 set BUILD_DIR=build
 set INSTALLER_NAME=GameTrad_Setup_%VERSION%.exe

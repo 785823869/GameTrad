@@ -53,7 +53,7 @@ class AppUpdater:
             update_url: 检查更新的API URL，如果为None则使用默认GitHub地址
         """
         self.update_url = update_url or "https://api.github.com/repos/785823869/GameTrad/releases/latest"
-        self.direct_download_url = "https://github.com/785823869/GameTrad/releases/download/Game/GameTrad_Setup.exe"
+        self.direct_download_url = "https://github.com/785823869/GameTrad/releases/download/v1.3.2/GameTrad_Setup_1.3.2.exe"
         self.current_version = __version__
         self.latest_version = None
         self.download_url = None

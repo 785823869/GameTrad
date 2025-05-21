@@ -59,7 +59,7 @@ import OCRDialog from '../components/OCRDialog'; // 导入OCR对话框组件
 import OCRService from '../services/OCRService';
 
 // 调试模式常量 - 全局定义
-const DEBUG = true;
+const DEBUG = false;
 
 const StockOut = () => {
   // 状态
@@ -84,21 +84,6 @@ const StockOut = () => {
   // 多选相关状态
   const [selected, setSelected] = useState([]);
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false);
-  
-  // 高级筛选相关状态
-  const [showFilter, setShowFilter] = useState(false);
-  const [filters, setFilters] = useState({
-    dateRange: {
-      start: null,
-      end: null
-    },
-    quantityRange: [0, 10000],
-    priceRange: [0, 10000],
-    totalAmountRange: [0, 1000000],
-    platform: '',
-    hasNote: false
-  });
-  const [activeFilterCount, setActiveFilterCount] = useState(0);
   
   // 获取出库数据
   const fetchStockOutData = useCallback(async () => {
@@ -354,140 +339,22 @@ const StockOut = () => {
       if (DEBUG) console.log(`应用名称搜索后数据数量: ${filtered.length}`);
     }
     
-    // 高级筛选 - 日期范围
-    if (filters.dateRange.start || filters.dateRange.end) {
-      filtered = filtered.filter(item => {
-        const itemDate = new Date(item.transactionTime);
-        
-        if (filters.dateRange.start && filters.dateRange.end) {
-          return itemDate >= filters.dateRange.start && itemDate <= filters.dateRange.end;
-        } else if (filters.dateRange.start) {
-          return itemDate >= filters.dateRange.start;
-        } else if (filters.dateRange.end) {
-          return itemDate <= filters.dateRange.end;
-        }
-        
-        return true;
-      });
-      if (DEBUG) console.log(`应用日期筛选后数据数量: ${filtered.length}`);
-    }
-    
-    // 高级筛选 - 数量范围
-    filtered = filtered.filter(item => 
-      item.quantity >= filters.quantityRange[0] && 
-      item.quantity <= filters.quantityRange[1]
-    );
-    if (DEBUG) console.log(`应用数量筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 价格范围 (单价)
-    filtered = filtered.filter(item => 
-      item.unitPrice >= filters.priceRange[0] && 
-      item.unitPrice <= filters.priceRange[1]
-    );
-    if (DEBUG) console.log(`应用单价筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 总金额范围
-    filtered = filtered.filter(item => 
-      item.totalAmount >= filters.totalAmountRange[0] && 
-      item.totalAmount <= filters.totalAmountRange[1]
-    );
-    if (DEBUG) console.log(`应用总金额筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 备注筛选
-    if (filters.hasNote) {
-      filtered = filtered.filter(item => 
-        item.note && item.note.trim() !== ''
-      );
-      if (DEBUG) console.log(`应用备注筛选后数据数量: ${filtered.length}`);
-    }
-    
     console.log(`应用所有筛选后的数据数量: ${filtered.length}`);
     setFilteredData(filtered);
     
     // 计算统计数据
     calculateStats(filtered);
     
-    // 计算活跃筛选器数量
-    let count = 0;
-    if (filters.dateRange.start || filters.dateRange.end) count++;
-    if (filters.quantityRange[0] > 0 || filters.quantityRange[1] < 10000) count++;
-    if (filters.priceRange[0] > 0 || filters.priceRange[1] < 10000) count++;
-    if (filters.totalAmountRange[0] > 0 || filters.totalAmountRange[1] < 1000000) count++;
-    if (filters.platform) count++;
-    if (filters.hasNote) count++;
-    
-    setActiveFilterCount(count);
-    
     if (DEBUG) {
       const endTime = performance.now();
       console.log(`筛选操作完成，耗时: ${(endTime - startTime).toFixed(2)}ms`);
     }
     
-  }, [searchTerm, stockOutData, filters, calculateStats]);
+  }, [searchTerm, stockOutData, calculateStats]);
   
   // 处理搜索
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
-    setPage(0);
-  };
-  
-  // 处理高级筛选开关
-  const toggleFilter = () => {
-    setShowFilter(!showFilter);
-  };
-  
-  // 处理日期筛选变更
-  const handleDateFilterChange = (type, date) => {
-    setFilters(prev => ({
-      ...prev,
-      dateRange: {
-        ...prev.dateRange,
-        [type]: date
-      }
-    }));
-    setPage(0);
-  };
-  
-  // 处理范围筛选变更
-  const handleRangeFilterChange = (type, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [type]: value
-    }));
-    setPage(0);
-  };
-  
-  // 处理平台筛选变更
-  const handlePlatformFilterChange = (event) => {
-    setFilters(prev => ({
-      ...prev,
-      platform: event.target.value
-    }));
-    setPage(0);
-  };
-  
-  // 处理备注筛选变更
-  const handleNoteFilterChange = (event) => {
-    setFilters(prev => ({
-      ...prev,
-      hasNote: event.target.checked
-    }));
-    setPage(0);
-  };
-  
-  // 重置所有筛选条件
-  const resetFilters = () => {
-    setFilters({
-      dateRange: {
-        start: null,
-        end: null
-      },
-      quantityRange: [0, 10000],
-      priceRange: [0, 10000],
-      totalAmountRange: [0, 1000000],
-      platform: '',
-      hasNote: false
-    });
     setPage(0);
   };
   
@@ -981,16 +848,6 @@ const StockOut = () => {
               ),
             }}
           />
-          <Button
-            size="small"
-            variant="outlined"
-            color={activeFilterCount > 0 ? "primary" : "inherit"}
-            startIcon={activeFilterCount > 0 ? <Badge badgeContent={activeFilterCount} color="primary"><FilterAltIcon /></Badge> : <FilterIcon />}
-            onClick={toggleFilter}
-            sx={{ ml: 1 }}
-          >
-            高级筛选
-          </Button>
         </Box>
         <Box>
           {/* 批量删除按钮 */}
@@ -1036,137 +893,6 @@ const StockOut = () => {
           </Button>
         </Box>
       </Box>
-      
-      {/* 高级筛选面板 */}
-      <Collapse in={showFilter} sx={{ mb: 2 }}>
-        <Card variant="outlined">
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="subtitle1" fontWeight="bold" color="primary">
-                高级筛选
-              </Typography>
-              <Button 
-                size="small" 
-                variant="outlined" 
-                startIcon={<ClearAllIcon />}
-                onClick={resetFilters}
-              >
-                重置筛选
-              </Button>
-            </Box>
-            
-            <Grid container spacing={3}>
-              {/* 日期范围筛选 */}
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                  <CalendarIcon fontSize="small" sx={{ mr: 1 }} />
-                  日期范围
-                </Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <DatePicker 
-                    label="开始日期" 
-                    value={filters.dateRange.start}
-                    onChange={(date) => handleDateFilterChange('start', date)}
-                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
-                    maxDate={filters.dateRange.end || undefined}
-                  />
-                  <DatePicker 
-                    label="结束日期" 
-                    value={filters.dateRange.end}
-                    onChange={(date) => handleDateFilterChange('end', date)}
-                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
-                    minDate={filters.dateRange.start || undefined}
-                  />
-                </Stack>
-              </Grid>
-              
-              {/* 平台筛选 */}
-              <Grid item xs={12} md={3}>
-                <Typography variant="subtitle2" gutterBottom>
-                  平台
-                </Typography>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="platform-filter-label">选择平台</InputLabel>
-                  <Select
-                    labelId="platform-filter-label"
-                    id="platform-filter"
-                    value={filters.platform}
-                    label="选择平台"
-                    onChange={handlePlatformFilterChange}
-                  >
-                    <MenuItem value="">所有平台</MenuItem>
-                    <MenuItem value="淘宝">淘宝</MenuItem>
-                    <MenuItem value="闲鱼">闲鱼</MenuItem>
-                    <MenuItem value="微信">微信</MenuItem>
-                    <MenuItem value="Steam">Steam</MenuItem>
-                    <MenuItem value="其他">其他</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              
-              {/* 备注筛选 */}
-              <Grid item xs={12} md={3}>
-                <Typography variant="subtitle2" gutterBottom>
-                  其他筛选
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Checkbox 
-                      checked={filters.hasNote} 
-                      onChange={handleNoteFilterChange}
-                      size="small"
-                    />
-                  }
-                  label="仅显示有备注的记录"
-                />
-              </Grid>
-              
-              {/* 数量范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  数量范围: {filters.quantityRange[0]} - {filters.quantityRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.quantityRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('quantityRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={10000}
-                />
-              </Grid>
-              
-              {/* 单价范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  单价范围: ¥{filters.priceRange[0]} - ¥{filters.priceRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.priceRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('priceRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={10000}
-                />
-              </Grid>
-              
-              {/* 总金额范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  总金额范围: ¥{filters.totalAmountRange[0]} - ¥{filters.totalAmountRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.totalAmountRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('totalAmountRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={1000000}
-                  step={1000}
-                />
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
-      </Collapse>
       
       {/* 出库表格 */}
       <Paper sx={{ 

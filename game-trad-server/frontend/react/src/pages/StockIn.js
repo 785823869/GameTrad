@@ -30,14 +30,7 @@ import {
   ListItemText,
   Snackbar,
   Divider,
-  Checkbox,
-  Badge,
-  FormControlLabel,
-  Collapse,
-  Card,
-  CardContent,
-  Slider,
-  Stack
+  Checkbox
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -47,20 +40,15 @@ import {
   Delete as DeleteIcon,
   Edit as EditIcon,
   ContentCopy as CopyIcon,
-  DeleteSweep as DeleteSweepIcon,
-  FilterList as FilterIcon,
-  FilterAlt as FilterAltIcon,
-  ClearAll as ClearAllIcon,
-  CalendarMonth as CalendarIcon
+  DeleteSweep as DeleteSweepIcon
 } from '@mui/icons-material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import StockInService from '../services/StockInService';
 import OCRDialog from '../components/OCRDialog';
 import OCRService from '../services/OCRService';
 
 const StockIn = () => {
   // 调试模式常量
-  const DEBUG = true;
+  const DEBUG = false;
 
   // 状态
   const [loading, setLoading] = useState(true);
@@ -104,20 +92,6 @@ const StockIn = () => {
   // 多选相关状态
   const [selected, setSelected] = useState([]);
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false);
-  
-  // 高级筛选相关状态
-  const [showFilter, setShowFilter] = useState(false);
-  const [filters, setFilters] = useState({
-    dateRange: {
-      start: null,
-      end: null
-    },
-    quantityRange: [0, 100000],   // 更宽松的数量范围
-    costRange: [0, 10000000],     // 更宽松的成本范围
-    avgCostRange: [0, 100000],    // 更宽松的均价范围
-    hasNote: false
-  });
-  const [activeFilterCount, setActiveFilterCount] = useState(0);
   
   // 计算统计数据 - 接受可选的已筛选数据参数
   const calculateStats = useCallback((data = filteredData) => {
@@ -268,11 +242,10 @@ const StockIn = () => {
   
   // 筛选数据
   useEffect(() => {
-    // 应用所有筛选条件
+    // 仅应用搜索筛选条件
     if (DEBUG) {
       console.log('开始应用筛选条件...');
       console.log('原始数据数量:', stockInData.length);
-      console.log('当前筛选条件:', filters);
     }
     
     let filtered = stockInData;
@@ -286,83 +259,13 @@ const StockIn = () => {
       if (DEBUG) console.log(`应用名称搜索后数据数量: ${filtered.length}`);
     }
     
-    // 高级筛选 - 日期范围
-    if (filters.dateRange.start || filters.dateRange.end) {
-      if (DEBUG) console.log('应用日期筛选...');
-      filtered = filtered.filter(item => {
-        const itemDate = new Date(item.transactionTime);
-        
-        if (filters.dateRange.start && filters.dateRange.end) {
-          return itemDate >= filters.dateRange.start && itemDate <= filters.dateRange.end;
-        } else if (filters.dateRange.start) {
-          return itemDate >= filters.dateRange.start;
-        } else if (filters.dateRange.end) {
-          return itemDate <= filters.dateRange.end;
-        }
-        
-        return true;
-      });
-      if (DEBUG) console.log(`应用日期筛选后数据数量: ${filtered.length}`);
-    }
-    
-    // 高级筛选 - 数量范围
-    if (DEBUG) console.log('应用数量筛选, 范围:', filters.quantityRange);
-    filtered = filtered.filter(item => 
-      item.quantity >= filters.quantityRange[0] && 
-      item.quantity <= filters.quantityRange[1]
-    );
-    if (DEBUG) console.log(`应用数量筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 成本范围
-    if (DEBUG) console.log('应用成本筛选, 范围:', filters.costRange);
-    filtered = filtered.filter(item => 
-      item.cost >= filters.costRange[0] && 
-      item.cost <= filters.costRange[1]
-    );
-    if (DEBUG) console.log(`应用成本筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 均价范围
-    if (DEBUG) console.log('应用均价筛选, 范围:', filters.avgCostRange);
-    filtered = filtered.filter(item => 
-      item.avgCost >= filters.avgCostRange[0] && 
-      item.avgCost <= filters.avgCostRange[1]
-    );
-    if (DEBUG) console.log(`应用均价筛选后数据数量: ${filtered.length}`);
-    
-    // 高级筛选 - 备注筛选
-    if (filters.hasNote) {
-      filtered = filtered.filter(item => 
-        item.note && item.note.trim() !== ''
-      );
-      if (DEBUG) console.log(`应用备注筛选后数据数量: ${filtered.length}`);
-    }
-    
     console.log("应用筛选后的数据数量:", filtered.length);
     setFilteredData(filtered);
     
     // 计算统计数据
     calculateStats(filtered);
     
-    // 计算活跃筛选器数量
-    let count = 0;
-    if (filters.dateRange.start || filters.dateRange.end) count++;
-    if (filters.quantityRange[0] > 0 || filters.quantityRange[1] < 100000) count++;
-    if (filters.costRange[0] > 0 || filters.costRange[1] < 10000000) count++;
-    if (filters.avgCostRange[0] > 0 || filters.avgCostRange[1] < 100000) count++;
-    if (filters.hasNote) count++;
-    
-    setActiveFilterCount(count);
-    
-    if (DEBUG) {
-      console.log('筛选完成, 活跃筛选数量:', count);
-      if (filtered.length > 0) {
-        console.log('筛选后的第一条记录:', filtered[0]);
-      } else {
-        console.log('筛选后没有记录!');
-      }
-    }
-    
-  }, [searchTerm, stockInData, filters, DEBUG, calculateStats]);
+  }, [searchTerm, stockInData, DEBUG, calculateStats]);
   
   // 获取入库数据
   useEffect(() => {
@@ -372,56 +275,6 @@ const StockIn = () => {
   // 处理搜索
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
-    setPage(0);
-  };
-  
-  // 处理高级筛选开关
-  const toggleFilter = () => {
-    setShowFilter(!showFilter);
-  };
-  
-  // 处理日期筛选变更
-  const handleDateFilterChange = (type, date) => {
-    setFilters(prev => ({
-      ...prev,
-      dateRange: {
-        ...prev.dateRange,
-        [type]: date
-      }
-    }));
-    setPage(0);
-  };
-  
-  // 处理范围筛选变更
-  const handleRangeFilterChange = (type, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [type]: value
-    }));
-    setPage(0);
-  };
-  
-  // 处理备注筛选变更
-  const handleNoteFilterChange = (event) => {
-    setFilters(prev => ({
-      ...prev,
-      hasNote: event.target.checked
-    }));
-    setPage(0);
-  };
-  
-  // 重置所有筛选条件
-  const resetFilters = () => {
-    setFilters({
-      dateRange: {
-        start: null,
-        end: null
-      },
-      quantityRange: [0, 100000],
-      costRange: [0, 10000000],
-      avgCostRange: [0, 100000],
-      hasNote: false
-    });
     setPage(0);
   };
   
@@ -921,16 +774,6 @@ const StockIn = () => {
               ),
             }}
           />
-          <Button
-            size="small"
-            variant="outlined"
-            color={activeFilterCount > 0 ? "primary" : "inherit"}
-            startIcon={activeFilterCount > 0 ? <Badge badgeContent={activeFilterCount} color="primary"><FilterAltIcon /></Badge> : <FilterIcon />}
-            onClick={toggleFilter}
-            sx={{ ml: 1 }}
-          >
-            高级筛选
-          </Button>
         </Box>
         <Box>
           {/* 批量删除按钮 */}
@@ -972,113 +815,6 @@ const StockIn = () => {
           </Button>
         </Box>
       </Box>
-      
-      {/* 高级筛选面板 */}
-      <Collapse in={showFilter} sx={{ mb: 2 }}>
-        <Card variant="outlined">
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="subtitle1" fontWeight="bold" color="primary">
-                高级筛选
-              </Typography>
-              <Button 
-                size="small" 
-                variant="outlined" 
-                startIcon={<ClearAllIcon />}
-                onClick={resetFilters}
-              >
-                重置筛选
-              </Button>
-            </Box>
-            
-            <Grid container spacing={3}>
-              {/* 日期范围筛选 */}
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                  <CalendarIcon fontSize="small" sx={{ mr: 1 }} />
-                  日期范围
-                </Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <DatePicker 
-                    label="开始日期" 
-                    value={filters.dateRange.start}
-                    onChange={(date) => handleDateFilterChange('start', date)}
-                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
-                    maxDate={filters.dateRange.end || undefined}
-                  />
-                  <DatePicker 
-                    label="结束日期" 
-                    value={filters.dateRange.end}
-                    onChange={(date) => handleDateFilterChange('end', date)}
-                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
-                    minDate={filters.dateRange.start || undefined}
-                  />
-                </Stack>
-              </Grid>
-              
-              {/* 备注筛选 */}
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" gutterBottom>
-                  其他筛选
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Checkbox 
-                      checked={filters.hasNote} 
-                      onChange={handleNoteFilterChange}
-                      size="small"
-                    />
-                  }
-                  label="仅显示有备注的记录"
-                />
-              </Grid>
-              
-              {/* 数量范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  数量范围: {filters.quantityRange[0]} - {filters.quantityRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.quantityRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('quantityRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={100000}
-                />
-              </Grid>
-              
-              {/* 成本范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  成本范围: ¥{filters.costRange[0]} - ¥{filters.costRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.costRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('costRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={10000000}
-                  step={1000}
-                />
-              </Grid>
-              
-              {/* 均价范围筛选 */}
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2" gutterBottom>
-                  均价范围: ¥{filters.avgCostRange[0]} - ¥{filters.avgCostRange[1]}
-                </Typography>
-                <Slider
-                  value={filters.avgCostRange}
-                  onChange={(e, newValue) => handleRangeFilterChange('avgCostRange', newValue)}
-                  valueLabelDisplay="auto"
-                  min={0}
-                  max={100000}
-                />
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
-      </Collapse>
       
       {/* 入库表格 */}
       <Paper sx={{ 

@@ -14,6 +14,7 @@
     "axios": "^1.6.2",
     "chart.js": "^4.4.0",
     "date-fns": "^2.30.0",
+    "framer-motion": "^12.12.1",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
@@ -26,9 +27,11 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "GENERATE_SOURCEMAP=false react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "build:dev": "react-scripts build",
+    "build:prod": "GENERATE_SOURCEMAP=false REACT_APP_DISABLE_CONSOLE=true react-scripts build"
   },
   "eslintConfig": {
     "extends": [

@@ -45,27 +45,27 @@ const query = async (sql, params = []) => {
 // 获取总交易利润
 const getTotalTradingProfit = async () => {
   try {
-    // 获取总利润
+    // 获取总收入(使用total_amount代替profit)
     const totalProfitQuery = `
-      SELECT SUM(profit) as totalProfit 
+      SELECT SUM(total_amount) as totalProfit 
       FROM stock_out 
       WHERE transaction_time >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
     `;
     const totalProfitResult = await db.fetchOne(totalProfitQuery);
     const totalProfit = totalProfitResult?.totalProfit || 0;
     
-    // 获取本月利润
+    // 获取本月收入(使用total_amount代替profit)
     const currentMonthQuery = `
-      SELECT SUM(profit) as monthProfit 
+      SELECT SUM(total_amount) as monthProfit 
       FROM stock_out 
       WHERE transaction_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
     `;
     const currentMonthResult = await db.fetchOne(currentMonthQuery);
     const currentMonthProfit = currentMonthResult?.monthProfit || 0;
     
-    // 获取上月利润
+    // 获取上月收入(使用total_amount代替profit)
     const lastMonthQuery = `
-      SELECT SUM(profit) as monthProfit 
+      SELECT SUM(total_amount) as monthProfit 
       FROM stock_out 
       WHERE transaction_time >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
       AND transaction_time < DATE_FORMAT(CURDATE(), '%Y-%m-01')
@@ -121,18 +121,10 @@ const getInventoryDetails = async (limit = 5) => {
       SELECT 
         item_name as item, 
         CONCAT(quantity) as quantity, 
-        CONCAT(unit_price) as price, 
+        CONCAT(avg_price) as price, 
         CONCAT(inventory_value) as value,
-        CASE
-          WHEN last_update_time > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN '1'
-          WHEN last_update_time > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN '0'
-          ELSE '-1'
-        END as rate,
-        CASE
-          WHEN last_update_time > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN '+2.5%'
-          WHEN last_update_time > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN '0%'
-          ELSE '-1.5%'
-        END as rateValue
+        '0' as rate,
+        '0%' as rateValue
       FROM inventory
       WHERE quantity > 0
       ORDER BY inventory_value DESC
@@ -358,7 +350,7 @@ const getWeeklyIncome = async () => {
     const query = `
       SELECT 
         DATE_FORMAT(transaction_time, '%Y-%m-%d') as date,
-        SUM(profit) as daily_profit
+        SUM(total_amount) as daily_profit
       FROM stock_out
       WHERE transaction_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
       GROUP BY DATE_FORMAT(transaction_time, '%Y-%m-%d')
@@ -367,7 +359,7 @@ const getWeeklyIncome = async () => {
     
     const results = await db.fetchAll(query);
     
-    // 将结果转换为[日期, 利润]格式的数组
+    // 将结果转换为[日期, 收入]格式的数组
     return results.map(row => [row.date, parseFloat(row.daily_profit || 0)]);
   } catch (error) {
     logger.error(`获取周收入数据失败: ${error.message}`);

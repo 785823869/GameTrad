@@ -15,6 +15,7 @@ class OCRService {
   static activeRules = null;
   static lastRulesFetchTime = 0;
   static RULES_CACHE_DURATION = 5 * 60 * 1000; // 缓存规则5分钟
+  static DEBUG = false; // 禁用调试输出
   
   /**
    * 获取活跃的OCR规则
@@ -327,7 +328,7 @@ class OCRService {
   static async importOCRResults(type, data, requestId = null) {
     try {
       // 启用调试模式，详细记录数据处理过程
-      const DEBUG = true;
+      const DEBUG = false;
       
       // 生成唯一请求ID，如果没有提供
       if (!requestId) {

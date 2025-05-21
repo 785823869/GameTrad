@@ -82,10 +82,10 @@ function requestTracker(req, res, next) {
         logger.warn(`请求体: ${JSON.stringify(sanitizedBody)}`);
       }
     } else {
-      // 成功请求
-      logger.info(`请求成功 [${requestId}] ${requestMethod} ${requestPath} ${statusCode} - ${processingTime}ms`);
+      // 成功请求 - 使用debug级别而不是info级别
+      logger.debug(`请求成功 [${requestId}] ${requestMethod} ${requestPath} ${statusCode} - ${processingTime}ms`);
       
-      // 对OCR导入相关请求进行更详细的记录
+      // 对OCR导入相关请求进行更详细的记录 (重要业务操作仍然使用INFO级别)
       if (requestPath.includes('/import') && req.body) {
         logger.info(`导入请求 [${requestId}] - 数据项数: ${Array.isArray(req.body) ? req.body.length : 'N/A'}`);
       }

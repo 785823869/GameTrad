@@ -30,6 +30,9 @@ import OCRPreview from './OCRPreview';
 import OCRResultTable from './OCRResultTable';
 import OCRService from '../services/OCRService';
 
+// 调试模式常量 - 禁用调试输出
+const DEBUG = false;
+
 const TabPanel = (props) => {
   const { children, value, index, ...other } = props;
   return (
@@ -362,7 +365,7 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
     }
 
     // 启用调试模式
-    const DEBUG = true;
+    const DEBUG = false;
     if (DEBUG) console.log(`即将导入的OCR结果: ${JSON.stringify(ocrResults)}`);
 
     // 根据导入类型执行不同的导入逻辑

@@ -118,26 +118,12 @@ app.use('/api/ocr-rules', ocrRuleRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/settings', emailConfigRoutes);
 
-// 添加详细日志跟踪给库存相关路由
-app.use('/api/inventory', (req, res, next) => {
-  logger.info(`库存操作: ${req.method} ${req.originalUrl}`);
-  next();
-}, inventoryRoutes);
-
-app.use('/api/stock-in', (req, res, next) => {
-  logger.info(`入库操作: ${req.method} ${req.originalUrl}`);
-  next();
-}, stockInRoutes);
-
-app.use('/api/stock-out', (req, res, next) => {
-  logger.info(`出库操作: ${req.method} ${req.originalUrl}`);
-  next();
-}, stockOutRoutes);
-
-app.use('/api/transactions', (req, res, next) => {
-  logger.info(`交易操作: ${req.method} ${req.originalUrl}`);
-  next();
-}, transactionRoutes);
+// 库存相关路由 - 减少过多的日志输出
+// 只在DEBUG日志级别时记录详细信息
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/stock-in', stockInRoutes);
+app.use('/api/stock-out', stockOutRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 // 在生产环境中提供React静态文件
 if (process.env.NODE_ENV === 'production') {

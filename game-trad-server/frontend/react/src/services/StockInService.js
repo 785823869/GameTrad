@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 const API_URL = '/api/stock-in';
+// 控制调试日志输出
+const DEBUG = false;
 
 /**
  * 入库管理相关API服务
@@ -12,9 +14,9 @@ export default {
    */
   getAll: async () => {
     try {
-      console.log('正在请求入库数据...');
+      if (DEBUG) console.log('正在请求入库数据...');
       const response = await axios.get(API_URL);
-      console.log('入库API响应:', response);
+      if (DEBUG) console.log('入库API响应:', response);
       
       if (!response.data) {
         console.error('API响应中没有data字段');
@@ -36,12 +38,12 @@ export default {
         }
         
         // 记录每个项目的字段信息
-        console.log(`项目 ${index} 字段:`, Object.keys(item));
+        if (DEBUG) console.log(`项目 ${index} 字段:`, Object.keys(item));
         
         return item;
       }).filter(item => item !== null);
       
-      console.log('经验证的入库数据:', validatedData);
+      if (DEBUG) console.log('经验证的入库数据:', validatedData);
       return validatedData;
     } catch (error) {
       console.error('获取入库记录失败:', error);
@@ -68,9 +70,9 @@ export default {
    */
   add: async (stockInData) => {
     try {
-      console.log('添加入库记录，数据:', stockInData);
+      if (DEBUG) console.log('添加入库记录，数据:', stockInData);
       const response = await axios.post(API_URL, stockInData);
-      console.log('添加入库记录响应:', response.data);
+      if (DEBUG) console.log('添加入库记录响应:', response.data);
       return response.data;
     } catch (error) {
       console.error('添加入库记录失败:', error);

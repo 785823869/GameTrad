@@ -189,9 +189,17 @@ function OcrTool() {
         ];
       case TRANSACTION_TYPES.MONITOR:
         return [
-          { field: 'item_name', regex: '物品：(.+?)\\s', group: 1, default_value: '' },
-          { field: 'market_price', regex: '当前价格：(\\d+)', group: 1, default_value: '0' },
-          { field: 'quantity', regex: '数量：(\\d+)', group: 1, default_value: '0' }
+          // 基本物品信息
+          { field: 'item_name', regex: '物品[:：]\\s*([^\\n]+)', group: 1, default_value: '' },
+          { field: 'quantity', regex: '数量[:：]\\s*(\\d+)', group: 1, default_value: '0' },
+          { field: 'market_price', regex: '一口价[:：]\\s*(\\d+)', group: 1, default_value: '0' },
+          
+          // 备用格式 - 当前价格
+          { field: 'market_price', regex: '当前价格[:：]\\s*(\\d+)', group: 1, default_value: '0' },
+          
+          // 备用字段
+          { field: 'server', regex: '服务器[:：]\\s*([^\\n]+)', group: 1, default_value: '' },
+          { field: 'note', regex: '备注[:：]\\s*([^\\n]+)', group: 1, default_value: '' }
         ];
       default:
         return [
@@ -416,6 +424,94 @@ function OcrTool() {
   useEffect(() => {
     fetchRules();
   }, [activeTab]);
+
+  // 初始化预设规则
+  useEffect(() => {
+    const initializeDefaultRules = async () => {
+      try {
+        // 检查交易监控规则是否为空，如果为空则创建预设规则
+        const monitorResponse = await OCRRuleService.getAllRules(TRANSACTION_TYPES.MONITOR);
+        if (monitorResponse && monitorResponse.success && (!monitorResponse.data || monitorResponse.data.length === 0)) {
+          // 创建预设规则
+          await createDefaultMonitorRules();
+        }
+      } catch (err) {
+        console.error('初始化预设规则失败:', err);
+      }
+    };
+
+    // 尝试初始化默认规则
+    initializeDefaultRules();
+  }, []);
+
+  // 创建默认交易监控规则
+  const createDefaultMonitorRules = async () => {
+    const defaultRules = [
+      // 标准摆摊格式
+      {
+        name: '摆摊界面格式',
+        description: '适用于游戏摆摊界面的OCR识别规则',
+        is_active: true,
+        type: TRANSACTION_TYPES.MONITOR,
+        patterns: [
+          { field: 'item_name', regex: '物品[:：]\\s*([^\\n]+)', group: 1, default_value: '' },
+          { field: 'quantity', regex: '数量[:：]\\s*(\\d+)', group: 1, default_value: '0' },
+          { field: 'market_price', regex: '一口价[:：]\\s*(\\d+)', group: 1, default_value: '0' },
+          { field: 'note', regex: '备注[:：]\\s*([^\\n]+)', group: 1, default_value: '' }
+        ]
+      },
+      
+      // 寄售行界面格式
+      {
+        name: '寄售行格式',
+        description: '适用于游戏寄售行界面的OCR识别规则',
+        is_active: true,
+        type: TRANSACTION_TYPES.MONITOR,
+        patterns: [
+          { field: 'item_name', regex: '名称[:：]\\s*([^\\n]+)', group: 1, default_value: '' },
+          { field: 'quantity', regex: '数量[:：]\\s*(\\d+)\\s', group: 1, default_value: '0' },
+          { field: 'market_price', regex: '售价[:：]\\s*(\\d+)\\s', group: 1, default_value: '0' },
+          { field: 'server', regex: '服务器[:：]\\s*([^\\n]+)', group: 1, default_value: '' }
+        ]
+      },
+      
+      // 价格监控格式
+      {
+        name: '价格监控格式',
+        description: '适用于游戏价格监控界面的OCR识别规则',
+        is_active: true,
+        type: TRANSACTION_TYPES.MONITOR,
+        patterns: [
+          { field: 'item_name', regex: '([^\\d\\s][^\\n]+?)\\s+?\\d+', group: 1, default_value: '' },
+          { field: 'market_price', regex: '当前价格[：:]\\s*(\\d+)', group: 1, default_value: '0' },
+          { field: 'quantity', regex: '库存[：:]\\s*(\\d+)', group: 1, default_value: '0' }
+        ]
+      },
+      
+      // 通用表格格式
+      {
+        name: '表格提取格式',
+        description: '适用于表格形式的物品价格列表',
+        is_active: true,
+        type: TRANSACTION_TYPES.MONITOR,
+        patterns: [
+          { field: 'item_name', regex: '^\\s*([^\\d\\n]+?)\\s+\\d', group: 1, default_value: '' },
+          { field: 'quantity', regex: '^\\s*[^\\d\\n]+?\\s+(\\d+)\\s+\\d', group: 1, default_value: '0' },
+          { field: 'market_price', regex: '^\\s*[^\\d\\n]+?\\s+\\d+\\s+(\\d+)', group: 1, default_value: '0' }
+        ]
+      }
+    ];
+
+    try {
+      // 逐个添加默认规则
+      for (const rule of defaultRules) {
+        await OCRRuleService.addRule(TRANSACTION_TYPES.MONITOR, rule);
+      }
+      console.log('默认交易监控规则创建成功');
+    } catch (err) {
+      console.error('创建默认规则失败:', err);
+    }
+  };
 
   return (
     <Box sx={{ width: '100%' }}>

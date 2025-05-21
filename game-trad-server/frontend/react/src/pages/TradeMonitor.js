@@ -40,6 +40,28 @@ import {
 import OCRDialog from '../components/OCRDialog';
 
 const TradeMonitor = () => {
+  // CSS样式变量
+  const styles = {
+    borderRadius: {
+      small: '4px',
+      medium: '8px',
+      large: '12px',
+      pill: '20px'
+    },
+    boxShadow: {
+      light: '0 2px 4px rgba(0,0,0,0.05)',
+      medium: '0 4px 8px rgba(0,0,0,0.1)',
+      heavy: '0 8px 16px rgba(0,0,0,0.12)'
+    },
+    transition: 'all 0.2s ease-in-out',
+    spacing: {
+      xs: 1,
+      sm: 2,
+      md: 3,
+      lg: 4
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tradeItems, setTradeItems] = useState([]);
@@ -71,10 +93,10 @@ const TradeMonitor = () => {
   const fetchTradeItems = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/transactions');
+      const response = await axios.get('/api/status/trade-monitor');
       
-      if (response.data) {
-        setTradeItems(response.data);
+      if (response.data && response.data.success) {
+        setTradeItems(response.data.items);
         setError(null);
       } else {
         setError('获取交易监控数据失败');
@@ -132,11 +154,13 @@ const TradeMonitor = () => {
 
   // 格式化价格
   const formatPrice = (price) => {
+    if (price === 0 || !price) return '—';
     return `¥ ${parseFloat(price).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
   // 格式化百分比
   const formatPercent = (value) => {
+    if (value === 0 || !value) return '0.00%';
     return `${(value * 100).toFixed(2)}%`;
   };
 
@@ -196,27 +220,24 @@ const TradeMonitor = () => {
   // 保存表单数据
   const handleSaveForm = async () => {
     try {
-      // 转换表单数据为交易记录格式
-      const transactionData = {
-        transaction_type: 'monitor', // 特定的类型标识这是监控记录
+      // 构建符合trade_monitor表结构的数据
+      const monitorData = {
         item_name: formData.item_name,
         quantity: parseInt(formData.quantity) || 0,
-        price: parseFloat(formData.market_price) || 0,
+        market_price: parseFloat(formData.market_price) || 0,
         target_price: parseFloat(formData.target_price) || 0,
         planned_price: parseFloat(formData.planned_price) || 0,
-        note: formData.strategy || '',
-        platform: '', // 可选平台信息
-        transaction_time: new Date().toISOString()
+        strategy: formData.strategy || '',
+        monitor_time: new Date().toISOString()
       };
-      
-      let response;
+
+      // 如果是编辑现有记录，添加ID
       if (currentItem && currentItem.id) {
-        // 更新现有记录
-        response = await axios.put(`/api/transactions/${currentItem.id}`, transactionData);
-      } else {
-        // 添加新记录
-        response = await axios.post('/api/transactions', transactionData);
+        monitorData.id = currentItem.id;
       }
+      
+      // 使用trade-monitor API
+      const response = await axios.post('/api/status/trade-monitor', monitorData);
       
       if (response.data.success) {
         setFormOpen(false);
@@ -307,38 +328,20 @@ const TradeMonitor = () => {
       // 保存到后端API
       setLoading(true);
       
-      // 导入到后端
-      axios.post('/api/transactions/import', monitorItems)
-        .then(response => {
-          console.log("导入响应:", response.data);
+      // 导入到后端 - 使用批量添加方式
+      const importPromises = monitorItems.map(item => 
+        axios.post('/api/status/trade-monitor', item)
+      );
+      
+      // 批量处理所有导入请求
+      Promise.all(importPromises)
+        .then(responses => {
+          const successCount = responses.filter(res => res.data.success).length;
           
-          if (response.data.success) {
-            // 添加到现有数据
-            setTradeItems(prev => {
-              // 检查响应中有处理结果
-              const newItems = response.data.results?.processed_records || monitorItems;
-              
-              // 将服务器处理的结果格式化为前端所需的格式
-              const formattedItems = newItems.map(item => ({
-                id: item.id,
-                item_name: item.item_name,
-                quantity: Number(item.quantity) || 0,
-                market_price: Number(item.unit_price || item.price || item.market_price || 0),
-                target_price: 0,
-                planned_price: 0,
-                monitor_time: new Date(),
-                break_even_price: 0,
-                profit: 0,
-                profit_rate: 0,
-                strategy: item.note || '',
-              }));
-              
-              return [...formattedItems, ...prev];
-            });
-            
+          if (successCount > 0) {
             setNotification({
               open: true,
-              message: `成功导入${response.data.results?.success || monitorItems.length}条记录`,
+              message: `成功导入${successCount}条记录`,
               severity: 'success'
             });
             
@@ -347,7 +350,7 @@ const TradeMonitor = () => {
           } else {
             setNotification({
               open: true,
-              message: response.data.message || '导入失败，服务器返回错误',
+              message: '导入失败，没有成功导入的记录',
               severity: 'error'
             });
           }
@@ -384,16 +387,30 @@ const TradeMonitor = () => {
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ display: 'flex', alignItems: 'center' }}>
-          <TrendingUpIcon sx={{ mr: 1 }} />
+        <Typography variant="h4" component="h1" sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          fontWeight: 500,
+          color: 'primary.dark'
+        }}>
+          <TrendingUpIcon sx={{ mr: 1, color: 'primary.main' }} />
           交易监控
         </Typography>
-        <Box>
+        <Box sx={{ 
+          display: 'flex', 
+          gap: styles.spacing.xs
+        }}>
           <Button
             variant="outlined"
             startIcon={<ImportIcon />}
             onClick={handleOpenOcrDialog}
-            sx={{ mr: 1 }}
+            color="info"
+            sx={{ 
+              borderRadius: styles.borderRadius.medium,
+              textTransform: 'none',
+              boxShadow: styles.boxShadow.light,
+              transition: styles.transition
+            }}
           >
             OCR导入
           </Button>
@@ -401,17 +418,33 @@ const TradeMonitor = () => {
             variant="outlined"
             startIcon={<AddIcon />}
             onClick={handleAddItem}
-            sx={{ mr: 1 }}
+            color="secondary"
+            sx={{ 
+              borderRadius: styles.borderRadius.medium,
+              textTransform: 'none',
+              boxShadow: styles.boxShadow.light,
+              transition: styles.transition
+            }}
           >
             添加监控
           </Button>
           <Button
             variant="contained"
-            startIcon={<RefreshIcon />}
+            startIcon={<RefreshIcon sx={{ animation: loading ? 'spin 2s linear infinite' : 'none' }} />}
             onClick={fetchTradeItems}
             disabled={loading}
+            sx={{ 
+              borderRadius: styles.borderRadius.medium,
+              textTransform: 'none',
+              boxShadow: styles.boxShadow.medium,
+              transition: styles.transition,
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' }
+              }
+            }}
           >
-            刷新
+            {loading ? '加载中...' : '刷新数据'}
           </Button>
         </Box>
       </Box>
@@ -422,17 +455,46 @@ const TradeMonitor = () => {
         </Alert>
       )}
 
-      <Paper sx={{ p: 2, mb: 4 }}>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 3 }}>
+      <Paper sx={{ p: 3, mb: 4, borderRadius: styles.borderRadius.large, boxShadow: styles.boxShadow.medium }}>
+        <Box sx={{ 
+          display: 'flex', 
+          flexWrap: 'wrap', 
+          gap: 2, 
+          mb: 3,
+          alignItems: 'center',
+          pb: 2,
+          borderBottom: '1px solid rgba(0,0,0,0.06)'
+        }}>
           <TextField
             label="搜索物品"
             variant="outlined"
             size="small"
             value={searchTerm}
             onChange={handleSearch}
-            sx={{ minWidth: 200 }}
+            placeholder="输入物品名称..."
+            InputProps={{
+              startAdornment: (
+                <Box sx={{ color: 'action.active', mr: 1, mt: 0.5 }}>
+                  <span role="img" aria-label="search">🔍</span>
+                </Box>
+              ),
+            }}
+            sx={{ 
+              minWidth: 220,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '8px',
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'primary.light',
+                },
+              }
+            }}
           />
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ 
+            minWidth: 160,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '8px',
+            }
+          }}>
             <InputLabel>排序方式</InputLabel>
             <Select
               value={sortBy}
@@ -447,7 +509,12 @@ const TradeMonitor = () => {
               <MenuItem value="planned_price">计划卖出价</MenuItem>
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
+          <FormControl size="small" sx={{ 
+            minWidth: 120,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '8px',
+            }
+          }}>
             <InputLabel>排序顺序</InputLabel>
             <Select
               value={sortOrder}
@@ -458,22 +525,39 @@ const TradeMonitor = () => {
               <MenuItem value="asc">升序</MenuItem>
             </Select>
           </FormControl>
+          {filteredItems.length > 0 && (
+            <Box sx={{ 
+              ml: 'auto', 
+              backgroundColor: 'info.light', 
+              color: 'info.dark', 
+              px: 2, 
+              py: 0.5, 
+              borderRadius: '16px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center'
+            }}>
+              共 {filteredItems.length} 条记录
+            </Box>
+          )}
         </Box>
         
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-            <CircularProgress />
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 5 }}>
+            <CircularProgress size={50} thickness={4} sx={{ mb: 2 }} />
+            <Typography variant="body1" color="text.secondary">加载数据中，请稍候...</Typography>
           </Box>
         ) : (
           <TableContainer sx={{ 
             maxHeight: 'calc(100vh - 380px)', 
             overflow: 'auto',
             "&::-webkit-scrollbar": {
-              width: "10px",
-              height: "10px"
+              width: "8px",
+              height: "8px"
             },
             "&::-webkit-scrollbar-track": {
-              backgroundColor: "rgba(0,0,0,0.05)"
+              backgroundColor: "rgba(0,0,0,0.03)"
             },
             "&::-webkit-scrollbar-thumb": {
               backgroundColor: "rgba(0,0,0,0.15)",
@@ -483,21 +567,22 @@ const TradeMonitor = () => {
               }
             }
           }}>
-            <Table stickyHeader sx={{ minWidth: 650 }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 650 }}>
               <TableHead>
                 <TableRow>
                   <TableCell 
                     sx={{ 
                       fontWeight: 'bold', 
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '15%'
+                      width: '13%'
                     }}
                   >
                     物品名称
@@ -505,15 +590,16 @@ const TradeMonitor = () => {
                   <TableCell 
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '12%'
+                      width: '11%'
                     }}
                   >
                     监控时间
@@ -522,15 +608,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '8%'
+                      width: '7%'
                     }}
                   >
                     库存数量
@@ -539,15 +626,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     市场价格
@@ -556,15 +644,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     目标买入价
@@ -573,15 +662,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     计划卖出价
@@ -590,15 +680,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     成本价格
@@ -607,15 +698,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     单位利润
@@ -624,15 +716,16 @@ const TradeMonitor = () => {
                     align="right"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '9%'
                     }}
                   >
                     利润率
@@ -641,12 +734,13 @@ const TradeMonitor = () => {
                     align="center"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 16px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                       width: '10%'
@@ -658,15 +752,16 @@ const TradeMonitor = () => {
                     align="center"
                     sx={{ 
                       fontWeight: 'bold',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                       borderBottom: '2px solid',
-                      borderBottomColor: 'primary.light',
+                      borderBottomColor: 'primary.main',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10,
+                      padding: '8px 10px',
                       backdropFilter: 'blur(8px)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      width: '10%'
+                      width: '5%'
                     }}
                   >
                     操作
@@ -683,56 +778,103 @@ const TradeMonitor = () => {
                           backgroundColor: "rgba(0, 0, 0, 0.02)" 
                         },
                         "&:hover": {
-                          backgroundColor: "rgba(0, 0, 0, 0.04)"
-                        }
+                          backgroundColor: "rgba(25, 118, 210, 0.08)"
+                        },
+                        height: '48px'
                       }}
                     >
-                      <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '4px 16px' }}>
                         <Tooltip title={item.item_name} placement="top">
                           <span>{item.item_name}</span>
                         </Tooltip>
                       </TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(item.monitor_time)}</TableCell>
-                      <TableCell align="right">{item.quantity}</TableCell>
-                      <TableCell align="right">{formatPrice(item.market_price)}</TableCell>
-                      <TableCell align="right" sx={{ color: 'text.primary', fontWeight: 500 }}>
+                      <TableCell sx={{ whiteSpace: 'nowrap', padding: '4px 16px', fontSize: '0.875rem' }}>{formatDateTime(item.monitor_time)}</TableCell>
+                      <TableCell align="right" sx={{ padding: '4px 16px', fontWeight: item.quantity > 0 ? 500 : 400 }}>{item.quantity}</TableCell>
+                      <TableCell align="right" sx={{ padding: '4px 16px' }}>{formatPrice(item.market_price)}</TableCell>
+                      <TableCell align="right" sx={{ color: item.target_price ? 'primary.dark' : 'text.secondary', fontWeight: item.target_price ? 700 : 400, padding: '4px 16px' }}>
                         {formatPrice(item.target_price || 0)}
                       </TableCell>
-                      <TableCell align="right" sx={{ color: 'success.main', fontWeight: 500 }}>
+                      <TableCell align="right" sx={{ color: item.planned_price ? 'success.main' : 'text.secondary', fontWeight: item.planned_price ? 700 : 400, padding: '4px 16px' }}>
                         {formatPrice(item.planned_price || 0)}
                       </TableCell>
-                      <TableCell align="right">{formatPrice(item.break_even_price)}</TableCell>
+                      <TableCell align="right" sx={{ padding: '4px 16px' }}>{formatPrice(item.break_even_price)}</TableCell>
                       <TableCell align="right" sx={{ 
-                        color: (item.profit || 0) >= 0 ? 'success.main' : 'error.main', 
-                        fontWeight: 500 
+                        color: (item.profit || 0) > 0 ? 'success.main' : (item.profit || 0) < 0 ? 'error.main' : 'text.secondary', 
+                        fontWeight: (item.profit || 0) !== 0 ? 700 : 400,
+                        padding: '4px 16px'
                       }}>
                         {formatPrice(item.profit)}
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ padding: '4px 16px' }}>
                         <Chip
                           label={formatPercent(item.profit_rate)}
                           size="small"
                           color={(item.profit_rate || 0) > 0 ? "success" : (item.profit_rate || 0) < 0 ? "error" : "default"}
                           sx={{
                             fontWeight: 'bold',
-                            minWidth: '70px'
+                            minWidth: '70px',
+                            height: '24px'
                           }}
                         />
                       </TableCell>
-                      <TableCell align="center">{item.strategy || '—'}</TableCell>
-                      <TableCell align="center">
-                        <IconButton color="primary" size="small" onClick={() => handleEditItem(item)}>
-                          <EditIcon />
-                        </IconButton>
-                        <IconButton color="error" size="small" onClick={() => handleDeleteItem(item)}>
-                          <DeleteIcon />
-                        </IconButton>
+                      <TableCell align="center" sx={{ 
+                        padding: '4px 16px',
+                        maxWidth: '120px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {item.strategy ? (
+                          <Tooltip title={item.strategy} placement="top">
+                            <span>{item.strategy}</span>
+                          </Tooltip>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell align="center" sx={{ padding: '4px 8px' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                          <Tooltip title="编辑" placement="top">
+                            <IconButton color="primary" size="small" onClick={() => handleEditItem(item)} sx={{ padding: '2px' }}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="删除" placement="top">
+                            <IconButton color="error" size="small" onClick={() => handleDeleteItem(item)} sx={{ padding: '2px' }}>
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} align="center">暂无数据</TableCell>
+                    <TableCell colSpan={11} align="center" sx={{ py: 5 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3 }}>
+                        <Box sx={{ 
+                          fontSize: '48px', 
+                          mb: 2, 
+                          opacity: 0.5, 
+                          color: 'text.secondary'
+                        }}>
+                          📊
+                        </Box>
+                        <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                          暂无交易监控数据
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: '450px', textAlign: 'center' }}>
+                          您可以通过"添加监控"按钮手动添加，或使用"OCR导入"功能批量导入交易数据
+                        </Typography>
+                        <Button 
+                          variant="outlined" 
+                          startIcon={<AddIcon />} 
+                          onClick={handleAddItem}
+                          color="primary"
+                          sx={{ borderRadius: '20px', textTransform: 'none' }}
+                        >
+                          添加第一条监控数据
+                        </Button>
+                      </Box>
+                    </TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -742,10 +884,39 @@ const TradeMonitor = () => {
       </Paper>
       
       {/* 添加/编辑对话框 */}
-      <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{currentItem ? '编辑监控记录' : '添加监控记录'}</DialogTitle>
-        <DialogContent>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
+      <Dialog 
+        open={formOpen} 
+        onClose={() => setFormOpen(false)} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: styles.borderRadius.large,
+            boxShadow: styles.boxShadow.heavy
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          pb: 1, 
+          pt: 2.5,
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
+          display: 'flex',
+          alignItems: 'center'
+        }}>
+          {currentItem ? (
+            <>
+              <EditIcon sx={{ mr: 1, color: 'primary.main' }} fontSize="small" />
+              编辑监控记录
+            </>
+          ) : (
+            <>
+              <AddIcon sx={{ mr: 1, color: 'secondary.main' }} fontSize="small" />
+              添加监控记录
+            </>
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Grid container spacing={3} sx={{ mt: 0 }}>
             <Grid item xs={12} sm={6}>
               <TextField
                 label="物品名称"
@@ -754,6 +925,11 @@ const TradeMonitor = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' }
+                }}
+                helperText="请输入完整物品名称"
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -765,6 +941,11 @@ const TradeMonitor = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' }
+                }}
+                helperText="当前库存数量"
               />
             </Grid>
             <Grid item xs={12} sm={4}>
@@ -776,6 +957,12 @@ const TradeMonitor = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' },
+                  startAdornment: <Box component="span" sx={{ mr: 0.5 }}>¥</Box>
+                }}
+                helperText="当前市场参考价格"
               />
             </Grid>
             <Grid item xs={12} sm={4}>
@@ -786,6 +973,13 @@ const TradeMonitor = () => {
                 value={formData.target_price}
                 onChange={handleFormChange}
                 fullWidth
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' },
+                  startAdornment: <Box component="span" sx={{ mr: 0.5 }}>¥</Box>
+                }}
+                helperText="期望的买入价格"
+                color="primary"
               />
             </Grid>
             <Grid item xs={12} sm={4}>
@@ -796,6 +990,13 @@ const TradeMonitor = () => {
                 value={formData.planned_price}
                 onChange={handleFormChange}
                 fullWidth
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' },
+                  startAdornment: <Box component="span" sx={{ mr: 0.5 }}>¥</Box>
+                }}
+                helperText="计划卖出时的目标价格"
+                color="success"
               />
             </Grid>
             <Grid item xs={12}>
@@ -807,28 +1008,113 @@ const TradeMonitor = () => {
                 fullWidth
                 multiline
                 rows={2}
+                variant="outlined"
+                InputProps={{
+                  sx: { borderRadius: '8px' }
+                }}
+                helperText="填写出库策略、备注等信息"
               />
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setFormOpen(false)}>取消</Button>
-          <Button onClick={handleSaveForm} color="primary" variant="contained">
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+          <Button 
+            onClick={() => setFormOpen(false)}
+            variant="outlined"
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              minWidth: '80px'
+            }}
+          >
+            取消
+          </Button>
+          <Button 
+            onClick={handleSaveForm} 
+            color="primary" 
+            variant="contained"
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              minWidth: '80px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+          >
             保存
           </Button>
         </DialogActions>
       </Dialog>
       
       {/* 删除确认对话框 */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>确认删除</DialogTitle>
-        <DialogContent>
-          确定要删除 {currentItem?.item_name} 的监控记录吗？此操作无法撤销。
+      <Dialog 
+        open={deleteDialogOpen} 
+        onClose={() => setDeleteDialogOpen(false)}
+        PaperProps={{
+          sx: {
+            borderRadius: styles.borderRadius.large,
+            boxShadow: styles.boxShadow.heavy,
+            maxWidth: '400px'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
+          color: 'error.main',
+          display: 'flex',
+          alignItems: 'center',
+          pb: 1.5
+        }}>
+          <DeleteIcon sx={{ mr: 1 }} fontSize="small" />
+          确认删除
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3, pb: 2, px: 3 }}>
+          <Typography variant="body1" sx={{ mb: 1 }}>
+            确定要删除以下监控记录吗？
+          </Typography>
+          <Box sx={{ 
+            p: 2, 
+            backgroundColor: 'error.lighter', 
+            borderRadius: '8px',
+            borderLeft: '3px solid',
+            borderLeftColor: 'error.main',
+            mb: 1
+          }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+              {currentItem?.item_name}
+            </Typography>
+            {currentItem?.quantity > 0 && (
+              <Typography variant="body2" color="text.secondary">
+                当前库存：{currentItem?.quantity} 个
+              </Typography>
+            )}
+          </Box>
+          <Typography variant="body2" color="error.main" sx={{ fontWeight: 500, mt: 2 }}>
+            此操作无法撤销。
+          </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>取消</Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">
-            删除
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+          <Button 
+            onClick={() => setDeleteDialogOpen(false)}
+            variant="outlined"
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none'
+            }}
+          >
+            取消
+          </Button>
+          <Button 
+            onClick={handleConfirmDelete} 
+            color="error" 
+            variant="contained"
+            startIcon={<DeleteIcon />}
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+          >
+            确认删除
           </Button>
         </DialogActions>
       </Dialog>
@@ -847,9 +1133,22 @@ const TradeMonitor = () => {
         open={notification.open}
         autoHideDuration={3000}
         onClose={handleCloseNotification}
-        message={notification.message}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      />
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification.severity} 
+          variant="filled"
+          sx={{ 
+            borderRadius: '8px', 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            width: '100%',
+            alignItems: 'center'
+          }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };

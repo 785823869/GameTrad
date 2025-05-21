@@ -196,28 +196,94 @@ const EXAMPLE_RULES = {
   ],
   'monitor': [
     {
-      ruleName: '市场价格监控规则',
+      ruleName: '摆摊物品监控规则',
       rules: [
         {
           field: 'item_name',
-          regex: '物品：(.+?)\\s',
+          regex: '物品[:：]\\s*([^\\n]+)',
           group: 1,
           default_value: '',
-          description: '匹配物品名称'
-        },
-        {
-          field: 'market_price',
-          regex: '当前价格：(\\d+)',
-          group: 1,
-          default_value: '0',
-          description: '匹配市场价格'
+          description: '匹配物品名称，例如"物品：灵之精火"中的"灵之精火"'
         },
         {
           field: 'quantity',
-          regex: '数量：(\\d+)',
+          regex: '数量[:：]\\s*(\\d+)',
           group: 1,
           default_value: '0',
-          description: '匹配数量'
+          description: '匹配数量，例如"数量：66"中的"66"'
+        },
+        {
+          field: 'market_price',
+          regex: '一口价[:：]\\s*(\\d+)',
+          group: 1,
+          default_value: '0',
+          description: '匹配价格，例如"一口价：1188"中的"1188"'
+        },
+        {
+          field: 'note',
+          regex: '备注[:：]\\s*([^\\n]+)',
+          group: 1,
+          default_value: '',
+          description: '匹配备注，例如"备注：批发价"中的"批发价"'
+        }
+      ]
+    },
+    {
+      ruleName: '寄售行物品监控规则',
+      rules: [
+        {
+          field: 'item_name',
+          regex: '名称[:：]\\s*([^\\n]+)',
+          group: 1,
+          default_value: '',
+          description: '匹配物品名称，例如"名称：灵之精火"中的"灵之精火"'
+        },
+        {
+          field: 'quantity',
+          regex: '数量[:：]\\s*(\\d+)\\s',
+          group: 1,
+          default_value: '0',
+          description: '匹配数量，例如"数量：66"中的"66"'
+        },
+        {
+          field: 'market_price',
+          regex: '售价[:：]\\s*(\\d+)\\s',
+          group: 1,
+          default_value: '0',
+          description: '匹配价格，例如"售价：1188"中的"1188"'
+        },
+        {
+          field: 'server',
+          regex: '服务器[:：]\\s*([^\\n]+)',
+          group: 1,
+          default_value: '',
+          description: '匹配服务器，例如"服务器：飞龙在天"中的"飞龙在天"'
+        }
+      ]
+    },
+    {
+      ruleName: '表格数据监控规则',
+      rules: [
+        {
+          field: 'item_name',
+          regex: '^\\s*([^\\d\\n]+?)\\s+\\d',
+          group: 1,
+          default_value: '',
+          description: '匹配表格中的物品名称，例如"灵之精火    66    1188"中的"灵之精火"'
+        },
+        {
+          field: 'quantity',
+          regex: '^\\s*[^\\d\\n]+?\\s+(\\d+)\\s+\\d',
+          group: 1,
+          default_value: '0',
+          description: '匹配表格中的数量，例如"灵之精火    66    1188"中的"66"'
+        },
+        {
+          field: 'market_price',
+          regex: '^\\s*[^\\d\\n]+?\\s+\\d+\\s+(\\d+)',
+          group: 1,
+          default_value: '0',
+          description: '匹配表格中的价格，例如"灵之精火    66    1188"中的"1188"'
         }
       ]
     }

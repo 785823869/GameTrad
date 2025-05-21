@@ -2,6 +2,22 @@
 
 /* 可在此处添加全局样式规则 */
 
+/* 移除所有水平滚动条 */
+html, body {
+  overflow-x: hidden;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
 /* 确保侧边栏和菜单元素正常显示 */
 .MuiDrawer-root,
 .MuiDrawer-paper,

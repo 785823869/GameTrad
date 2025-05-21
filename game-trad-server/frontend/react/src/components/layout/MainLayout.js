@@ -8,7 +8,8 @@ const LayoutContainer = styled(Box)({
   display: 'flex',
   height: '100vh',
   width: '100%',
-  overflow: 'hidden'
+  overflow: 'hidden',
+  maxWidth: '100vw'
 });
 
 // 内容区域
@@ -16,7 +17,9 @@ const ContentContainer = styled(Box)({
   flexGrow: 1,
   height: '100%',
   overflow: 'auto',
-  backgroundColor: '#f8fafc'
+  overflowX: 'hidden',
+  backgroundColor: '#f8fafc',
+  maxWidth: '100%'  // 确保内容不会溢出
 });
 
 /**

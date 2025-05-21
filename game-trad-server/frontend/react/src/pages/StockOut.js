@@ -24,7 +24,8 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  Tooltip
+  Tooltip,
+  Snackbar
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -36,6 +37,8 @@ import {
 } from '@mui/icons-material';
 import StockOutService from '../services/StockOutService';  // 引入服务
 import { Link } from 'react-router-dom';
+import OCRDialog from '../components/OCRDialog'; // 导入OCR对话框组件
+import OCRService from '../services/OCRService';
 
 const StockOut = () => {
   // 状态
@@ -50,6 +53,12 @@ const StockOut = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalQuantity, setTotalQuantity] = useState(0);
+  const [ocrDialogOpen, setOcrDialogOpen] = useState(false); // OCR对话框状态
+  const [notification, setNotification] = useState({ // 添加通知状态
+    open: false,
+    message: '',
+    severity: 'info'
+  });
   
   // 获取出库数据
   useEffect(() => {
@@ -76,9 +85,12 @@ const StockOut = () => {
   const fetchStockOutData = async () => {
     setLoading(true);
     try {
-      console.log('正在请求出库数据...');
+      // 控制是否输出详细日志
+      const DEBUG = true;
+      
+      if (DEBUG) console.log('正在请求出库数据...');
       const data = await StockOutService.getAll();
-      console.log('出库API响应:', data);
+      if (DEBUG) console.log('出库API响应:', data);
       
       if (!data) {
         console.error('API响应中没有data字段');
@@ -97,8 +109,8 @@ const StockOut = () => {
       
       // 格式化响应数据，增强数据处理和验证
       const formattedData = data.map((item, index) => {
-        // 记录处理的数据
-        console.log(`处理出库记录 ${index}:`, item);
+        // 只在DEBUG模式下记录处理的数据
+        if (DEBUG && index < 5) console.log(`处理出库记录 ${index}:`, item); // 仅记录前5条避免日志过长
         
         // 检查是否是有效对象
         if (!item) {
@@ -131,14 +143,14 @@ const StockOut = () => {
           } else if (typeof rawDate === 'string') {
             transactionTime = new Date(rawDate);
             if (isNaN(transactionTime.getTime())) {
-              console.warn(`无效日期格式: ${rawDate}`);
+              if (DEBUG) console.warn(`无效日期格式: ${rawDate}`);
               transactionTime = new Date();
             }
           } else {
             transactionTime = new Date();
           }
         } catch (err) {
-          console.error(`日期解析错误: ${err.message}`);
+          if (DEBUG) console.error(`日期解析错误: ${err.message}`);
           transactionTime = new Date();
         }
         
@@ -152,7 +164,7 @@ const StockOut = () => {
             Number(item.quantity || 0);
           if (isNaN(quantity)) quantity = 0;
         } catch (e) {
-          console.error(`数量解析错误:`, e);
+          if (DEBUG) console.error(`数量解析错误:`, e);
           quantity = 0;
         }
         
@@ -163,7 +175,7 @@ const StockOut = () => {
             Number(item.unit_price || 0);
           if (isNaN(unitPrice)) unitPrice = 0;
         } catch (e) {
-          console.error(`单价解析错误:`, e);
+          if (DEBUG) console.error(`单价解析错误:`, e);
           unitPrice = 0;
         }
         
@@ -174,7 +186,7 @@ const StockOut = () => {
             Number(item.fee || 0);
           if (isNaN(fee)) fee = 0;
         } catch (e) {
-          console.error(`手续费解析错误:`, e);
+          if (DEBUG) console.error(`手续费解析错误:`, e);
           fee = 0;
         }
         
@@ -188,7 +200,7 @@ const StockOut = () => {
             totalAmount = quantity * unitPrice - fee;
           }
         } catch (e) {
-          console.error(`总金额解析错误:`, e);
+          if (DEBUG) console.error(`总金额解析错误:`, e);
           totalAmount = 0;
         }
         
@@ -208,9 +220,56 @@ const StockOut = () => {
           note
         };
       }).filter(item => item !== null);  // 过滤掉无效数据
+
+      // 创建一个用于去重的Map，使用物品名、数量、单价和时间作为唯一键
+      const uniqueItemMap = new Map();
       
-      console.log('格式化后的出库数据:', formattedData);
-      setStockOutData(formattedData);
+      // 按交易时间排序，确保相同记录保留最新的
+      formattedData.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
+      
+      for (const item of formattedData) {
+        // 检查是否是有效记录
+        if (!item.itemName || item.quantity <= 0) continue;
+        
+        // 创建时间字符串，精确到分钟，避免毫秒差异导致的重复
+        const timeStr = item.transactionTime instanceof Date 
+          ? `${item.transactionTime.getFullYear()}-${item.transactionTime.getMonth()+1}-${item.transactionTime.getDate()} ${item.transactionTime.getHours()}:${item.transactionTime.getMinutes()}`
+          : '';
+          
+        // 创建唯一键 - 不包括手续费，因为同一条记录可能有不同手续费版本
+        const itemKey = `${item.itemName}_${item.quantity}_${item.unitPrice}_${timeStr}`;
+        
+        // 决定保留哪个版本的记录：
+        // 1. 如果是使用相同ID的完全重复记录，保留手续费最高的那条
+        // 2. 如果是不同ID但其他关键信息相同，也保留手续费最高的记录
+        if (uniqueItemMap.has(itemKey)) {
+          const existingItem = uniqueItemMap.get(itemKey);
+          
+          // 手续费比较 - 保留手续费最高的记录
+          if (item.fee > existingItem.fee) {
+            if (DEBUG) console.log(`fetchStockOutData: 替换重复记录，使用更高手续费的记录: ${itemKey}`);
+            uniqueItemMap.set(itemKey, item);
+          }
+        } else {
+          uniqueItemMap.set(itemKey, item);
+        }
+      }
+      
+      // 转换回数组
+      const uniqueData = Array.from(uniqueItemMap.values());
+      
+      // 按交易时间倒序排序，最新的记录显示在最前面
+      uniqueData.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
+      
+      if (DEBUG) {
+        console.log(`原始数据数量: ${formattedData.length}, 去重后数量: ${uniqueData.length}`);
+        if (formattedData.length !== uniqueData.length) {
+          console.log('检测到重复数据，已进行去重处理');
+        }
+      }
+      
+      if (DEBUG) console.log('格式化后的出库数据:', uniqueData.slice(0, 3));  // 只显示前3条避免日志过长
+      setStockOutData(uniqueData);
       setError(null);
     } catch (err) {
       console.error('获取出库数据失败:', err);
@@ -280,16 +339,48 @@ const StockOut = () => {
     if (!selectedItem) return;
     
     try {
-      const response = await StockOutService.delete(selectedItem.id);
-      if (response.success) {
+      // 控制是否输出详细日志
+      const DEBUG = false;
+      
+      // 检查ID是否看起来像临时ID（使用Math.random生成的）
+      const isTemporaryId = typeof selectedItem.id === 'string' && selectedItem.id.length === 9;
+      
+      if (isTemporaryId) {
+        // 如果是临时ID（通常是OCR导入但未保存到数据库的记录），直接从前端状态移除
+        if (DEBUG) console.log('删除临时记录，ID:', selectedItem.id);
         setStockOutData(prevData => prevData.filter(item => item.id !== selectedItem.id));
+        showNotification('删除记录成功', 'success');
+        handleCloseDeleteDialog();
+        return;
+      }
+      
+      // 如果不是临时ID，则调用API删除
+      if (DEBUG) console.log('调用API删除记录，ID:', selectedItem.id);
+      const response = await StockOutService.delete(selectedItem.id);
+      
+      if (response && response.success) {
+        setStockOutData(prevData => prevData.filter(item => item.id !== selectedItem.id));
+        showNotification('删除记录成功', 'success');
         handleCloseDeleteDialog();
       } else {
-        setError('删除出库记录失败。请稍后再试。');
+        if (DEBUG) console.error('删除API响应失败:', response);
+        setError('删除出库记录失败，服务器拒绝请求。');
+        showNotification('删除记录失败', 'error');
       }
     } catch (err) {
       console.error('删除出库记录失败:', err);
-      setError('删除出库记录失败。请稍后再试。');
+      
+      // 针对不同错误提供不同提示
+      if (err.response && err.response.status === 404) {
+        setError('记录不存在，可能已被删除');
+        showNotification('记录不存在，可能已被删除', 'warning');
+        // 即使API返回404，也从前端状态中移除该记录
+        setStockOutData(prevData => prevData.filter(item => item.id !== selectedItem.id));
+        handleCloseDeleteDialog();
+      } else {
+        setError('删除出库记录失败。' + (err.message || ''));
+        showNotification('删除记录失败', 'error');
+      }
     }
   };
   
@@ -318,10 +409,233 @@ const StockOut = () => {
     fetchStockOutData();
   };
   
-  // OCR导入处理
-  const handleOcrImport = () => {
-    // OCR导入功能将在后端完成
-    alert('OCR导入功能将在后续实现');
+  // 显示通知
+  const showNotification = (message, severity = 'info') => {
+    setNotification({
+      open: true,
+      message,
+      severity
+    });
+  };
+  
+  // 关闭通知
+  const handleCloseNotification = () => {
+    setNotification({
+      ...notification,
+      open: false
+    });
+  };
+  
+  // OCR相关功能
+  const handleOpenOcrDialog = () => {
+    setOcrDialogOpen(true);
+  };
+  
+  const handleCloseOcrDialog = () => {
+    setOcrDialogOpen(false);
+  };
+  
+  // 处理OCR导入
+  const handleOcrImport = async (ocrResults) => {
+    try {
+      // 启用debug模式帮助排查问题
+      const DEBUG = true;
+      
+      if (DEBUG) console.log(`StockOut: 收到OCR导入结果:`, ocrResults);
+      
+      // 处理参数兼容性 - 接收API响应对象、布尔值或数组
+      if (ocrResults && typeof ocrResults === 'object' && 'success' in ocrResults) {
+        // 如果收到完整API响应对象
+        if (ocrResults.success) {
+          console.log(`StockOut: 收到API成功响应，刷新数据`);
+          await fetchStockOutData();
+          
+          const successCount = ocrResults.results?.success || 0;
+          showNotification(`导入成功，已添加${successCount}条记录`, 'success');
+          return { success: true };
+        } else {
+          showNotification(ocrResults.message || '导入失败', 'error');
+          return ocrResults;
+        }
+      }
+      
+      // 兼容旧版：接收布尔值
+      if (ocrResults === true) {
+        console.log("StockOut: 收到导入成功信号，刷新数据");
+        await fetchStockOutData();
+        showNotification('导入成功，已刷新数据', 'success');
+        return { success: true };
+      }
+      
+      if (!Array.isArray(ocrResults) || ocrResults.length === 0) {
+        showNotification('OCR未识别到任何有效数据', 'warning');
+        return { success: false, message: '没有有效数据可导入' };
+      }
+      
+      if (DEBUG) {
+        console.log("StockOut: OCR识别结果详细数据:", JSON.stringify(ocrResults));
+        console.log("StockOut: OCR结果数量:", ocrResults.length);
+      }
+      
+      // 显示导入进度通知
+      showNotification(`正在导入${ocrResults.length}条记录...`, 'info');
+      
+      // 防止重复提交检查 - 过滤掉已有ID的记录
+      // 如果包含id字段，说明这条记录可能已经在数据库中存在
+      const newRecords = ocrResults.filter(item => {
+        if (item.id) {
+          if (DEBUG) console.warn(`StockOut: 跳过可能已存在的记录，ID=${item.id}`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (newRecords.length === 0) {
+        console.warn("StockOut: 所有记录可能已经存在，不执行导入");
+        showNotification('所有记录可能已经存在', 'warning');
+        return { success: false, message: '所有记录可能已经存在' };
+      }
+      
+      if (DEBUG) {
+        console.log(`StockOut: 过滤后的数据，原始数量: ${ocrResults.length}, 过滤后数量: ${newRecords.length}`);
+        if (newRecords.length !== ocrResults.length) {
+          console.log("StockOut: 已过滤掉可能重复的记录");
+        }
+      }
+      
+      // 确保所有必要字段都存在并且数值有效，同时进行去重
+      const uniqueItemMap = new Map();
+      
+      newRecords.filter(item => {
+        // 验证必需字段
+        const hasRequiredFields = item.item_name && 
+                               (item.quantity !== undefined && item.quantity !== null) &&
+                               (item.unit_price !== undefined && item.unit_price !== null);
+        
+        if (!hasRequiredFields) {
+          if (DEBUG) console.warn('StockOut: 缺少必要字段:', item);
+          return false;
+        }
+        
+        // 确保数量和价格是数字并且有效
+        const quantity = parseFloat(item.quantity);
+        const unitPrice = parseFloat(item.unit_price);
+        
+        const isValid = !isNaN(quantity) && quantity > 0 && !isNaN(unitPrice) && unitPrice >= 0;
+        
+        if (!isValid) {
+          if (DEBUG) console.warn('StockOut: 无效的数量或单价:', item);
+          return false;
+        }
+        
+        return true;
+      }).forEach(item => {
+        // 处理每条数据，确保所有字段格式一致
+        const processedItem = { ...item };
+        
+        // 确保数值字段为数字类型
+        processedItem.quantity = parseFloat(item.quantity);
+        processedItem.unit_price = parseFloat(item.unit_price);
+        processedItem.fee = item.fee ? parseFloat(item.fee) : 0;
+        
+        // 计算总金额（如果没有提供）
+        if (!processedItem.total_amount) {
+          processedItem.total_amount = processedItem.quantity * processedItem.unit_price - processedItem.fee;
+        } else {
+          processedItem.total_amount = parseFloat(processedItem.total_amount);
+        }
+        
+        // 确保有交易时间
+        if (!processedItem.transaction_time) {
+          processedItem.transaction_time = new Date().toISOString();
+        }
+        
+        // 确保有备注
+        if (!processedItem.note) {
+          processedItem.note = '通过OCR导入';
+        }
+        
+        // 创建一个唯一键，基于物品名、数量、单价
+        const itemKey = `${processedItem.item_name}_${processedItem.quantity}_${processedItem.unit_price}`;
+        
+        // 使用手续费最高的记录
+        if (uniqueItemMap.has(itemKey)) {
+          const existingItem = uniqueItemMap.get(itemKey);
+          const existingFee = existingItem.fee || 0;
+          const newFee = processedItem.fee || 0;
+          
+          if (newFee > existingFee) {
+            console.log(`StockOut: 替换记录，使用手续费更高的版本: ${newFee} > ${existingFee}`);
+            uniqueItemMap.set(itemKey, processedItem);
+          }
+        } else {
+          uniqueItemMap.set(itemKey, processedItem);
+        }
+      });
+      
+      // 将Map转换回数组
+      const processedResults = Array.from(uniqueItemMap.values());
+      
+      if (processedResults.length === 0) {
+        showNotification('没有有效的OCR数据可导入', 'warning');
+        return { success: false, message: '没有有效数据可导入' };
+      }
+      
+      if (DEBUG) {
+        console.log("StockOut: 即将发送到API的OCR数据:", JSON.stringify(processedResults));
+        console.log("StockOut: 数据类型:", typeof processedResults);
+        console.log("StockOut: 是否为数组:", Array.isArray(processedResults));
+        console.log("StockOut: 原始数据量:", ocrResults.length, "过滤去重后数据量:", processedResults.length);
+      }
+      
+      // 开始调用API
+      console.log("StockOut: 开始调用OCR导入API...");
+      const response = await OCRService.importOCRResults('out', processedResults);
+        
+      // 记录API响应
+      console.log("StockOut: OCR导入API响应状态:", response.success ? 'success' : 'failed');
+      console.log("StockOut: OCR导入API响应详情:", response);
+      
+      // 处理响应
+      if (response && response.success) {
+        const successCount = response.results?.success || 0;
+        const failedCount = response.results?.failed || 0;
+        
+        // 根据成功/失败数量显示不同通知
+        if (successCount > 0 && failedCount === 0) {
+          showNotification(`成功导入${successCount}条记录`, 'success');
+          // 导入成功后刷新列表
+          await fetchStockOutData();
+        } else if (successCount > 0 && failedCount > 0) {
+          showNotification(`成功导入${successCount}条记录，${failedCount}条记录导入失败`, 'info');
+          await fetchStockOutData();
+        } else {
+          showNotification(`成功导入${successCount}条记录，${failedCount}条记录导入失败`, 'warning');
+        }
+        
+        // 返回API响应，这样OCRDialog可以显示更详细的错误信息
+        return response;
+      } else {
+        // API调用失败
+        const errorMsg = response.message || '导入失败，请重试';
+        showNotification(errorMsg, 'error');
+        return response;
+      }
+    } catch (error) {
+      console.error("StockOut: OCR导入出错:", error);
+      
+      let errorMessage = '导入失败，请重试';
+      if (error.response && error.response.data) {
+        errorMessage = error.response.data.message || errorMessage;
+      }
+      
+      showNotification(errorMessage, 'error');
+      return { 
+        success: false, 
+        message: errorMessage,
+        error: error.message
+      };
+    }
   };
 
   return (
@@ -405,7 +719,7 @@ const StockOut = () => {
           <Button 
             variant="outlined" 
             startIcon={<ImportIcon />}
-            onClick={handleOcrImport}
+            onClick={handleOpenOcrDialog}
             sx={{ mr: 1 }}
           >
             OCR导入
@@ -715,6 +1029,24 @@ const StockOut = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* OCR导入对话框 */}
+      <OCRDialog 
+        open={ocrDialogOpen} 
+        onClose={handleCloseOcrDialog}
+        onImport={handleOcrImport}
+        title="OCR出库导入"
+        type="out"
+      />
+      
+      {/* 通知消息 */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={3000}
+        onClose={handleCloseNotification}
+        message={notification.message}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Container>
   );
 };

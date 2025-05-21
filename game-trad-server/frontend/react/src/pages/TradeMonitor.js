@@ -37,6 +37,7 @@ import {
   Edit as EditIcon,
   CloudUpload as ImportIcon
 } from '@mui/icons-material';
+import OCRDialog from '../components/OCRDialog';
 
 const TradeMonitor = () => {
   const [loading, setLoading] = useState(true);
@@ -63,7 +64,6 @@ const TradeMonitor = () => {
     severity: 'info'
   });
   const [ocrDialogOpen, setOcrDialogOpen] = useState(false);
-  const [ocrImage, setOcrImage] = useState(null);
   
   const fileInputRef = useRef();
 
@@ -71,10 +71,10 @@ const TradeMonitor = () => {
   const fetchTradeItems = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/status/trade-monitor');
+      const response = await axios.get('/api/transactions');
       
-      if (response.data && response.data.success) {
-        setTradeItems(response.data.items || []);
+      if (response.data) {
+        setTradeItems(response.data);
         setError(null);
       } else {
         setError('获取交易监控数据失败');
@@ -196,7 +196,28 @@ const TradeMonitor = () => {
   // 保存表单数据
   const handleSaveForm = async () => {
     try {
-      const response = await axios.post('/api/status/trade-monitor', formData);
+      // 转换表单数据为交易记录格式
+      const transactionData = {
+        transaction_type: 'monitor', // 特定的类型标识这是监控记录
+        item_name: formData.item_name,
+        quantity: parseInt(formData.quantity) || 0,
+        price: parseFloat(formData.market_price) || 0,
+        target_price: parseFloat(formData.target_price) || 0,
+        planned_price: parseFloat(formData.planned_price) || 0,
+        note: formData.strategy || '',
+        platform: '', // 可选平台信息
+        transaction_time: new Date().toISOString()
+      };
+      
+      let response;
+      if (currentItem && currentItem.id) {
+        // 更新现有记录
+        response = await axios.put(`/api/transactions/${currentItem.id}`, transactionData);
+      } else {
+        // 添加新记录
+        response = await axios.post('/api/transactions', transactionData);
+      }
+      
       if (response.data.success) {
         setFormOpen(false);
         setNotification({
@@ -245,51 +266,113 @@ const TradeMonitor = () => {
   
   // OCR相关功能
   const handleOpenOcrDialog = () => {
-    setOcrImage(null);
     setOcrDialogOpen(true);
   };
   
-  const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setOcrImage(e.target.files[0]);
-    }
+  const handleCloseOcrDialog = () => {
+    setOcrDialogOpen(false);
   };
-  
-  const handleOcrUpload = async () => {
-    if (!ocrImage) return;
-    
-    const formData = new FormData();
-    formData.append('image', ocrImage);
-    
+
+  // 处理OCR导入
+  const handleOcrImport = (ocrResults) => {
     try {
-      const response = await axios.post('/api/ocr/recognize', formData);
-      if (response.data.success) {
-        // 处理OCR结果，添加到交易监控中
-        const ocrData = response.data.data;
-        
-        await axios.post('/api/status/trade-monitor', {
-          item_name: ocrData.item_name,
-          quantity: ocrData.quantity,
-          market_price: ocrData.price
-        });
-        
-        setOcrDialogOpen(false);
+      console.log("OCR识别结果:", ocrResults);
+      
+      // 检查是否收到有效数据
+      if (!Array.isArray(ocrResults) || ocrResults.length === 0) {
         setNotification({
           open: true,
-          message: 'OCR识别并导入成功',
-          severity: 'success'
+          message: '没有有效的OCR数据可导入',
+          severity: 'warning'
         });
-        fetchTradeItems();
+        return;
       }
+      
+      // 转换OCR结果为交易监控记录格式
+      const monitorItems = ocrResults.map(item => ({
+        item_name: item.item_name,
+        quantity: Number(item.quantity) || 0,
+        market_price: Number(item.unit_price || item.price || 0),
+        target_price: 0,
+        planned_price: 0,
+        monitor_time: new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ''),
+        break_even_price: 0,
+        profit: 0,
+        profit_rate: 0,
+        strategy: item.note || '',
+      }));
+      
+      console.log("转换后的交易监控数据:", monitorItems);
+      
+      // 保存到后端API
+      setLoading(true);
+      
+      // 导入到后端
+      axios.post('/api/transactions/import', monitorItems)
+        .then(response => {
+          console.log("导入响应:", response.data);
+          
+          if (response.data.success) {
+            // 添加到现有数据
+            setTradeItems(prev => {
+              // 检查响应中有处理结果
+              const newItems = response.data.results?.processed_records || monitorItems;
+              
+              // 将服务器处理的结果格式化为前端所需的格式
+              const formattedItems = newItems.map(item => ({
+                id: item.id,
+                item_name: item.item_name,
+                quantity: Number(item.quantity) || 0,
+                market_price: Number(item.unit_price || item.price || item.market_price || 0),
+                target_price: 0,
+                planned_price: 0,
+                monitor_time: new Date(),
+                break_even_price: 0,
+                profit: 0,
+                profit_rate: 0,
+                strategy: item.note || '',
+              }));
+              
+              return [...formattedItems, ...prev];
+            });
+            
+            setNotification({
+              open: true,
+              message: `成功导入${response.data.results?.success || monitorItems.length}条记录`,
+              severity: 'success'
+            });
+            
+            // 刷新数据
+            fetchTradeItems();
+          } else {
+            setNotification({
+              open: true,
+              message: response.data.message || '导入失败，服务器返回错误',
+              severity: 'error'
+            });
+          }
+        })
+        .catch(err => {
+          console.error('导入OCR结果失败:', err);
+          setNotification({
+            open: true,
+            message: `导入OCR结果失败: ${err.response?.data?.message || err.message}`,
+            severity: 'error'
+          });
+        })
+        .finally(() => {
+          setLoading(false);
+        });
     } catch (err) {
+      console.error('处理OCR结果失败:', err);
       setNotification({
         open: true,
-        message: `OCR识别失败: ${err.message}`,
+        message: `处理OCR结果失败: ${err.message}`,
         severity: 'error'
       });
     }
   };
-  
+
   // 关闭通知
   const handleCloseNotification = () => {
     setNotification({
@@ -751,48 +834,13 @@ const TradeMonitor = () => {
       </Dialog>
       
       {/* OCR导入对话框 */}
-      <Dialog open={ocrDialogOpen} onClose={() => setOcrDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>OCR识别导入</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-              ref={fileInputRef}
-            />
-            <Button 
-              variant="outlined" 
-              onClick={() => fileInputRef.current.click()}
-              sx={{ mb: 2 }}
-            >
-              选择图片
-            </Button>
-            {ocrImage && (
-              <Box sx={{ mt: 2, textAlign: 'center' }}>
-                <img 
-                  src={URL.createObjectURL(ocrImage)} 
-                  alt="OCR图片" 
-                  style={{ maxWidth: '100%', maxHeight: 300 }}
-                />
-                <Typography variant="caption" display="block">{ocrImage.name}</Typography>
-              </Box>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOcrDialogOpen(false)}>取消</Button>
-          <Button 
-            onClick={handleOcrUpload} 
-            color="primary" 
-            variant="contained"
-            disabled={!ocrImage}
-          >
-            开始识别
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <OCRDialog 
+        open={ocrDialogOpen} 
+        onClose={handleCloseOcrDialog}
+        onImport={handleOcrImport}
+        title="OCR监控导入"
+        type="monitor"
+      />
       
       {/* 通知提示 */}
       <Snackbar

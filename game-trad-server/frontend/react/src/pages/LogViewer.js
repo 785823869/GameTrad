@@ -52,9 +52,29 @@ const LogViewer = () => {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`/api/logs/${logType}?limit=${limit}`);
-      setLogs(response.data);
       setError(null);
+      
+      console.log(`正在获取${logType}类型的最近${limit}条日志...`);
+      const response = await axios.get(`/api/logs/${logType}?limit=${limit}`);
+      
+      // 检查响应格式
+      console.log('API响应:', response.data);
+      
+      if (response.data && response.data.success) {
+        // 确保logs是数组
+        if (response.data.logs && Array.isArray(response.data.logs)) {
+          console.log(`成功获取${response.data.logs.length}条日志记录`);
+          setLogs(response.data.logs);
+        } else {
+          console.error('API返回的logs不是数组:', response.data.logs);
+          setError('API返回的日志格式不正确');
+          setLogs([]);
+        }
+      } else {
+        console.error('API请求失败:', response.data);
+        setError(response.data?.message || '获取日志失败');
+        setLogs([]);
+      }
     } catch (err) {
       console.error('获取日志数据失败:', err);
       setError('无法加载日志数据。请检查网络连接或服务器状态。');
@@ -71,24 +91,39 @@ const LogViewer = () => {
 
   // 过滤日志
   useEffect(() => {
-    let filtered = [...logs];
-    
-    // 按级别过滤
-    if (selectedLevel !== 'all') {
-      filtered = filtered.filter(log => 
-        log.level && log.level.toLowerCase() === selectedLevel.toLowerCase()
-      );
+    try {
+      // 检查logs是否为数组
+      if (!Array.isArray(logs)) {
+        console.error('过滤日志失败: logs不是数组');
+        setFilteredLogs([]);
+        return;
+      }
+      
+      let filtered = [...logs];
+      
+      // 按级别过滤
+      if (selectedLevel !== 'all') {
+        filtered = filtered.filter(log => 
+          log && log.level && log.level.toLowerCase() === selectedLevel.toLowerCase()
+        );
+      }
+      
+      // 按搜索词过滤
+      if (searchTerm.trim() !== '') {
+        filtered = filtered.filter(log => 
+          log && (
+            (log.message && log.message.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (log.raw && log.raw.toLowerCase().includes(searchTerm.toLowerCase()))
+          )
+        );
+      }
+      
+      console.log(`过滤后的日志: ${filtered.length}条记录`);
+      setFilteredLogs(filtered);
+    } catch (error) {
+      console.error('过滤日志时出错:', error);
+      setFilteredLogs([]);
     }
-    
-    // 按搜索词过滤
-    if (searchTerm.trim() !== '') {
-      filtered = filtered.filter(log => 
-        (log.message && log.message.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (log.raw && log.raw.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-    }
-    
-    setFilteredLogs(filtered);
   }, [logs, selectedLevel, searchTerm]);
 
   // 清除过滤器
@@ -118,20 +153,41 @@ const LogViewer = () => {
 
   // 下载日志
   const handleDownloadLogs = () => {
-    // 准备日志内容
-    const content = filteredLogs.map(log => {
-      if (log.raw) return log.raw;
-      return `[${log.timestamp || ''}] [${log.level || ''}] ${log.message || ''}`;
-    }).join('\n');
-    
-    // 创建下载链接
-    const element = document.createElement('a');
-    const file = new Blob([content], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `gameTrad_${logType}_logs_${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    try {
+      // 检查logs是否为数组
+      if (!Array.isArray(filteredLogs)) {
+        console.error('无法下载日志: filteredLogs不是数组');
+        setError('无法下载日志: 数据格式不正确');
+        return;
+      }
+      
+      if (filteredLogs.length === 0) {
+        console.warn('没有日志可下载');
+        return;
+      }
+      
+      // 准备日志内容
+      const content = filteredLogs.map(log => {
+        if (!log) return '';
+        if (log.raw) return log.raw;
+        const timestamp = log.timestamp || '';
+        const level = log.level || '';
+        const message = log.message || '';
+        return `[${timestamp}] [${level}] ${message}`;
+      }).join('\n');
+      
+      // 创建下载链接
+      const element = document.createElement('a');
+      const file = new Blob([content], { type: 'text/plain' });
+      element.href = URL.createObjectURL(file);
+      element.download = `gameTrad_${logType}_logs_${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+    } catch (error) {
+      console.error('下载日志时出错:', error);
+      setError(`下载日志失败: ${error.message}`);
+    }
   };
 
   return (
@@ -290,6 +346,10 @@ const LogViewer = () => {
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
             <CircularProgress />
           </Box>
+        ) : !Array.isArray(filteredLogs) ? (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography color="error">日志数据格式错误</Typography>
+          </Box>
         ) : filteredLogs.length === 0 ? (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography color="text.secondary">没有找到匹配的日志记录</Typography>
@@ -298,41 +358,43 @@ const LogViewer = () => {
           <List sx={{ p: 0 }}>
             {filteredLogs.map((log, index) => (
               <React.Fragment key={index}>
-                <ListItem sx={{ py: 1 }}>
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        {log.timestamp && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mr: 2, fontFamily: 'monospace' }}>
-                            {new Date(log.timestamp).toLocaleString()}
-                          </Typography>
-                        )}
-                        {log.level && (
-                          <Chip 
-                            label={log.level} 
-                            size="small" 
-                            {...getLevelStyle(log.level)}
-                            sx={{ mr: 2 }} 
-                          />
-                        )}
-                      </Box>
-                    }
-                    secondary={
-                      <Typography 
-                        variant="body1" 
-                        sx={{ 
-                          whiteSpace: 'pre-wrap', 
-                          wordBreak: 'break-all',
-                          fontFamily: 'monospace',
-                          ...(log.level === 'ERROR' && { color: 'error.main' })
-                        }}
-                      >
-                        {log.message || log.raw || ''}
-                      </Typography>
-                    }
-                  />
-                </ListItem>
-                {index < filteredLogs.length - 1 && <Divider />}
+                {log ? (
+                  <ListItem sx={{ py: 1 }}>
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          {log.timestamp && (
+                            <Typography variant="body2" color="text.secondary" sx={{ mr: 2, fontFamily: 'monospace' }}>
+                              {new Date(log.timestamp).toLocaleString()}
+                            </Typography>
+                          )}
+                          {log.level && (
+                            <Chip 
+                              label={log.level} 
+                              size="small" 
+                              {...getLevelStyle(log.level)}
+                              sx={{ mr: 2 }} 
+                            />
+                          )}
+                        </Box>
+                      }
+                      secondary={
+                        <Typography 
+                          variant="body1" 
+                          sx={{ 
+                            whiteSpace: 'pre-wrap', 
+                            wordBreak: 'break-all',
+                            fontFamily: 'monospace',
+                            ...(log.level === 'ERROR' && { color: 'error.main' })
+                          }}
+                        >
+                          {log.message || log.raw || ''}
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                ) : null}
+                {index < filteredLogs.length - 1 && log && <Divider />}
               </React.Fragment>
             ))}
           </List>

@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 const API_URL = '/api/stock-out';
+// 控制是否输出详细日志
+const DEBUG = false; 
 
 /**
  * 出库管理相关API服务
@@ -12,9 +14,9 @@ export default {
    */
   getAll: async () => {
     try {
-      console.log('正在请求出库数据...');
+      if (DEBUG) console.log('正在请求出库数据...');
       const response = await axios.get(API_URL);
-      console.log('出库API响应:', response);
+      if (DEBUG) console.log('出库API响应:', response);
       
       if (!response.data) {
         console.error('API响应中没有data字段');
@@ -35,13 +37,13 @@ export default {
           return null;
         }
         
-        // 记录每个项目的字段信息
-        console.log(`项目 ${index} 字段:`, Object.keys(item));
+        // 只在DEBUG模式下记录每个项目的字段信息
+        if (DEBUG) console.log(`项目 ${index} 字段:`, Object.keys(item));
         
         return item;
       }).filter(item => item !== null);
       
-      console.log('经验证的出库数据:', validatedData);
+      if (DEBUG) console.log('经验证的出库数据:', validatedData);
       return validatedData;
     } catch (error) {
       console.error('获取出库记录失败:', error);
@@ -68,9 +70,9 @@ export default {
    */
   add: async (stockOutData) => {
     try {
-      console.log('添加出库记录，数据:', stockOutData);
+      if (DEBUG) console.log('添加出库记录，数据:', stockOutData);
       const response = await axios.post(API_URL, stockOutData);
-      console.log('添加出库记录响应:', response.data);
+      if (DEBUG) console.log('添加出库记录响应:', response.data);
       return response.data;
     } catch (error) {
       console.error('添加出库记录失败:', error);
@@ -119,11 +121,96 @@ export default {
    */
   importOcr: async (records) => {
     try {
-      const response = await axios.post(`${API_URL}/import`, { records });
+      if (DEBUG) console.log('开始OCR导入，数据:', records);
+      
+      // 确保records是数组
+      if (!Array.isArray(records)) {
+        console.error('OCR导入失败: records不是数组');
+        return { success: false, message: 'OCR数据格式不正确' };
+      }
+      
+      // 数据预处理和验证
+      const validRecords = records.filter(record => {
+        // 验证记录的必要字段
+        const isValid = record && 
+                        record.item_name && 
+                        (record.quantity !== undefined) && 
+                        (record.unit_price !== undefined);
+        
+        if (!isValid && DEBUG) {
+          console.warn('跳过无效OCR记录:', record);
+        }
+        
+        return isValid;
+      }).map(record => {
+        // 确保数值字段为数字类型
+        return {
+          ...record,
+          item_name: String(record.item_name).trim(),
+          quantity: Number(record.quantity),
+          unit_price: Number(record.unit_price),
+          fee: Number(record.fee || 0),
+          // 确保有交易时间，使用本地时间而非UTC时间
+          transaction_time: record.transaction_time || 
+                           (() => {
+                             const now = new Date();
+                             const year = now.getFullYear();
+                             const month = String(now.getMonth() + 1).padStart(2, '0');
+                             const day = String(now.getDate()).padStart(2, '0');
+                             const hours = String(now.getHours()).padStart(2, '0');
+                             const minutes = String(now.getMinutes()).padStart(2, '0');
+                             const seconds = String(now.getSeconds()).padStart(2, '0');
+                             return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+                           })(),
+          note: record.note || '通过OCR导入'
+        };
+      });
+      
+      if (validRecords.length === 0) {
+        console.warn('OCR导入失败: 没有有效记录');
+        return { success: false, message: '没有有效的OCR数据' };
+      }
+      
+      // 记录请求详情日志
+      if (DEBUG) {
+        console.log('发送OCR导入请求，有效记录数:', validRecords.length);
+        console.log('请求数据示例:', validRecords[0]);
+        console.log('请求端点:', `${API_URL}/import`);
+      }
+      
+      // 发送请求
+      const startTime = Date.now();
+      const response = await axios.post(`${API_URL}/import`, validRecords);
+      const endTime = Date.now();
+      
+      if (DEBUG) {
+        console.log(`OCR导入响应耗时: ${endTime - startTime}ms`);
+        console.log('OCR导入响应状态:', response.status);
+        console.log('OCR导入响应数据:', response.data);
+      }
+      
       return response.data;
     } catch (error) {
       console.error('OCR导入出库记录失败:', error);
-      throw error;
+      
+      // 详细记录错误信息
+      if (error.response) {
+        console.error('服务器响应状态码:', error.response.status);
+        console.error('服务器响应数据:', error.response.data);
+        
+        // 返回服务器提供的错误信息
+        return { 
+          success: false, 
+          message: error.response.data?.message || '服务器返回错误',
+          error: error.response.data
+        };
+      } else if (error.request) {
+        console.error('未收到服务器响应:', error.request);
+        return { success: false, message: '服务器未响应请求' };
+      } else {
+        console.error('请求配置错误:', error.message);
+        return { success: false, message: `请求错误: ${error.message}` };
+      }
     }
   }
 }; 

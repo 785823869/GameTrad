@@ -2,9 +2,14 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
-const { processImage, getOcrHistory } = require('../controllers/ocrController');
+const ocrController = require('../controllers/ocrController');
 
 const router = express.Router();
+
+/**
+ * OCR相关路由
+ * 与前端OCRService.js对应
+ */
 
 // 配置multer存储设置
 const storage = multer.diskStorage({
@@ -44,29 +49,23 @@ const upload = multer({
 });
 
 // 上传图片并进行OCR识别
-router.post('/', upload.single('image'), processImage);
+router.post('/', upload.single('image'), ocrController.processImage);
 
 // 获取OCR历史记录
-router.get('/history', getOcrHistory);
+router.get('/history', ocrController.getOcrHistory);
 
-// 处理OCR识别
-router.post('/recognize', upload.single('image'), async (req, res) => {
-  try {
-    // 处理上传的图片，并进行OCR识别
-    const result = await processImage(req.file);
-    
-    res.status(200).json({
-      success: true,
-      message: 'OCR识别成功',
-      data: result
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'OCR识别失败',
-      error: error.message
-    });
-  }
-});
+/**
+ * @route   POST /api/ocr/recognize
+ * @desc    识别图片中的文本并解析结构化数据
+ * @access  Public
+ */
+router.post('/recognize', upload.single('image'), ocrController.recognize);
+
+/**
+ * @route   POST /api/ocr/extract-text
+ * @desc    从图片中提取原始文本
+ * @access  Public
+ */
+router.post('/extract-text', upload.single('image'), ocrController.extractText);
 
 module.exports = router; 

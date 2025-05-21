@@ -1,7 +1,8 @@
 // 自定义的日志系统 - 简单实现替代winston库版本
 const fs = require('fs-extra');
 const path = require('path');
-const db = require('./db'); // 导入数据库连接器
+// 移除全局导入，避免循环依赖
+// const db = require('./db');
 
 // 确保日志目录存在
 const logDir = process.env.LOG_DIR || './logs';
@@ -23,6 +24,9 @@ const getTimestamp = () => {
 // 确保数据库中有system_logs表
 const ensureLogsTable = async () => {
     try {
+        // 延迟导入db模块，避免循环依赖
+        const db = require('./db');
+        
         // 检查表是否存在
         const checkTableQuery = `
             SELECT COUNT(*) as count 
@@ -56,9 +60,9 @@ const ensureLogsTable = async () => {
 };
 
 // 将日志写入文件
-const writeToFile = (message, level) => {
+const writeToFile = (message, level, traceId) => {
     const timestamp = getTimestamp();
-    const logEntry = `[${timestamp}] [${level}] ${message}\n`;
+    const logEntry = `[${timestamp}] [${level}] ${traceId ? `[${traceId}] ` : ''} ${message}\n`;
     
     // 将日志写入app.log
     const logFile = path.join(logDir, 'app.log');
@@ -72,133 +76,297 @@ const writeToFile = (message, level) => {
 };
 
 // 将日志写入数据库
-const writeToDatabase = async (message, level) => {
+const writeToDatabase = async (message, level, traceId) => {
     try {
+        // 延迟导入db模块，避免循环依赖
+        const db = require('./db');
+        
         // 确保日志表存在
         const tableExists = await ensureLogsTable();
         if (!tableExists) return;
         
         // 插入日志
         const query = `
-            INSERT INTO system_logs (level, message)
-            VALUES (?, ?)
+            INSERT INTO system_logs (level, message, source)
+            VALUES (?, ?, ?)
         `;
         
-        await db.execute(query, [level, message]);
+        await db.execute(query, [level, message, traceId || 'system']);
     } catch (error) {
         console.error(`写入日志到数据库失败: ${error.message}`);
     }
 };
 
+// 生成唯一的日志跟踪ID
+const generateTraceId = () => {
+    return `trace-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+};
+
+// 当前活动的跟踪ID (使用异步本地存储模拟)
+let activeTraceId = null;
+
 // 日志系统对象
 const logger = {
     error: (message) => {
-        console.error(`ERROR: ${message}`);
-        writeToFile(message, LOG_LEVELS.ERROR);
-        writeToDatabase(message, LOG_LEVELS.ERROR);
+        const tracePrefix = activeTraceId ? `[${activeTraceId}] ` : '';
+        console.error(`ERROR: ${tracePrefix}${message}`);
+        writeToFile(message, LOG_LEVELS.ERROR, activeTraceId);
+        writeToDatabase(message, LOG_LEVELS.ERROR, activeTraceId);
     },
     
     warn: (message) => {
-        console.warn(`WARN: ${message}`);
-        writeToFile(message, LOG_LEVELS.WARN);
-        writeToDatabase(message, LOG_LEVELS.WARN);
+        const tracePrefix = activeTraceId ? `[${activeTraceId}] ` : '';
+        console.warn(`WARN: ${tracePrefix}${message}`);
+        writeToFile(message, LOG_LEVELS.WARN, activeTraceId);
+        writeToDatabase(message, LOG_LEVELS.WARN, activeTraceId);
     },
     
     info: (message) => {
-        console.info(`INFO: ${message}`);
-        writeToFile(message, LOG_LEVELS.INFO);
-        writeToDatabase(message, LOG_LEVELS.INFO);
+        const tracePrefix = activeTraceId ? `[${activeTraceId}] ` : '';
+        console.info(`INFO: ${tracePrefix}${message}`);
+        writeToFile(message, LOG_LEVELS.INFO, activeTraceId);
+        writeToDatabase(message, LOG_LEVELS.INFO, activeTraceId);
     },
     
     debug: (message) => {
+        // 始终记录调试信息到文件，但仅在特定环境变量下显示到控制台
+        const tracePrefix = activeTraceId ? `[${activeTraceId}] ` : '';
+        console.debug(`DEBUG: ${tracePrefix}${message}`);
+        writeToFile(message, LOG_LEVELS.DEBUG, activeTraceId);
+        
+        // 可选地写入数据库
         if (process.env.LOG_LEVEL === 'debug') {
-            console.debug(`DEBUG: ${message}`);
-            writeToFile(message, LOG_LEVELS.DEBUG);
-            writeToDatabase(message, LOG_LEVELS.DEBUG);
+            writeToDatabase(message, LOG_LEVELS.DEBUG, activeTraceId);
         }
+    },
+    
+    // 开始请求跟踪
+    startRequest: (req) => {
+        const requestId = Math.random().toString(36).substring(2, 15);
+        const method = req.method || 'UNKNOWN';
+        const url = req.url || 'UNKNOWN';
+        const startTime = Date.now();
+        const traceId = generateTraceId();
+        
+        // 设置当前活动的跟踪ID
+        activeTraceId = traceId;
+        
+        console.info(`[${requestId}][${traceId}] START ${method} ${url}`);
+        writeToFile(`开始请求: [${requestId}] ${method} ${url}`, LOG_LEVELS.INFO, traceId);
+        
+        return {
+            requestId,
+            traceId,
+            method, 
+            url,
+            startTime,
+            finish: () => {
+                const duration = Date.now() - startTime;
+                console.info(`[${requestId}][${traceId}] FINISH ${method} ${url} - ${duration}ms`);
+                writeToFile(`完成请求: [${requestId}] ${method} ${url} - ${duration}ms`, LOG_LEVELS.INFO, traceId);
+                
+                // 清除当前活动的跟踪ID
+                if (activeTraceId === traceId) {
+                    activeTraceId = null;
+                }
+            },
+            log: (level, message) => {
+                const logMessage = `[${requestId}][${traceId}] ${message}`;
+                
+                // 临时设置当前活动的跟踪ID
+                const prevTraceId = activeTraceId;
+                activeTraceId = traceId;
+                
+                logger[level.toLowerCase()](logMessage);
+                
+                // 恢复之前的跟踪ID
+                activeTraceId = prevTraceId;
+            }
+        };
+    },
+
+    // 设置当前跟踪ID
+    setTraceId: (traceId) => {
+        activeTraceId = traceId;
+        return activeTraceId;
+    },
+    
+    // 获取当前跟踪ID
+    getTraceId: () => {
+        return activeTraceId;
+    },
+    
+    // 清除当前跟踪ID
+    clearTraceId: () => {
+        activeTraceId = null;
     },
     
     // 获取最近的日志
     getRecentLogs: async (limit = 100, logType = 'app') => {
         try {
+            console.log(`尝试获取${logType}类型的最近${limit}条日志`);
+            
+            // 确保limit是有效数字
+            if (isNaN(parseInt(limit))) {
+                console.warn(`无效的limit参数: ${limit}，使用默认值100`);
+                limit = 100;
+            }
+            
+            // 验证日志类型
+            if (!['app', 'error', 'access'].includes(logType)) {
+                console.warn(`无效的日志类型: ${logType}，使用默认值'app'`);
+                logType = 'app';
+            }
+            
+            // 存储日志结果的数组
+            let resultLogs = [];
+            
             // 优先从数据库获取日志
             if (logType === 'app' || logType === 'error') {
                 try {
+                    // 延迟导入db模块，避免循环依赖
+                    const db = require('./db');
+                    
                     const tableExists = await ensureLogsTable();
                     if (tableExists) {
                         const query = logType === 'error' 
                             ? `SELECT * FROM system_logs WHERE level = 'ERROR' ORDER BY timestamp DESC LIMIT ?`
                             : `SELECT * FROM system_logs ORDER BY timestamp DESC LIMIT ?`;
                         
+                        console.log(`执行SQL查询: ${query}`);
                         const logs = await db.fetchAll(query, [limit]);
                         
-                        if (logs && logs.length > 0) {
-                            return logs.map(log => ({
+                        // 确保logs是数组
+                        if (Array.isArray(logs) && logs.length > 0) {
+                            resultLogs = logs.map(log => ({
                                 timestamp: new Date(log.timestamp).toISOString(),
                                 level: log.level,
                                 message: log.message
                             }));
+                            console.log(`从数据库获取到${resultLogs.length}条日志`);
+                            return resultLogs;
+                        } else {
+                            console.log('数据库查询未返回日志记录或结果不是数组，尝试从文件获取');
                         }
                     }
                 } catch (dbError) {
                     console.error(`从数据库获取日志失败: ${dbError.message}`);
+                    console.log('将尝试从文件获取日志');
+                    // 出错时继续尝试从文件获取
                 }
             }
             
             // 如果从数据库获取失败，则从文件获取
-            const logFile = path.join(logDir, `${logType}.log`);
-            if (!fs.existsSync(logFile)) {
-                return [];
-            }
-            
-            const logs = fs.readFileSync(logFile, 'utf8')
-                .split('\n')
-                .filter(line => line.trim())
-                .slice(-limit);
-            
-            return logs.map(log => {
-                const match = log.match(/\[(.*?)\] \[(.*?)\] (.*)/);
-                if (match) {
-                    return {
-                        timestamp: match[1],
-                        level: match[2],
-                        message: match[3]
-                    };
+            try {
+                const logFile = path.join(logDir, `${logType}.log`);
+                console.log(`尝试从文件获取日志: ${logFile}`);
+                
+                // 检查日志文件是否存在
+                if (!fs.existsSync(logFile)) {
+                    console.warn(`日志文件不存在: ${logFile}`);
+                    return [];  // 返回空数组
                 }
-                return { raw: log };
-            });
+                
+                // 读取文件内容
+                const fileContent = fs.readFileSync(logFile, 'utf8');
+                if (!fileContent || !fileContent.trim()) {
+                    console.warn(`日志文件为空: ${logFile}`);
+                    return [];  // 返回空数组
+                }
+                
+                // 分割为行
+                const logLines = fileContent.split('\n').filter(line => line.trim());
+                if (!Array.isArray(logLines)) {
+                    console.warn(`无法将日志文件内容分割为行: ${logFile}`);
+                    return [];  // 返回空数组
+                }
+                
+                // 获取最近的日志行
+                const recentLines = logLines.slice(-limit);
+                console.log(`从文件获取到${recentLines.length}条日志行`);
+                
+                // 解析日志行
+                resultLogs = recentLines.map(log => {
+                    const match = log.match(/\[(.*?)\] \[(.*?)\] (.*)/);
+                    if (match) {
+                        return {
+                            timestamp: match[1],
+                            level: match[2],
+                            message: match[3]
+                        };
+                    }
+                    return { raw: log, timestamp: new Date().toISOString(), level: "UNKNOWN" };
+                });
+                
+                console.log(`成功解析${resultLogs.length}条日志`);
+                return resultLogs;
+            } catch (fileError) {
+                console.error(`从文件获取日志失败: ${fileError.message}`);
+                return [];  // 出错时返回空数组
+            }
         } catch (error) {
-            console.error(`获取日志失败: ${error.message}`);
-            return [];
+            console.error(`获取日志失败(总体错误): ${error.message}`);
+            return [];  // 出错时返回空数组
         }
     },
     
     // 按日期获取日志
     getLogsByDate: async (date, logType = 'app') => {
         try {
-            // 从数据库获取指定日期的日志
-            const tableExists = await ensureLogsTable();
-            if (tableExists) {
-                const query = logType === 'error'
-                    ? `SELECT * FROM system_logs WHERE level = 'ERROR' AND DATE(timestamp) = ? ORDER BY timestamp DESC`
-                    : `SELECT * FROM system_logs WHERE DATE(timestamp) = ? ORDER BY timestamp DESC`;
+            console.log(`尝试获取${date}日期的${logType}类型日志`);
+            
+            // 验证日期格式
+            if (!date || typeof date !== 'string' || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                console.warn(`无效的日期格式: ${date}`);
+                return [];  // 返回空数组
+            }
+            
+            // 验证日志类型
+            if (!['app', 'error', 'access'].includes(logType)) {
+                console.warn(`无效的日志类型: ${logType}，使用默认值'app'`);
+                logType = 'app';
+            }
+            
+            // 尝试从数据库获取日志
+            try {
+                // 延迟导入db模块，避免循环依赖
+                const db = require('./db');
                 
-                const logs = await db.fetchAll(query, [date]);
-                
-                if (logs && logs.length > 0) {
-                    return logs.map(log => ({
-                        timestamp: new Date(log.timestamp).toISOString(),
-                        level: log.level,
-                        message: log.message
-                    }));
+                const tableExists = await ensureLogsTable();
+                if (tableExists) {
+                    const query = logType === 'error'
+                        ? `SELECT * FROM system_logs WHERE level = 'ERROR' AND DATE(timestamp) = ? ORDER BY timestamp DESC`
+                        : `SELECT * FROM system_logs WHERE DATE(timestamp) = ? ORDER BY timestamp DESC`;
+                    
+                    console.log(`执行SQL查询: ${query}`);
+                    const logs = await db.fetchAll(query, [date]);
+                    
+                    // 确保logs是数组
+                    if (Array.isArray(logs) && logs.length > 0) {
+                        const resultLogs = logs.map(log => ({
+                            timestamp: new Date(log.timestamp).toISOString(),
+                            level: log.level,
+                            message: log.message
+                        }));
+                        console.log(`从数据库获取到${resultLogs.length}条日志`);
+                        return resultLogs;
+                    } else {
+                        console.log('数据库查询未返回日志记录或结果不是数组');
+                        return [];  // 返回空数组
+                    }
                 }
+            } catch (dbError) {
+                console.error(`从数据库获取日志失败: ${dbError.message}`);
             }
             
             // 如果从数据库获取失败或没有结果，尝试从文件获取
+            // 这里可以实现类似getRecentLogs中从文件读取的逻辑
+            // 现在简单返回空数组
+            console.log('未能从数据库获取日志，返回空数组');
             return [];
         } catch (error) {
-            console.error(`获取日志失败: ${error.message}`);
-            return [];
+            console.error(`获取日期日志失败: ${error.message}`);
+            return [];  // 出错时返回空数组
         }
     }
 };

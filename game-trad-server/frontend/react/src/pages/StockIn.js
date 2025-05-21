@@ -48,6 +48,8 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import StockInService from '../services/StockInService';
+import OCRDialog from '../components/OCRDialog';
+import OCRService from '../services/OCRService';
 
 const StockIn = () => {
   // 状态
@@ -78,10 +80,6 @@ const StockIn = () => {
   
   // OCR导入对话框状态
   const [ocrDialogOpen, setOcrDialogOpen] = useState(false);
-  const [ocrImage, setOcrImage] = useState(null);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrResult, setOcrResult] = useState(null);
-  const fileInputRef = useRef(null);
   
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -490,82 +488,36 @@ const StockIn = () => {
     }
   };
   
+  // 处理OCR导入
+  const handleOcrImport = async (ocrResults) => {
+    try {
+      // 处理OCR导入结果
+      console.log("准备写入的有效OCR数据:", ocrResults);
+      
+      // 调用API导入数据
+      const response = await OCRService.importOCRResults('in', ocrResults);
+      
+      if (response.success) {
+        // 成功导入后刷新数据
+        await fetchStockInData();
+        showNotification(`${response.message || `成功导入${ocrResults.length}条记录`}`, 'success');
+      } else {
+        throw new Error(response.message || '导入失败');
+      }
+    } catch (err) {
+      console.error('导入OCR结果失败:', err);
+      showNotification('导入OCR结果失败: ' + (err.message || err), 'error');
+    }
+  };
+  
   // 打开OCR导入对话框
   const handleOpenOcrDialog = () => {
-    setOcrImage(null);
-    setOcrResult(null);
     setOcrDialogOpen(true);
   };
   
   // 关闭OCR导入对话框
   const handleCloseOcrDialog = () => {
     setOcrDialogOpen(false);
-    setOcrImage(null);
-    setOcrResult(null);
-  };
-  
-  // 选择图片文件
-  const handleSelectFile = (event) => {
-    if (event.target.files && event.target.files[0]) {
-      const file = event.target.files[0];
-      setOcrImage(file);
-    }
-  };
-  
-  // 点击上传按钮
-  const handleClickUpload = () => {
-    fileInputRef.current?.click();
-  };
-  
-  // 进行OCR识别
-  const handleOcrRecognize = async () => {
-    if (!ocrImage) return;
-    
-    setOcrLoading(true);
-    try {
-      // 创建表单数据
-      const formData = new FormData();
-      formData.append('image', ocrImage);
-      
-      // 调用OCR API
-      const response = await axios.post('/api/ocr/recognize', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      
-      if (response.data && response.data.success) {
-        setOcrResult(response.data.result);
-        showNotification('OCR识别成功', 'success');
-      } else {
-        showNotification('OCR识别失败', 'error');
-      }
-    } catch (err) {
-      console.error('OCR识别失败:', err);
-      showNotification('OCR识别处理出错', 'error');
-    } finally {
-      setOcrLoading(false);
-    }
-  };
-  
-  // 导入OCR结果
-  const handleImportOcrResult = async () => {
-    if (!ocrResult) return;
-    
-    try {
-      const response = await StockInService.importOcr([ocrResult]);
-      
-      if (response.success) {
-        handleCloseOcrDialog();
-        fetchStockInData();
-        showNotification(`成功导入${response.results.success}条记录`, 'success');
-      } else {
-        showNotification('导入OCR结果失败', 'error');
-      }
-    } catch (err) {
-      console.error('导入OCR结果失败:', err);
-      showNotification('导入OCR结果失败', 'error');
-    }
   };
   
   // 显示通知
@@ -1087,119 +1039,14 @@ const StockIn = () => {
         </DialogActions>
       </Dialog>
       
-      {/* OCR导入对话框 */}
-      <Dialog open={ocrDialogOpen} onClose={handleCloseOcrDialog} maxWidth="md" fullWidth>
-        <DialogTitle>OCR识别导入</DialogTitle>
-        <DialogContent>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
-              <Box sx={{ p: 2, border: '1px dashed #ccc', borderRadius: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
-                {ocrImage ? (
-                  <Box sx={{ width: '100%', textAlign: 'center' }}>
-                    <img 
-                      src={URL.createObjectURL(ocrImage)} 
-                      alt="OCR识别图片" 
-                      style={{ maxWidth: '100%', maxHeight: 300, objectFit: 'contain' }} 
-                    />
-                    <Typography variant="caption" color="text.secondary">
-                      {ocrImage.name}
-                    </Typography>
-                  </Box>
-                ) : (
-                  <Box sx={{ textAlign: 'center' }}>
-                    <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
-                    <Typography variant="body1" color="text.secondary" gutterBottom>
-                      点击上传图片进行OCR识别
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      支持PNG、JPG格式图片
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-              <input 
-                type="file" 
-                accept="image/*" 
-                style={{ display: 'none' }} 
-                ref={fileInputRef}
-                onChange={handleSelectFile}
-              />
-            </Grid>
-            
-            <Grid item xs={12}>
-              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
-                <Button 
-                  variant="outlined" 
-                  onClick={handleClickUpload}
-                  startIcon={<UploadIcon />}
-                >
-                  {ocrImage ? '重新上传图片' : '上传图片'}
-                </Button>
-                <Button 
-                  variant="contained" 
-                  onClick={handleOcrRecognize}
-                  startIcon={<RefreshIcon />}
-                  disabled={!ocrImage || ocrLoading}
-                >
-                  开始识别
-                </Button>
-              </Box>
-            </Grid>
-            
-            {ocrLoading && (
-              <Grid item xs={12}>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                  <CircularProgress size={24} />
-                  <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                    正在进行OCR识别...
-                  </Typography>
-                </Box>
-              </Grid>
-            )}
-            
-            {ocrResult && (
-              <Grid item xs={12}>
-                <Paper sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 2 }}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    识别结果:
-                  </Typography>
-                  <Grid container spacing={2}>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">物品名称:</Typography>
-                      <Typography variant="body1">{ocrResult.item_name}</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">数量:</Typography>
-                      <Typography variant="body1">{ocrResult.quantity}</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">花费:</Typography>
-                      <Typography variant="body1">¥{ocrResult.cost}</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">均价:</Typography>
-                      <Typography variant="body1">¥{(ocrResult.cost / ocrResult.quantity).toFixed(2)}</Typography>
-                    </Grid>
-                  </Grid>
-                  <Button 
-                    variant="contained" 
-                    color="success" 
-                    fullWidth 
-                    sx={{ mt: 2 }}
-                    onClick={handleImportOcrResult}
-                    startIcon={<SaveIcon />}
-                  >
-                    导入识别结果
-                  </Button>
-                </Paper>
-              </Grid>
-            )}
-          </Grid>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseOcrDialog}>关闭</Button>
-        </DialogActions>
-      </Dialog>
+      {/* OCR导入对话框 - 替换旧的对话框 */}
+      <OCRDialog 
+        open={ocrDialogOpen} 
+        onClose={handleCloseOcrDialog}
+        onImport={handleOcrImport}
+        title="OCR入库导入"
+        type="in"
+      />
       
       {/* 消息通知 */}
       <Snackbar

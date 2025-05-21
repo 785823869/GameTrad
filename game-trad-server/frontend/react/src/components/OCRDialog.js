@@ -299,8 +299,32 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
         const response = await OCRService.recognizeImage(image.file);
         
         if (response.success && response.data) {
+          // 处理数据，确保单价正确计算
+          const processedData = { ...response.data };
+          
+          // 安全转换数值字段
+          const quantity = typeof processedData.quantity === 'string' ? 
+            parseInt(processedData.quantity, 10) : processedData.quantity;
+          
+          const unitPrice = typeof processedData.unit_price === 'string' ? 
+            parseFloat(processedData.unit_price) : (processedData.unit_price || 0);
+          
+          const fee = typeof processedData.fee === 'string' ? 
+            parseFloat(processedData.fee) : (processedData.fee || 0);
+          
+          const totalAmount = typeof processedData.total_amount === 'string' ? 
+            parseFloat(processedData.total_amount) : (processedData.total_amount || 0);
+          
+          // 如果单价为0但有总金额和数量，计算单价
+          if (unitPrice === 0 && totalAmount > 0 && quantity > 0) {
+            processedData.unit_price = (totalAmount + fee) / quantity;
+            processedData.price = processedData.unit_price; // 同时更新price字段
+            console.log(`OCR识别-计算单价: (${totalAmount} + ${fee}) / ${quantity} = ${processedData.unit_price}`);
+          }
+          
+          // 添加图片和原始文本信息
           allResults.push({
-            ...response.data,
+            ...processedData,
             originalImage: image.url,
             rawText: response.rawText || '无原始识别文本'
           });
@@ -359,9 +383,22 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
           return;
         }
         
+        // 安全解析数值
+        const quantity = typeof result.quantity === 'string' ? parseInt(result.quantity, 10) : result.quantity;
+        const unitPrice = typeof result.unit_price === 'string' ? parseFloat(result.unit_price) : (result.unit_price || 0);
+        const fee = typeof result.fee === 'string' ? parseFloat(result.fee) : (result.fee || 0);
+        const totalAmount = typeof result.total_amount === 'string' ? parseFloat(result.total_amount) : (result.total_amount || 0);
+        
+        // 如果单价为0但有总金额和数量，计算单价
+        let calculatedUnitPrice = unitPrice;
+        if (calculatedUnitPrice === 0 && totalAmount > 0 && quantity > 0) {
+          calculatedUnitPrice = (totalAmount + fee) / quantity;
+          console.log(`计算单价: (${totalAmount} + ${fee}) / ${quantity} = ${calculatedUnitPrice}`);
+        }
+        
         // 创建一个唯一键，基于物品名、数量、单价
         // 不考虑手续费作为唯一性标识
-        const itemKey = `${result.item_name}_${result.quantity}_${result.unit_price}`;
+        const itemKey = `${result.item_name}_${quantity}_${totalAmount}`;
         
         // 如果这个键已经存在，检查是否有不同的手续费
         if (uniqueItemMap.has(itemKey)) {
@@ -380,9 +417,11 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
             // 存储处理过的数据
             uniqueItemMap.set(itemKey, {
               ...result,
-              quantity: typeof result.quantity === 'string' ? parseInt(result.quantity, 10) : result.quantity,
-              unit_price: typeof result.unit_price === 'string' ? parseFloat(result.unit_price) : result.unit_price,
+              quantity: quantity,
+              unit_price: calculatedUnitPrice,
+              price: calculatedUnitPrice, // 同时更新price字段以保持一致
               fee: newFee,
+              total_amount: totalAmount > 0 ? totalAmount : (quantity * calculatedUnitPrice - newFee),
               // 添加请求跟踪ID
               _requestId: requestId
             });
@@ -391,9 +430,11 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
           // 存储处理过的数据
           uniqueItemMap.set(itemKey, {
             ...result,
-            quantity: typeof result.quantity === 'string' ? parseInt(result.quantity, 10) : result.quantity,
-            unit_price: typeof result.unit_price === 'string' ? parseFloat(result.unit_price) : result.unit_price,
-            fee: typeof result.fee === 'string' ? parseFloat(result.fee) : (result.fee || 0),
+            quantity: quantity,
+            unit_price: calculatedUnitPrice,
+            price: calculatedUnitPrice, // 同时更新price字段以保持一致
+            fee: fee,
+            total_amount: totalAmount > 0 ? totalAmount : (quantity * calculatedUnitPrice - fee),
             // 添加请求跟踪ID
             _requestId: requestId
           });
@@ -417,7 +458,7 @@ const OCRDialog = ({ open, onClose, onImport, title = "OCR识别导入", type = 
       
       // 检查过滤后的数据是否与原始数据量差异很大
       if (processedResults.length < ocrResults.length * 0.5 && ocrResults.length > 1) {
-        // 如果过滤掉了超过一半的数据，显示警告但继续处理
+        // 如果过滤掉了超过一半的数据，显示警告但继续处理有效数据
         console.warn(`OCRDialog: 过滤掉了${ocrResults.length - processedResults.length}条数据，可能是重复或无效数据`);
         setError(`已过滤${ocrResults.length - processedResults.length}条可能重复或无效的数据`);
         // 不返回，继续处理有效数据

@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
 const ocrController = require('../controllers/ocrController');
+const { requireAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -67,5 +68,12 @@ router.post('/recognize', upload.single('image'), ocrController.recognize);
  * @access  Public
  */
 router.post('/extract-text', upload.single('image'), ocrController.extractText);
+
+/**
+ * @route   GET /api/ocr/rules/active
+ * @desc    获取所有活跃的OCR规则
+ * @access  Private
+ */
+router.get('/rules/active', requireAuth, ocrController.getActiveRules);
 
 module.exports = router; 

@@ -296,6 +296,8 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
             ...response.data,
             transaction_type: transactionType,
             platform: platform,
+            // 确保使用unit_price作为主要价格字段
+            unit_price: response.data.unit_price || response.data.price || 0,
             price: response.data.unit_price || response.data.price || 0,
             originalImage: image.url,
             rawText: response.rawText || '无原始识别文本'
@@ -374,7 +376,9 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
         transaction_type: result.transaction_type || transactionType,
         item_name: result.item_name,
         quantity: parseFloat(result.quantity),
-        price: parseFloat(result.price || result.unit_price),
+        // 确保单价字段正确
+        unit_price: parseFloat(result.unit_price || result.price || 0),
+        price: parseFloat(result.unit_price || result.price || 0),
         // 确保fee是数字
         fee: result.fee ? parseFloat(result.fee) : 0,
         // 添加平台信息

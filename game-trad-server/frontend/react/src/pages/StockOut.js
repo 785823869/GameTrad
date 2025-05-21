@@ -221,55 +221,15 @@ const StockOut = () => {
         };
       }).filter(item => item !== null);  // 过滤掉无效数据
 
-      // 创建一个用于去重的Map，使用物品名、数量、单价和时间作为唯一键
-      const uniqueItemMap = new Map();
-      
-      // 按交易时间排序，确保相同记录保留最新的
+      // 按交易时间倒序排序，最新的记录显示在最前面
       formattedData.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
       
-      for (const item of formattedData) {
-        // 检查是否是有效记录
-        if (!item.itemName || item.quantity <= 0) continue;
-        
-        // 创建时间字符串，精确到分钟，避免毫秒差异导致的重复
-        const timeStr = item.transactionTime instanceof Date 
-          ? `${item.transactionTime.getFullYear()}-${item.transactionTime.getMonth()+1}-${item.transactionTime.getDate()} ${item.transactionTime.getHours()}:${item.transactionTime.getMinutes()}`
-          : '';
-          
-        // 创建唯一键 - 不包括手续费，因为同一条记录可能有不同手续费版本
-        const itemKey = `${item.itemName}_${item.quantity}_${item.unitPrice}_${timeStr}`;
-        
-        // 决定保留哪个版本的记录：
-        // 1. 如果是使用相同ID的完全重复记录，保留手续费最高的那条
-        // 2. 如果是不同ID但其他关键信息相同，也保留手续费最高的记录
-        if (uniqueItemMap.has(itemKey)) {
-          const existingItem = uniqueItemMap.get(itemKey);
-          
-          // 手续费比较 - 保留手续费最高的记录
-          if (item.fee > existingItem.fee) {
-            if (DEBUG) console.log(`fetchStockOutData: 替换重复记录，使用更高手续费的记录: ${itemKey}`);
-            uniqueItemMap.set(itemKey, item);
-          }
-        } else {
-          uniqueItemMap.set(itemKey, item);
-        }
-      }
-      
-      // 转换回数组
-      const uniqueData = Array.from(uniqueItemMap.values());
-      
-      // 按交易时间倒序排序，最新的记录显示在最前面
-      uniqueData.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
-      
       if (DEBUG) {
-        console.log(`原始数据数量: ${formattedData.length}, 去重后数量: ${uniqueData.length}`);
-        if (formattedData.length !== uniqueData.length) {
-          console.log('检测到重复数据，已进行去重处理');
-        }
+        console.log(`原始数据数量: ${formattedData.length}`);
       }
       
-      if (DEBUG) console.log('格式化后的出库数据:', uniqueData.slice(0, 3));  // 只显示前3条避免日志过长
-      setStockOutData(uniqueData);
+      if (DEBUG) console.log('格式化后的出库数据:', formattedData.slice(0, 3));  // 只显示前3条避免日志过长
+      setStockOutData(formattedData);
       setError(null);
     } catch (err) {
       console.error('获取出库数据失败:', err);
@@ -480,7 +440,7 @@ const StockOut = () => {
       // 显示导入进度通知
       showNotification(`正在导入${ocrResults.length}条记录...`, 'info');
       
-      // 防止重复提交检查 - 过滤掉已有ID的记录
+      // 过滤掉已有ID的记录
       // 如果包含id字段，说明这条记录可能已经在数据库中存在
       const newRecords = ocrResults.filter(item => {
         if (item.id) {
@@ -503,10 +463,8 @@ const StockOut = () => {
         }
       }
       
-      // 确保所有必要字段都存在并且数值有效，同时进行去重
-      const uniqueItemMap = new Map();
-      
-      newRecords.filter(item => {
+      // 确保所有必要字段都存在并且数值有效
+      const processedResults = newRecords.filter(item => {
         // 验证必需字段
         const hasRequiredFields = item.item_name && 
                                (item.quantity !== undefined && item.quantity !== null) &&
@@ -529,7 +487,7 @@ const StockOut = () => {
         }
         
         return true;
-      }).forEach(item => {
+      }).map(item => {
         // 处理每条数据，确保所有字段格式一致
         const processedItem = { ...item };
         
@@ -550,31 +508,18 @@ const StockOut = () => {
           processedItem.transaction_time = new Date().toISOString();
         }
         
-        // 确保有备注
+        // 为导入记录添加标记和备注
+        processedItem.isNewImport = true; // 添加新导入标记
+        
+        // 确保有备注，并添加标记
         if (!processedItem.note) {
-          processedItem.note = '通过OCR导入';
+          processedItem.note = '【新导入】通过OCR导入';
+        } else if (!processedItem.note.includes('【新导入】')) {
+          processedItem.note = `【新导入】${processedItem.note}`;
         }
         
-        // 创建一个唯一键，基于物品名、数量、单价
-        const itemKey = `${processedItem.item_name}_${processedItem.quantity}_${processedItem.unit_price}`;
-        
-        // 使用手续费最高的记录
-        if (uniqueItemMap.has(itemKey)) {
-          const existingItem = uniqueItemMap.get(itemKey);
-          const existingFee = existingItem.fee || 0;
-          const newFee = processedItem.fee || 0;
-          
-          if (newFee > existingFee) {
-            console.log(`StockOut: 替换记录，使用手续费更高的版本: ${newFee} > ${existingFee}`);
-            uniqueItemMap.set(itemKey, processedItem);
-          }
-        } else {
-          uniqueItemMap.set(itemKey, processedItem);
-        }
+        return processedItem;
       });
-      
-      // 将Map转换回数组
-      const processedResults = Array.from(uniqueItemMap.values());
       
       if (processedResults.length === 0) {
         showNotification('没有有效的OCR数据可导入', 'warning');
@@ -926,12 +871,33 @@ const StockOut = () => {
                           },
                           "&:hover": {
                             backgroundColor: "rgba(0, 0, 0, 0.04)"
-                          }
+                          },
+                          // 为新导入的数据添加高亮样式
+                          ...(row.isNewImport && {
+                            backgroundColor: "rgba(255, 244, 229, 0.7)",
+                            "&:nth-of-type(odd)": { 
+                              backgroundColor: "rgba(255, 244, 229, 0.5)" 
+                            },
+                            "&:hover": {
+                              backgroundColor: "rgba(255, 244, 229, 0.9)"
+                            }
+                          })
                         }}
                       >
                         <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           <Tooltip title={row.itemName} placement="top">
-                            <span>{row.itemName}</span>
+                            <span>
+                              {row.itemName}
+                              {row.isNewImport && (
+                                <Chip 
+                                  size="small" 
+                                  label="新" 
+                                  color="warning" 
+                                  variant="outlined"
+                                  sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </span>
                           </Tooltip>
                         </TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.transactionTime)}</TableCell>

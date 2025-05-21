@@ -264,7 +264,19 @@ const OCRResultTable = ({ data, onChange, onDelete, onViewRawText }) => {
                         variant="outlined"
                       />
                     ) : (
-                      parseFloat(row.unit_price || 0).toFixed(2)
+                      (() => {
+                        // 如果单价不存在或为0，但有总金额和数量，则自动计算单价
+                        let displayPrice = parseFloat(row.unit_price || 0);
+                        if (displayPrice === 0 && row.total_amount && row.quantity) {
+                          const quantity = parseFloat(row.quantity);
+                          const totalAmount = parseFloat(row.total_amount);
+                          const fee = parseFloat(row.fee || 0);
+                          if (quantity > 0) {
+                            displayPrice = (totalAmount + fee) / quantity;
+                          }
+                        }
+                        return displayPrice.toFixed(2);
+                      })()
                     )}
                   </TableCell>
                   <TableCell align="right">

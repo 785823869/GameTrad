@@ -11,6 +11,155 @@ const logger = {
  * OCR服务类，提供OCR识别相关API调用
  */
 class OCRService {
+  // 用于存储活跃规则的类变量
+  static activeRules = null;
+  static lastRulesFetchTime = 0;
+  static RULES_CACHE_DURATION = 5 * 60 * 1000; // 缓存规则5分钟
+  
+  /**
+   * 获取活跃的OCR规则
+   * @param {boolean} forceRefresh - 是否强制刷新缓存
+   * @returns {Promise<Object>} - 活跃的OCR规则
+   */
+  static async getActiveRules(forceRefresh = false) {
+    // 检查缓存是否有效
+    const now = Date.now();
+    if (
+      !forceRefresh && 
+      this.activeRules && 
+      now - this.lastRulesFetchTime < this.RULES_CACHE_DURATION
+    ) {
+      return this.activeRules;
+    }
+    
+    try {
+      // 从服务器获取活跃规则
+      const response = await axios.get('/api/ocr/rules/active');
+      
+      if (response.data.success) {
+        this.activeRules = response.data.data;
+        this.lastRulesFetchTime = now;
+        logger.info(`成功获取活跃OCR规则: stock-in(${this.activeRules['stock-in'].length}), stock-out(${this.activeRules['stock-out'].length}), monitor(${this.activeRules['monitor'].length})`);
+        return this.activeRules;
+      } else {
+        logger.warn('获取活跃OCR规则失败:', response.data.message);
+        return null;
+      }
+    } catch (error) {
+      logger.error('获取活跃OCR规则出错:', error);
+      
+      // 如果出错，但有缓存，继续使用缓存
+      if (this.activeRules) {
+        logger.info('使用缓存的规则');
+        return this.activeRules;
+      }
+      return null;
+    }
+  }
+  
+  /**
+   * 应用OCR规则解析文本
+   * @param {string} rawText - OCR识别的原始文本
+   * @param {string} type - 规则类型 (stock-in, stock-out, monitor)
+   * @returns {Object} - 解析后的数据
+   */
+  static applyRules(rawText, type) {
+    if (!rawText || !this.activeRules || !this.activeRules[type] || this.activeRules[type].length === 0) {
+      return null;
+    }
+    
+    logger.info(`准备应用${type}的OCR规则`);
+    
+    // 尝试每个活跃规则，按规则顺序
+    for (const rule of this.activeRules[type]) {
+      try {
+        // 解析规则的patterns，格式: [{field, regex, group}]
+        const patterns = typeof rule.patterns === 'string' 
+          ? JSON.parse(rule.patterns) 
+          : rule.patterns;
+        
+        if (!patterns || !Array.isArray(patterns)) {
+          continue;
+        }
+        
+        // 应用每个规则模式
+        const parsedData = {};
+        let matchCount = 0;
+        
+        for (const pattern of patterns) {
+          if (!pattern.field || !pattern.regex) continue;
+          
+          try {
+            const regex = new RegExp(pattern.regex);
+            const match = regex.exec(rawText);
+            
+            if (match && match[pattern.group || 1]) {
+              parsedData[pattern.field] = match[pattern.group || 1].trim();
+              matchCount++;
+            } else if (pattern.default_value) {
+              parsedData[pattern.field] = pattern.default_value;
+            }
+          } catch (regexError) {
+            logger.warn(`规则 ${rule.name} 的正则表达式无效:`, pattern.regex, regexError);
+          }
+        }
+        
+        // 如果至少匹配了一半的模式，认为规则适用
+        if (matchCount >= patterns.length / 2) {
+          logger.info(`成功使用规则 ${rule.name} 解析OCR文本`);
+          
+          // 数据类型转换和验证
+          if (parsedData.quantity) {
+            parsedData.quantity = parseInt(parsedData.quantity) || 0;
+          }
+          
+          // 优先使用unit_price，如果没有则使用price字段
+          if (parsedData.unit_price) {
+            parsedData.unit_price = parseFloat(parsedData.unit_price) || 0;
+            // 同时设置price字段，确保兼容性
+            parsedData.price = parsedData.unit_price;
+          } else if (parsedData.price) {
+            // 如果没有unit_price但有price，使用price作为unit_price
+            parsedData.unit_price = parseFloat(parsedData.price) || 0;
+            parsedData.price = parsedData.unit_price;
+          } else if (parsedData.quantity && parsedData.total_amount) {
+            // 如果有数量和总金额，计算单价
+            const quantity = parsedData.quantity;
+            const totalAmount = parseFloat(parsedData.total_amount) || 0;
+            const fee = parseFloat(parsedData.fee) || 0;
+            
+            // 计算单价 = (总金额 + 手续费) / 数量
+            if (quantity > 0) {
+              parsedData.unit_price = (totalAmount + fee) / quantity;
+              parsedData.price = parsedData.unit_price;
+              logger.info(`计算得到单价: (${totalAmount} + ${fee}) / ${quantity} = ${parsedData.unit_price}`);
+            }
+          }
+          
+          if (parsedData.fee) {
+            parsedData.fee = parseFloat(parsedData.fee) || 0;
+          } else {
+            parsedData.fee = 0;
+          }
+          
+          if (parsedData.total_amount) {
+            parsedData.total_amount = parseFloat(parsedData.total_amount) || 0;
+          } else if (parsedData.quantity && parsedData.unit_price) {
+            parsedData.total_amount = parsedData.quantity * parsedData.unit_price - parsedData.fee;
+            logger.info(`计算得到总金额: ${parsedData.quantity} * ${parsedData.unit_price} - ${parsedData.fee} = ${parsedData.total_amount}`);
+          }
+          
+          return parsedData;
+        }
+      } catch (ruleError) {
+        logger.warn(`应用规则 ${rule.name} 时出错:`, ruleError);
+      }
+    }
+    
+    logger.warn('没有找到匹配的OCR规则');
+    return null;
+  }
+  
   /**
    * OCR图片识别
    * @param {File|Blob} image 要识别的图片文件
@@ -18,19 +167,51 @@ class OCRService {
    */
   static async recognizeImage(image) {
     try {
+      // 创建用于上传图片的表单数据
       const formData = new FormData();
       formData.append('image', image);
 
+      // 发送OCR识别请求
       const response = await axios.post('/api/ocr/recognize', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
 
+      // 检查OCR响应是否成功
       if (response.data && response.data.success) {
-        // 处理响应结果，确保前端字段名与StockOut.js组件兼容
         const ocrData = response.data.data || {};
+        const rawText = response.data.rawText || '';
         
+        // 获取活跃规则并尝试应用
+        try {
+          const rules = await this.getActiveRules();
+          
+          // 先尝试使用出库规则（最常用）
+          let parsedData = rules ? this.applyRules(rawText, 'stock-out') : null;
+          
+          // 如果出库规则失败，尝试入库规则
+          if (!parsedData && rules) {
+            parsedData = this.applyRules(rawText, 'stock-in');
+          }
+          
+          // 如果规则解析成功，使用规则解析的结果
+          if (parsedData && parsedData.item_name && parsedData.quantity > 0) {
+            logger.info('使用OCR规则成功解析数据');
+            
+            return {
+              success: true,
+              data: parsedData,
+              rawText: rawText
+            };
+          }
+          
+          logger.info('OCR规则解析失败，回退到默认解析逻辑');
+        } catch (ruleError) {
+          logger.warn('应用OCR规则出错，回退到默认解析逻辑:', ruleError);
+        }
+        
+        // 回退逻辑：使用后端返回的解析结果或原始解析逻辑
         // 增加数据验证宽容度 - 尝试更灵活地提取和解析字段
         let itemName = ocrData.item_name || '';
         let quantity = 0;
@@ -69,7 +250,7 @@ class OCRService {
         
         // 如果数据过于无效（没有物品名或数量为0），尝试从rawText中提取
         if (!itemName || quantity <= 0) {
-          console.warn('OCR识别数据不完整，尝试从原始文本提取');
+          logger.warn('OCR识别数据不完整，尝试从原始文本提取');
           // 这里可以添加更多的数据修复逻辑
         }
         
@@ -90,14 +271,14 @@ class OCRService {
           return {
             success: true,
             data: result,
-            rawText: response.data.rawText || ''
+            rawText: rawText
           };
         } else {
           console.warn('OCR识别结果无效:', result);
           return {
             success: false,
             message: '未识别到有效的物品数据',
-            rawText: response.data.rawText || ''
+            rawText: rawText
           };
         }
       }
@@ -231,7 +412,10 @@ class OCRService {
           }
         }
         
-        // 确保手续费被正确处理 
+        // 确保price字段与unit_price保持一致
+        processed.price = processed.unit_price;
+        
+        // 确保手续费被正确处理
         if (processed.fee !== undefined) {
           processed.fee = Number(processed.fee);
           if (isNaN(processed.fee)) {

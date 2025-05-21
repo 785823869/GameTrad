@@ -3,6 +3,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const multer = require('multer');
 const logger = require('../utils/logger');
+const db = require('../utils/db');
 
 /**
  * 模拟OCR识别函数 - 替代原Python OCR功能
@@ -336,6 +337,47 @@ function parseOcrTextV3(text) {
  */
 const ocrController = {
   /**
+   * 获取所有活跃的OCR规则
+   * GET /api/ocr/rules/active
+   */
+  getActiveRules: async (req, res) => {
+    try {
+      // 获取所有类型的活跃规则
+      const stockInRulesQuery = "SELECT * FROM ocr_rules_stock_in WHERE is_active = 1";
+      const stockOutRulesQuery = "SELECT * FROM ocr_rules_stock_out WHERE is_active = 1";
+      const monitorRulesQuery = "SELECT * FROM ocr_rules_monitor WHERE is_active = 1";
+      
+      // 并行执行查询以提高性能
+      const [stockInRules, stockOutRules, monitorRules] = await Promise.all([
+        db.fetchAll(stockInRulesQuery),
+        db.fetchAll(stockOutRulesQuery),
+        db.fetchAll(monitorRulesQuery)
+      ]);
+      
+      // 准备响应数据
+      const activeRules = {
+        'stock-in': stockInRules || [],
+        'stock-out': stockOutRules || [],
+        'monitor': monitorRules || []
+      };
+      
+      logger.info(`成功获取活跃OCR规则: stock-in(${activeRules['stock-in'].length}), stock-out(${activeRules['stock-out'].length}), monitor(${activeRules['monitor'].length})`);
+      
+      res.status(200).json({
+        success: true,
+        data: activeRules
+      });
+    } catch (error) {
+      logger.error(`获取活跃OCR规则失败: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: '获取活跃OCR规则失败',
+        error: error.message
+      });
+    }
+  },
+
+  /**
    * 处理图片上传和OCR识别 (旧API保持兼容)
    * @param {Object} req - 请求对象
    * @param {Object} res - 响应对象
@@ -435,13 +477,13 @@ const ocrController = {
         
         logger.info(`OCR解析结果: ${JSON.stringify(extractedData)}`);
         
-        // 检查是否成功解析出有效结果
+        // 返回解析结果和原始文本 - 确保始终返回原始文本，即使解析失败
         if (!extractedData || 
             (extractedData.item_name === '未知物品' && extractedData.quantity === 0)) {
-          return res.status(400).json({
+          return res.status(200).json({
             success: false,
-            message: '无法识别出有效的出库记录数据',
-            rawText: rawText
+            message: '后端无法识别出有效的OCR数据',
+            rawText: rawText // 仍然返回原始文本，让前端有机会应用规则
           });
         }
         
@@ -458,11 +500,11 @@ const ocrController = {
         
         // 确保至少有价格信息
         if (!extractedData.price && !extractedData.unit_price && !extractedData.total_amount) {
-          return res.status(400).json({
+          return res.status(200).json({
             success: false,
             message: '无法识别价格相关信息',
-            rawText: rawText,
-            partialData: extractedData
+            rawText: rawText, // 仍然返回原始文本
+            partialData: extractedData 
           });
         }
         

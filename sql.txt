@@ -1,0 +1,103 @@
+TABLE_NAME    |COLUMN_NAME       |COLUMN_TYPE  |IS_NULLABLE|COLUMN_DEFAULT      |COLUMN_KEY|EXTRA                                           |
+--------------+------------------+-------------+-----------+--------------------+----------+------------------------------------------------+
+inventory     |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+inventory     |item_name         |varchar(100) |NO         |                    |          |                                                |
+inventory     |quantity          |int          |NO         |0                   |          |                                                |
+inventory     |avg_price         |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |break_even_price  |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |selling_price     |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |profit            |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |profit_rate       |decimal(5,2) |NO         |0.00                |          |                                                |
+inventory     |total_profit      |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |inventory_value   |decimal(10,2)|NO         |0.00                |          |                                                |
+inventory     |created_at        |timestamp    |NO         |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+inventory     |updated_at        |timestamp    |NO         |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED on update CURRENT_TIMESTAMP   |
+inventory     |min_stock         |int          |YES        |10                  |          |                                                |
+inventory     |max_stock         |int          |YES        |0                   |          |                                                |
+item_dict     |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+item_dict     |item_name         |varchar(128) |NO         |                    |UNI       |                                                |
+item_dict     |description       |text         |YES        |                    |          |                                                |
+nvwa_monitor  |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+nvwa_monitor  |server            |varchar(50)  |NO         |                    |          |                                                |
+nvwa_monitor  |series            |varchar(50)  |NO         |                    |          |                                                |
+nvwa_monitor  |price             |decimal(18,2)|NO         |                    |          |                                                |
+nvwa_monitor  |ma_price          |decimal(18,2)|NO         |                    |          |                                                |
+nvwa_monitor  |timestamp         |datetime     |YES        |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+operation_logs|id                |int          |NO         |                    |PRI       |auto_increment                                  |
+operation_logs|operation_type    |varchar(50)  |NO         |                    |          |                                                |
+operation_logs|operation_category|varchar(50)  |YES        |                    |          |                                                |
+operation_logs|tab_name          |varchar(50)  |NO         |                    |          |                                                |
+operation_logs|operation_time    |datetime     |YES        |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+operation_logs|operation_data    |text         |YES        |                    |          |                                                |
+operation_logs|reverted          |tinyint(1)   |YES        |0                   |          |                                                |
+operation_logs|can_revert        |tinyint(1)   |YES        |1                   |          |                                                |
+operation_logs|update_time       |datetime     |YES        |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED on update CURRENT_TIMESTAMP   |
+recipes       |id                |varchar(36)  |NO         |                    |PRI       |                                                |
+recipes       |name              |varchar(255) |NO         |                    |          |                                                |
+recipes       |ingredients       |json         |YES        |                    |          |                                                |
+recipes       |results           |json         |YES        |                    |          |                                                |
+recipes       |raw               |text         |YES        |                    |          |                                                |
+recipes       |created_at        |timestamp    |YES        |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+silver_monitor|id                |int          |NO         |                    |PRI       |auto_increment                                  |
+silver_monitor|server            |varchar(32)  |YES        |                    |MUL       |                                                |
+silver_monitor|series            |varchar(16)  |YES        |                    |          |                                                |
+silver_monitor|price             |decimal(10,4)|YES        |                    |          |                                                |
+silver_monitor|ma_price          |decimal(10,4)|YES        |                    |          |                                                |
+silver_monitor|timestamp         |datetime     |YES        |                    |          |                                                |
+stock_in      |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+stock_in      |item_name         |varchar(100) |NO         |                    |          |                                                |
+stock_in      |transaction_time  |datetime     |NO         |                    |          |                                                |
+stock_in      |quantity          |int          |NO         |                    |          |                                                |
+stock_in      |cost              |bigint       |YES        |                    |          |                                                |
+stock_in      |avg_cost          |bigint       |YES        |                    |          |                                                |
+stock_in      |note              |text         |YES        |                    |          |                                                |
+stock_in      |created_at        |timestamp    |NO         |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+stock_out     |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+stock_out     |item_name         |varchar(100) |NO         |                    |          |                                                |
+stock_out     |transaction_time  |datetime     |NO         |                    |          |                                                |
+stock_out     |quantity          |int          |NO         |                    |          |                                                |
+stock_out     |unit_price        |bigint       |YES        |                    |          |                                                |
+stock_out     |fee               |bigint       |YES        |                    |          |                                                |
+stock_out     |deposit           |bigint       |YES        |                    |          |                                                |
+stock_out     |total_amount      |bigint       |YES        |                    |          |                                                |
+stock_out     |note              |text         |YES        |                    |          |                                                |
+stock_out     |created_at        |timestamp    |NO         |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+sync_history  |id                |varchar(36)  |NO         |                    |PRI       |                                                |
+sync_history  |userId            |int          |NO         |                    |          |                                                |
+sync_history  |syncType          |varchar(50)  |NO         |                    |          |                                                |
+sync_history  |details           |json         |YES        |                    |          |                                                |
+sync_history  |itemsPushed       |int          |NO         |0                   |          |                                                |
+sync_history  |itemsPulled       |int          |NO         |0                   |          |                                                |
+sync_history  |conflicts         |int          |NO         |0                   |          |                                                |
+sync_history  |status            |varchar(20)  |NO         |                    |          |                                                |
+sync_history  |duration          |float        |YES        |                    |          |                                                |
+sync_history  |clientId          |varchar(255) |YES        |                    |          |                                                |
+sync_history  |clientVersion     |varchar(50)  |YES        |                    |          |                                                |
+sync_history  |createdAt         |datetime(6)  |NO         |CURRENT_TIMESTAMP(6)|          |DEFAULT_GENERATED                               |
+sync_history  |updatedAt         |datetime(6)  |NO         |CURRENT_TIMESTAMP(6)|          |DEFAULT_GENERATED on update CURRENT_TIMESTAMP(6)|
+system_logs   |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+system_logs   |level             |varchar(10)  |NO         |                    |          |                                                |
+system_logs   |message           |text         |NO         |                    |          |                                                |
+system_logs   |timestamp         |timestamp    |YES        |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+system_logs   |source            |varchar(50)  |YES        |system              |          |                                                |
+trade_monitor |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+trade_monitor |item_name         |varchar(100) |NO         |                    |          |                                                |
+trade_monitor |monitor_time      |datetime     |NO         |                    |          |                                                |
+trade_monitor |quantity          |int          |NO         |                    |          |                                                |
+trade_monitor |market_price      |bigint       |YES        |                    |          |                                                |
+trade_monitor |target_price      |bigint       |YES        |                    |          |                                                |
+trade_monitor |planned_price     |bigint       |YES        |                    |          |                                                |
+trade_monitor |break_even_price  |bigint       |YES        |                    |          |                                                |
+trade_monitor |profit            |bigint       |YES        |                    |          |                                                |
+trade_monitor |profit_rate       |bigint       |YES        |                    |          |                                                |
+trade_monitor |strategy          |text         |YES        |                    |          |                                                |
+trade_monitor |created_at        |timestamp    |NO         |CURRENT_TIMESTAMP   |          |DEFAULT_GENERATED                               |
+users         |id                |int          |NO         |                    |PRI       |auto_increment                                  |
+users         |username          |varchar(255) |NO         |                    |UNI       |                                                |
+users         |email             |varchar(255) |YES        |                    |UNI       |                                                |
+users         |fullName          |varchar(255) |YES        |                    |          |                                                |
+users         |password          |varchar(255) |NO         |                    |          |                                                |
+users         |isActive          |tinyint      |NO         |1                   |          |                                                |
+users         |lastLoginAt       |datetime     |YES        |                    |          |                                                |
+users         |createdAt         |datetime(6)  |NO         |CURRENT_TIMESTAMP(6)|          |DEFAULT_GENERATED                               |
+users         |updatedAt         |datetime(6)  |NO         |CURRENT_TIMESTAMP(6)|          |DEFAULT_GENERATED on update CURRENT_TIMESTAMP(6)|

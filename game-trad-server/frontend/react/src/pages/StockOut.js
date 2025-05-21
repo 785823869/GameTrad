@@ -34,7 +34,7 @@ import {
   Delete as DeleteIcon,
   Edit as EditIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import StockOutService from '../services/StockOutService';  // 引入服务
 import { Link } from 'react-router-dom';
 
 const StockOut = () => {
@@ -50,7 +50,6 @@ const StockOut = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalQuantity, setTotalQuantity] = useState(0);
-  const [totalProfit, setTotalProfit] = useState(0);
   
   // 获取出库数据
   useEffect(() => {
@@ -77,26 +76,155 @@ const StockOut = () => {
   const fetchStockOutData = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/stock-out');
+      console.log('正在请求出库数据...');
+      const data = await StockOutService.getAll();
+      console.log('出库API响应:', data);
       
-      // 格式化响应数据
-      const formattedData = response.data.map(item => ({
-        id: item.id || Math.random().toString(36).substr(2, 9),
-        itemName: item.item_name,
-        transactionTime: new Date(item.transaction_time),
-        quantity: item.quantity,
-        unitPrice: item.unit_price,
-        fee: item.fee,
-        totalAmount: item.total_amount,
-        profit: item.profit,
-        profitRate: item.profit_rate,
-        note: item.note || ''
-      }));
+      if (!data) {
+        console.error('API响应中没有data字段');
+        setStockOutData([]);
+        setError('无法加载出库数据：服务器返回空数据。');
+        return;
+      }
       
+      // 检查响应数据是否为数组
+      if (!Array.isArray(data)) {
+        console.error('API返回的数据不是数组格式:', data);
+        setStockOutData([]);
+        setError('无法加载出库数据：数据格式不正确。');
+        return;
+      }
+      
+      // 格式化响应数据，增强数据处理和验证
+      const formattedData = data.map((item, index) => {
+        // 记录处理的数据
+        console.log(`处理出库记录 ${index}:`, item);
+        
+        // 检查是否是有效对象
+        if (!item) {
+          console.error(`第${index}项数据无效`);
+          return null;
+        }
+        
+        // 安全地处理ID
+        const id = item.id || Math.random().toString(36).substr(2, 9);
+        
+        // 确保物品名称不为空
+        let itemName;
+        // 处理数组或对象格式的数据
+        if (Array.isArray(item)) {
+          itemName = item[1] || '';
+        } else {
+          itemName = item.item_name || item.itemName || '';
+        }
+        // 如果物品名称为空，使用占位符
+        if (!itemName) {
+          itemName = `物品_${Math.random().toString(36).substr(2, 5)}`;
+        }
+        
+        // 安全地处理日期
+        let transactionTime;
+        try {
+          const rawDate = Array.isArray(item) ? item[2] : item.transaction_time;
+          if (rawDate instanceof Date) {
+            transactionTime = rawDate;
+          } else if (typeof rawDate === 'string') {
+            transactionTime = new Date(rawDate);
+            if (isNaN(transactionTime.getTime())) {
+              console.warn(`无效日期格式: ${rawDate}`);
+              transactionTime = new Date();
+            }
+          } else {
+            transactionTime = new Date();
+          }
+        } catch (err) {
+          console.error(`日期解析错误: ${err.message}`);
+          transactionTime = new Date();
+        }
+        
+        // 安全地获取数值字段
+        let quantity, unitPrice, fee, totalAmount;
+        
+        // 处理数量
+        try {
+          quantity = Array.isArray(item) ? 
+            Number(item[3] || 0) : 
+            Number(item.quantity || 0);
+          if (isNaN(quantity)) quantity = 0;
+        } catch (e) {
+          console.error(`数量解析错误:`, e);
+          quantity = 0;
+        }
+        
+        // 处理单价
+        try {
+          unitPrice = Array.isArray(item) ? 
+            Number(item[4] || 0) : 
+            Number(item.unit_price || 0);
+          if (isNaN(unitPrice)) unitPrice = 0;
+        } catch (e) {
+          console.error(`单价解析错误:`, e);
+          unitPrice = 0;
+        }
+        
+        // 处理手续费
+        try {
+          fee = Array.isArray(item) ? 
+            Number(item[5] || 0) : 
+            Number(item.fee || 0);
+          if (isNaN(fee)) fee = 0;
+        } catch (e) {
+          console.error(`手续费解析错误:`, e);
+          fee = 0;
+        }
+        
+        // 处理总金额 - 总金额 = 数量 * 单价 - 手续费
+        try {
+          totalAmount = Array.isArray(item) ? 
+            Number(item[6] || 0) : 
+            Number(item.total_amount || 0);
+          if (isNaN(totalAmount)) {
+            // 如果总金额无效但有其他数据，计算总金额
+            totalAmount = quantity * unitPrice - fee;
+          }
+        } catch (e) {
+          console.error(`总金额解析错误:`, e);
+          totalAmount = 0;
+        }
+        
+        // 处理备注
+        const note = Array.isArray(item) ? 
+          (item[9] || '') : 
+          (item.note || '');
+        
+        return {
+          id,
+          itemName,
+          transactionTime,
+          quantity,
+          unitPrice,
+          fee,
+          totalAmount,
+          note
+        };
+      }).filter(item => item !== null);  // 过滤掉无效数据
+      
+      console.log('格式化后的出库数据:', formattedData);
       setStockOutData(formattedData);
       setError(null);
     } catch (err) {
       console.error('获取出库数据失败:', err);
+      
+      // 详细的错误日志
+      if (err.response) {
+        console.error('服务器响应:', err.response.status, err.response.data);
+      } else if (err.request) {
+        console.error('请求已发送但未收到响应:', err.request);
+      } else {
+        console.error('请求配置错误:', err.message);
+      }
+      
+      setStockOutData([]);
       setError('无法加载出库数据。请检查网络连接或稍后再试。');
     } finally {
       setLoading(false);
@@ -105,13 +233,17 @@ const StockOut = () => {
   
   // 计算统计数据
   const calculateStats = () => {
-    const income = filteredData.reduce((sum, item) => sum + item.totalAmount, 0);
-    const quantity = filteredData.reduce((sum, item) => sum + item.quantity, 0);
-    const profit = filteredData.reduce((sum, item) => sum + (item.profit || 0), 0);
+    if (!filteredData || filteredData.length === 0) {
+      setTotalIncome(0);
+      setTotalQuantity(0);
+      return;
+    }
+    
+    const income = filteredData.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0);
+    const quantity = filteredData.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
     
     setTotalIncome(income);
     setTotalQuantity(quantity);
-    setTotalProfit(profit);
   };
   
   // 处理搜索
@@ -148,9 +280,13 @@ const StockOut = () => {
     if (!selectedItem) return;
     
     try {
-      await axios.delete(`/api/stock-out/${selectedItem.id}`);
-      setStockOutData(prevData => prevData.filter(item => item.id !== selectedItem.id));
-      handleCloseDeleteDialog();
+      const response = await StockOutService.delete(selectedItem.id);
+      if (response.success) {
+        setStockOutData(prevData => prevData.filter(item => item.id !== selectedItem.id));
+        handleCloseDeleteDialog();
+      } else {
+        setError('删除出库记录失败。请稍后再试。');
+      }
     } catch (err) {
       console.error('删除出库记录失败:', err);
       setError('删除出库记录失败。请稍后再试。');
@@ -202,7 +338,7 @@ const StockOut = () => {
       
       {/* 统计卡片 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={6}>
           <Paper 
             sx={{ 
               p: 3, 
@@ -220,7 +356,7 @@ const StockOut = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={6}>
           <Paper 
             sx={{ 
               p: 3, 
@@ -235,24 +371,6 @@ const StockOut = () => {
             </Typography>
             <Typography variant="h4" component="div" fontWeight="bold" color="success.main">
               {totalQuantity.toLocaleString()}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper 
-            sx={{ 
-              p: 3, 
-              textAlign: 'center',
-              height: '100%',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
-              borderRadius: 2
-            }}
-          >
-            <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-              总利润
-            </Typography>
-            <Typography variant="h4" component="div" fontWeight="bold" color="error.main">
-              ¥{formatNumber(totalProfit)}
             </Typography>
           </Paper>
         </Grid>
@@ -308,7 +426,15 @@ const StockOut = () => {
       </Box>
       
       {/* 出库表格 */}
-      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 2, boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)' }}>
+      <Paper sx={{ 
+        width: '100%', 
+        overflow: 'hidden', 
+        borderRadius: 2, 
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
         {error ? (
           <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
         ) : loading ? (
@@ -317,47 +443,207 @@ const StockOut = () => {
           </Box>
         ) : (
           <>
-            <TableContainer sx={{ maxHeight: 'calc(100vh - 380px)' }}>
-              <Table stickyHeader>
+            <TableContainer sx={{ 
+              maxHeight: 'calc(100vh - 380px)',
+              overflow: 'auto',
+              "&::-webkit-scrollbar": {
+                width: "10px",
+                height: "10px"
+              },
+              "&::-webkit-scrollbar-track": {
+                backgroundColor: "rgba(0,0,0,0.05)"
+              },
+              "&::-webkit-scrollbar-thumb": {
+                backgroundColor: "rgba(0,0,0,0.15)",
+                borderRadius: "4px",
+                "&:hover": {
+                  backgroundColor: "rgba(0,0,0,0.3)"
+                }
+              }
+            }}>
+              <Table stickyHeader aria-label="出库记录表格">
                 <TableHead>
                   <TableRow>
-                    <TableCell>物品名称</TableCell>
-                    <TableCell>出库时间</TableCell>
-                    <TableCell align="right">数量</TableCell>
-                    <TableCell align="right">单价</TableCell>
-                    <TableCell align="right">手续费</TableCell>
-                    <TableCell align="right">总金额</TableCell>
-                    <TableCell align="right">利润</TableCell>
-                    <TableCell align="right">利润率</TableCell>
-                    <TableCell>备注</TableCell>
-                    <TableCell align="right">操作</TableCell>
+                    <TableCell 
+                      sx={{ 
+                        fontWeight: 'bold', 
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '15%'
+                      }}
+                    >
+                      物品名称
+                    </TableCell>
+                    <TableCell 
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '12%'
+                      }}
+                    >
+                      出库时间
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '8%'
+                      }}
+                    >
+                      数量
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '10%'
+                      }}
+                    >
+                      单价
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '10%'
+                      }}
+                    >
+                      手续费
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '10%'
+                      }}
+                    >
+                      总金额
+                    </TableCell>
+                    <TableCell 
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '10%'
+                      }}
+                    >
+                      备注
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        fontWeight: 'bold',
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '8%'
+                      }}
+                    >
+                      操作
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredData
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((row) => (
-                      <TableRow key={row.id} hover>
-                        <TableCell component="th" scope="row">
-                          {row.itemName}
+                    .map((row, index) => (
+                      <TableRow 
+                        key={row.id} 
+                        hover
+                        sx={{ 
+                          "&:nth-of-type(odd)": { 
+                            backgroundColor: "rgba(0, 0, 0, 0.02)" 
+                          },
+                          "&:hover": {
+                            backgroundColor: "rgba(0, 0, 0, 0.04)"
+                          }
+                        }}
+                      >
+                        <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <Tooltip title={row.itemName} placement="top">
+                            <span>{row.itemName}</span>
+                          </Tooltip>
                         </TableCell>
-                        <TableCell>{formatDate(row.transactionTime)}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.transactionTime)}</TableCell>
                         <TableCell align="right">{row.quantity.toLocaleString()}</TableCell>
-                        <TableCell align="right">¥{formatNumber(row.unitPrice)}</TableCell>
-                        <TableCell align="right">¥{formatNumber(row.fee)}</TableCell>
-                        <TableCell align="right">¥{formatNumber(row.totalAmount)}</TableCell>
-                        <TableCell align="right">¥{formatNumber(row.profit || 0)}</TableCell>
-                        <TableCell align="right">
-                          <Chip
-                            label={`${(row.profitRate || 0).toFixed(2)}%`}
-                            size="small"
-                            color={(row.profitRate || 0) > 0 ? "success" : (row.profitRate || 0) < 0 ? "error" : "default"}
-                          />
+                        <TableCell align="right" sx={{ color: 'text.primary', fontWeight: 500 }}>¥{formatNumber(row.unitPrice)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'warning.main', fontWeight: 500 }}>¥{formatNumber(row.fee)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'success.main', fontWeight: 500 }}>¥{formatNumber(row.totalAmount)}</TableCell>
+                        <TableCell sx={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.note && (
+                            <Tooltip title={row.note} placement="top">
+                              <span>{row.note}</span>
+                            </Tooltip>
+                          )}
                         </TableCell>
-                        <TableCell>{row.note}</TableCell>
                         <TableCell align="right">
                           <Tooltip title="编辑">
-                            <IconButton size="small" color="primary">
+                            <IconButton 
+                              size="small" 
+                              color="primary"
+                              sx={{
+                                backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(25, 118, 210, 0.16)',
+                                }
+                              }}
+                            >
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -366,6 +652,13 @@ const StockOut = () => {
                               size="small" 
                               color="error"
                               onClick={() => handleOpenDeleteDialog(row)}
+                              sx={{
+                                ml: 1,
+                                backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(211, 47, 47, 0.16)',
+                                }
+                              }}
                             >
                               <DeleteIcon fontSize="small" />
                             </IconButton>
@@ -375,7 +668,7 @@ const StockOut = () => {
                     ))}
                   {filteredData.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
+                      <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
                         {searchTerm ? "没有找到匹配的出库记录" : "暂无出库数据"}
                       </TableCell>
                     </TableRow>
@@ -393,6 +686,10 @@ const StockOut = () => {
               onRowsPerPageChange={handleChangeRowsPerPage}
               labelRowsPerPage="每页行数:"
               labelDisplayedRows={({ from, to, count }) => `${from}-${to} / 共${count}项`}
+              sx={{
+                borderTop: '1px solid rgba(224, 224, 224, 1)',
+                backgroundColor: '#FAFAFA'
+              }}
             />
           </>
         )}

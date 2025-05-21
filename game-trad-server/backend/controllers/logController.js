@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const db = require('../utils/db');
 
 /**
  * 获取最近的日志
@@ -8,13 +9,13 @@ const logger = require('../utils/logger');
 exports.getRecentLogs = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
-    const logType = req.query.type || 'app';
+    const logType = req.params.type || 'app';
     
     // 验证日志类型
-    if (!['app', 'error'].includes(logType)) {
+    if (!['app', 'error', 'access'].includes(logType)) {
       return res.status(400).json({ 
         success: false, 
-        message: '无效的日志类型，只支持 app 或 error' 
+        message: '无效的日志类型，只支持 app、error 或 access' 
       });
     }
     
@@ -54,10 +55,10 @@ exports.getLogsByDate = async (req, res) => {
     }
     
     // 验证日志类型
-    if (!['app', 'error'].includes(logType)) {
+    if (!['app', 'error', 'access'].includes(logType)) {
       return res.status(400).json({ 
         success: false, 
-        message: '无效的日志类型，只支持 app 或 error' 
+        message: '无效的日志类型，只支持 app、error 或 access' 
       });
     }
     
@@ -97,21 +98,21 @@ exports.addLog = async (req, res) => {
     }
     
     // 验证日志级别
-    if (!['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'].includes(level)) {
+    if (!['error', 'warn', 'info', 'debug'].includes(level.toLowerCase())) {
       return res.status(400).json({ 
         success: false, 
-        message: '无效的日志级别' 
+        message: '无效的日志级别，只支持 error、warn、info 或 debug' 
       });
     }
     
     // 记录日志
-    logger[level](message);
+    logger[level.toLowerCase()](message);
     
     res.status(201).json({
       success: true,
       message: '日志添加成功',
       log: {
-        level,
+        level: level.toUpperCase(),
         message,
         timestamp: new Date().toISOString()
       }
@@ -121,6 +122,45 @@ exports.addLog = async (req, res) => {
     res.status(500).json({
       success: false,
       message: '添加日志失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 获取操作日志
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ */
+exports.getOperationLogs = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    
+    // 从数据库获取操作日志
+    const query = `
+      SELECT * FROM operation_logs 
+      ORDER BY operation_time DESC 
+      LIMIT ?
+    `;
+    
+    const logs = await db.fetchAll(query, [limit]);
+    
+    // 解析操作数据
+    const formattedLogs = logs.map(log => ({
+      ...log,
+      operation_data: log.operation_data ? JSON.parse(log.operation_data) : null
+    }));
+    
+    res.status(200).json({
+      success: true,
+      count: formattedLogs.length,
+      logs: formattedLogs
+    });
+  } catch (error) {
+    logger.error(`获取操作日志失败: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: '获取操作日志失败',
       error: error.message
     });
   }

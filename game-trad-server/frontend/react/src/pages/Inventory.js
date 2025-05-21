@@ -17,16 +17,32 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  Grid
+  Grid,
+  Menu,
+  MenuItem,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  FormControlLabel,
+  Checkbox,
+  Tooltip,
+  Snackbar
 } from '@mui/material';
 import {
   Search as SearchIcon,
   Add as AddIcon,
   FilterList as FilterIcon,
   CloudDownload as ExportIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+
+// 导入自定义组件
+import InventoryMenu from '../components/inventory/InventoryMenu';
+import InventoryEditDialog from '../components/inventory/InventoryEditDialog';
 
 const Inventory = () => {
   // 状态管理
@@ -39,6 +55,34 @@ const Inventory = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
   const [totalValue, setTotalValue] = useState(0);
+  
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  
+  // 编辑对话框状态
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  
+  // 删除确认对话框状态
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  
+  // 导出对话框状态
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState('xlsx');
+  
+  // 筛选状态
+  const [showZeroStock, setShowZeroStock] = useState(false);
+  const [showLowStock, setShowLowStock] = useState(false);
+  const [showNegativeProfit, setShowNegativeProfit] = useState(false);
+  
+  // 通知状态
+  const [notification, setNotification] = useState({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
 
   // 页面加载时获取库存数据
   useEffect(() => {
@@ -47,16 +91,40 @@ const Inventory = () => {
 
   // 过滤数据
   useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredData(inventoryData);
-    } else {
+    if (inventoryData.length === 0) {
+      setFilteredData([]);
+      return;
+    }
+    
+    let filtered = [...inventoryData];
+    
+    // 搜索过滤
+    if (searchTerm.trim() !== '') {
       const lowercasedFilter = searchTerm.toLowerCase();
-      const filtered = inventoryData.filter(item => 
+      filtered = filtered.filter(item => 
         item.itemName.toLowerCase().includes(lowercasedFilter)
       );
-      setFilteredData(filtered);
     }
-  }, [searchTerm, inventoryData]);
+    
+    // 筛选条件
+    if (!showZeroStock) {
+      filtered = filtered.filter(item => item.quantity > 0);
+    }
+    
+    if (showLowStock) {
+      filtered = filtered.filter(item => item.quantity > 0 && item.quantity < 30);
+    }
+    
+    if (showNegativeProfit) {
+      filtered = filtered.filter(item => item.profit < 0);
+    }
+    
+    setFilteredData(filtered);
+    
+    // 更新统计数据
+    setTotalItems(filtered.length);
+    setTotalValue(filtered.reduce((sum, item) => sum + item.inventoryValue, 0));
+  }, [searchTerm, inventoryData, showZeroStock, showLowStock, showNegativeProfit]);
 
   // 获取库存数据
   const fetchInventoryData = async () => {
@@ -68,14 +136,14 @@ const Inventory = () => {
       const formattedData = response.data.map(item => ({
         id: item.id || Math.random().toString(36).substr(2, 9),
         itemName: item.item_name,
-        quantity: item.quantity,
-        avgPrice: item.avg_price,
-        breakEvenPrice: item.break_even_price,
-        sellingPrice: item.selling_price,
-        profit: item.profit,
-        profitRate: item.profit_rate,
-        totalProfit: item.total_profit,
-        inventoryValue: item.inventory_value
+        quantity: Number(item.quantity) || 0,
+        avgPrice: Number(item.avg_price) || 0,
+        breakEvenPrice: Number(item.break_even_price) || 0,
+        sellingPrice: Number(item.selling_price) || 0,
+        profit: Number(item.profit) || 0,
+        profitRate: Number(item.profit_rate) || 0,
+        totalProfit: Number(item.total_profit) || 0,
+        inventoryValue: Number(item.inventory_value) || 0
       }));
       
       setInventoryData(formattedData);
@@ -85,11 +153,100 @@ const Inventory = () => {
       setTotalValue(formattedData.reduce((sum, item) => sum + item.inventoryValue, 0));
       
       setError(null);
+      
+      // 显示成功通知
+      showNotification('库存数据加载成功', 'success');
     } catch (err) {
       console.error('获取库存数据失败:', err);
       setError('无法加载库存数据。请检查网络连接或稍后再试。');
+      
+      // 显示错误通知
+      showNotification('获取库存数据失败', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // 重新计算库存
+  const recalculateInventory = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.post('/api/inventory/recalculate');
+      
+      if (response.data.success) {
+        // 更新库存数据
+        const formattedData = response.data.inventory.map(item => ({
+          id: item.id || Math.random().toString(36).substr(2, 9),
+          itemName: item.item_name,
+          quantity: Number(item.quantity) || 0,
+          avgPrice: Number(item.avg_price) || 0,
+          breakEvenPrice: Number(item.break_even_price) || 0,
+          sellingPrice: Number(item.selling_price) || 0,
+          profit: Number(item.profit) || 0,
+          profitRate: Number(item.profit_rate) || 0,
+          totalProfit: Number(item.total_profit) || 0,
+          inventoryValue: Number(item.inventory_value) || 0
+        }));
+        
+        setInventoryData(formattedData);
+        
+        // 显示成功通知
+        showNotification('库存数据已重新计算', 'success');
+      } else {
+        throw new Error(response.data.message || '重新计算库存失败');
+      }
+    } catch (err) {
+      console.error('重新计算库存失败:', err);
+      
+      // 显示错误通知
+      showNotification('重新计算库存失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 删除库存项目
+  const deleteInventoryItem = async (id) => {
+    try {
+      const response = await axios.delete(`/api/inventory/${id}`);
+      
+      if (response.data.success) {
+        // 从库存数据中移除该项目
+        const updatedData = inventoryData.filter(item => item.id !== id);
+        setInventoryData(updatedData);
+        
+        // 显示成功通知
+        showNotification('物品已删除', 'success');
+      } else {
+        throw new Error(response.data.message || '删除物品失败');
+      }
+    } catch (err) {
+      console.error('删除物品失败:', err);
+      
+      // 显示错误通知
+      showNotification('删除物品失败', 'error');
+    }
+  };
+  
+  // 导出库存数据
+  const exportInventory = async (format) => {
+    try {
+      const response = await axios.get(`/api/inventory/export?format=${format}`);
+      
+      if (response.data.success) {
+        // 打开下载链接
+        window.open(response.data.downloadUrl, '_blank');
+        
+        // 显示成功通知
+        showNotification(`库存数据已导出为${format.toUpperCase()}格式`, 'success');
+      } else {
+        throw new Error(response.data.message || '导出库存数据失败');
+      }
+    } catch (err) {
+      console.error('导出库存数据失败:', err);
+      
+      // 显示错误通知
+      showNotification('导出库存数据失败', 'error');
     }
   };
 
@@ -117,16 +274,123 @@ const Inventory = () => {
       maximumFractionDigits: 2
     }).format(num);
   };
-
-  // 导出库存数据
-  const handleExport = () => {
-    // 此处实现导出功能
-    alert('导出功能将在后续实现');
+  
+  // 处理表格行右键点击
+  const handleRowRightClick = (event, item) => {
+    event.preventDefault();
+    setContextMenu({
+      top: event.clientY,
+      left: event.clientX
+    });
+    setSelectedItem(item);
   };
-
+  
+  // 处理右键菜单关闭
+  const handleContextMenuClose = () => {
+    setContextMenu(null);
+    setSelectedItem(null);
+  };
+  
+  // 处理复制物品名称
+  const handleCopyName = (item) => {
+    navigator.clipboard.writeText(item.itemName)
+      .then(() => {
+        showNotification('物品名称已复制到剪贴板', 'success');
+      })
+      .catch(err => {
+        console.error('复制失败:', err);
+        showNotification('复制物品名称失败', 'error');
+      });
+  };
+  
+  // 处理删除物品
+  const handleDelete = (item) => {
+    setItemToDelete(item);
+    setDeleteDialogOpen(true);
+  };
+  
+  // 确认删除物品
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteInventoryItem(itemToDelete.id);
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
+    }
+  };
+  
+  // 处理编辑物品
+  const handleEdit = (item) => {
+    setEditItem(item);
+    setEditDialogOpen(true);
+  };
+  
+  // 处理添加物品
+  const handleAdd = () => {
+    setEditItem(null);
+    setEditDialogOpen(true);
+  };
+  
+  // 处理保存物品
+  const handleSaveItem = (formData) => {
+    // TODO: 实现保存物品的API调用
+    console.log('保存物品:', formData);
+    setEditDialogOpen(false);
+  };
+  
+  // 处理刷新物品数据
+  const handleRefreshItem = (item) => {
+    // TODO: 实现刷新单个物品的API调用
+    console.log('刷新物品:', item);
+  };
+  
+  // 处理导出
+  const handleExport = () => {
+    setExportDialogOpen(true);
+  };
+  
+  // 确认导出
+  const confirmExport = () => {
+    exportInventory(exportFormat);
+    setExportDialogOpen(false);
+  };
+  
   // 处理刷新
   const handleRefresh = () => {
     fetchInventoryData();
+  };
+  
+  // 处理重新计算
+  const handleRecalculate = () => {
+    recalculateInventory();
+  };
+  
+  // 显示通知
+  const showNotification = (message, severity = 'info') => {
+    setNotification({
+      open: true,
+      message,
+      severity
+    });
+  };
+  
+  // 关闭通知
+  const handleCloseNotification = () => {
+    setNotification({
+      ...notification,
+      open: false
+    });
+  };
+  
+  // 获取行样式
+  const getRowStyle = (row) => {
+    if (row.quantity <= 0) {
+      return { bgcolor: 'error.lighter' }; // 零库存或负库存
+    } else if (row.quantity < 30) {
+      return { bgcolor: 'warning.lighter' }; // 低库存
+    } else if (row.profit < 0) {
+      return { bgcolor: 'error.lighter', opacity: 0.7 }; // 负利润
+    }
+    return {};
   };
 
   return (
@@ -219,29 +483,60 @@ const Inventory = () => {
 
       {/* 操作栏 */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <TextField
-          placeholder="搜索物品..."
-          variant="outlined"
-          size="small"
-          value={searchTerm}
-          onChange={handleSearchChange}
-          sx={{ width: 280 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-        />
-        <Box>
-          <Button 
-            variant="outlined" 
-            startIcon={<FilterIcon />}
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <TextField
+            placeholder="搜索物品..."
+            variant="outlined"
+            size="small"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            sx={{ width: 280, mr: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={showZeroStock} 
+                onChange={(e) => setShowZeroStock(e.target.checked)}
+                size="small"
+              />
+            }
+            label="显示零库存"
             sx={{ mr: 1 }}
-          >
-            筛选
-          </Button>
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={showLowStock} 
+                onChange={(e) => setShowLowStock(e.target.checked)}
+                size="small"
+              />
+            }
+            label="仅显示低库存"
+            sx={{ mr: 1 }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={showNegativeProfit} 
+                onChange={(e) => setShowNegativeProfit(e.target.checked)}
+                size="small"
+              />
+            }
+            label="仅显示负利润"
+          />
+        </Box>
+        
+        <Box>
           <Button 
             variant="outlined" 
             startIcon={<ExportIcon />}
@@ -259,9 +554,18 @@ const Inventory = () => {
             刷新
           </Button>
           <Button 
+            variant="outlined" 
+            startIcon={<RefreshIcon />}
+            onClick={handleRecalculate}
+            sx={{ mr: 1 }}
+          >
+            重新计算
+          </Button>
+          <Button 
             variant="contained" 
             startIcon={<AddIcon />}
             color="primary"
+            onClick={handleAdd}
           >
             添加物品
           </Button>
@@ -297,8 +601,31 @@ const Inventory = () => {
                   {filteredData
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((row) => (
-                      <TableRow key={row.id} hover>
+                      <TableRow 
+                        key={row.id} 
+                        hover
+                        onContextMenu={(e) => handleRowRightClick(e, row)}
+                        sx={getRowStyle(row)}
+                      >
                         <TableCell component="th" scope="row">
+                          {row.quantity <= 0 && (
+                            <Tooltip title="零库存或负库存">
+                              <WarningIcon 
+                                fontSize="small" 
+                                color="error" 
+                                sx={{ verticalAlign: 'middle', mr: 0.5 }}
+                              />
+                            </Tooltip>
+                          )}
+                          {row.quantity > 0 && row.quantity < 30 && (
+                            <Tooltip title="低库存">
+                              <WarningIcon 
+                                fontSize="small" 
+                                color="warning" 
+                                sx={{ verticalAlign: 'middle', mr: 0.5 }}
+                              />
+                            </Tooltip>
+                          )}
                           {row.itemName}
                         </TableCell>
                         <TableCell align="right">{row.quantity.toLocaleString()}</TableCell>
@@ -308,7 +635,7 @@ const Inventory = () => {
                         <TableCell align="right">¥{formatNumber(row.profit)}</TableCell>
                         <TableCell align="right">
                           <Chip
-                            label={`${row.profitRate.toFixed(2)}%`}
+                            label={`${(typeof row.profitRate === 'number' ? row.profitRate.toFixed(2) : '0.00')}%`}
                             size="small"
                             color={row.profitRate > 0 ? "success" : row.profitRate < 0 ? "error" : "default"}
                           />
@@ -341,6 +668,86 @@ const Inventory = () => {
           </>
         )}
       </Paper>
+      
+      {/* 右键菜单 */}
+      <InventoryMenu
+        anchorPosition={contextMenu}
+        open={Boolean(contextMenu)}
+        onClose={handleContextMenuClose}
+        selectedItem={selectedItem}
+        onCopyName={handleCopyName}
+        onDelete={handleDelete}
+        onEdit={handleEdit}
+        onRefreshItem={handleRefreshItem}
+      />
+      
+      {/* 编辑对话框 */}
+      <InventoryEditDialog
+        open={editDialogOpen}
+        onClose={() => setEditDialogOpen(false)}
+        item={editItem}
+        onSave={handleSaveItem}
+      />
+      
+      {/* 删除确认对话框 */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            确定要删除物品 "{itemToDelete?.itemName}" 吗？此操作不可撤销。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>取消</Button>
+          <Button onClick={confirmDelete} color="error">
+            删除
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* 导出对话框 */}
+      <Dialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+      >
+        <DialogTitle>导出库存数据</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            请选择导出格式：
+          </DialogContentText>
+          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+            <Button 
+              variant={exportFormat === 'xlsx' ? 'contained' : 'outlined'}
+              onClick={() => setExportFormat('xlsx')}
+            >
+              Excel (.xlsx)
+            </Button>
+            <Button 
+              variant={exportFormat === 'csv' ? 'contained' : 'outlined'}
+              onClick={() => setExportFormat('csv')}
+            >
+              CSV (.csv)
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExportDialogOpen(false)}>取消</Button>
+          <Button onClick={confirmExport} color="primary">
+            导出
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* 通知 */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={5000}
+        onClose={handleCloseNotification}
+        message={notification.message}
+      />
     </Container>
   );
 };

@@ -49,4 +49,24 @@ router.post('/', upload.single('image'), processImage);
 // 获取OCR历史记录
 router.get('/history', getOcrHistory);
 
+// 处理OCR识别
+router.post('/recognize', upload.single('image'), async (req, res) => {
+  try {
+    // 处理上传的图片，并进行OCR识别
+    const result = await processImage(req.file);
+    
+    res.status(200).json({
+      success: true,
+      message: 'OCR识别成功',
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'OCR识别失败',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router; 

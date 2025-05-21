@@ -347,6 +347,8 @@ const Dashboard = () => {
                   itemCount={tradingData.inventoryStats?.itemCount || 0}
                   totalQuantity={tradingData.inventoryStats?.totalQuantity || 0}
                   lowStockCount={tradingData.inventoryStats?.lowStockCount || 0}
+                  totalValue={tradingData.inventoryStats?.totalValue || 0}
+                  zeroStockCount={tradingData.inventoryStats?.zeroStockCount || 0}
                 />
               </Paper>
             </Grid>

@@ -1,8 +1,9 @@
 const fs = require('fs-extra');
 const path = require('path');
 const logger = require('../utils/logger');
+const db = require('../utils/db');
 
-// 配方文件路径
+// 配方文件路径 - 保留作为备份
 const recipesFilePath = path.join(__dirname, '../../config/recipes.json');
 
 // 确保配方文件存在
@@ -14,6 +15,40 @@ const ensureRecipesFile = async () => {
   }
   
   return recipesFilePath;
+};
+
+// 确保数据库中有recipes表
+const ensureRecipesTable = async () => {
+  try {
+    // 检查表是否存在
+    const checkTableQuery = `
+      SELECT COUNT(*) as count 
+      FROM information_schema.tables 
+      WHERE table_schema = '${db.dbConfig.database}' 
+      AND table_name = 'recipes'
+    `;
+    
+    const result = await db.fetchOne(checkTableQuery);
+    
+    if (!result || result.count === 0) {
+      // 创建表
+      const createTableQuery = `
+        CREATE TABLE recipes (
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          ingredients JSON,
+          results JSON,
+          raw TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+      
+      await db.execute(createTableQuery);
+      logger.info('创建recipes表成功');
+    }
+  } catch (error) {
+    logger.error(`确保recipes表存在失败: ${error.message}`);
+  }
 };
 
 /**
@@ -84,13 +119,23 @@ const parseRecipe = (recipeText) => {
  */
 exports.getAllRecipes = async (req, res) => {
   try {
-    await ensureRecipesFile();
-    const { recipes } = await fs.readJson(recipesFilePath);
+    await ensureRecipesTable();
+    
+    // 从数据库获取所有配方
+    const query = `SELECT * FROM recipes ORDER BY created_at DESC`;
+    const recipes = await db.fetchAll(query);
+    
+    // 解析JSON字段
+    const formattedRecipes = recipes.map(recipe => ({
+      ...recipe,
+      ingredients: JSON.parse(recipe.ingredients || '[]'),
+      results: JSON.parse(recipe.results || '[]')
+    }));
     
     res.status(200).json({
       success: true,
-      count: recipes.length,
-      recipes
+      count: formattedRecipes.length,
+      recipes: formattedRecipes
     });
   } catch (error) {
     logger.error(`获取配方失败: ${error.message}`);
@@ -109,9 +154,11 @@ exports.getAllRecipes = async (req, res) => {
  */
 exports.getRecipeById = async (req, res) => {
   try {
-    await ensureRecipesFile();
-    const { recipes } = await fs.readJson(recipesFilePath);
-    const recipe = recipes.find(r => r.id === req.params.id);
+    await ensureRecipesTable();
+    
+    // 从数据库获取指定配方
+    const query = `SELECT * FROM recipes WHERE id = ?`;
+    const recipe = await db.fetchOne(query, [req.params.id]);
     
     if (!recipe) {
       return res.status(404).json({
@@ -120,9 +167,16 @@ exports.getRecipeById = async (req, res) => {
       });
     }
     
+    // 解析JSON字段
+    const formattedRecipe = {
+      ...recipe,
+      ingredients: JSON.parse(recipe.ingredients || '[]'),
+      results: JSON.parse(recipe.results || '[]')
+    };
+    
     res.status(200).json({
       success: true,
-      recipe
+      recipe: formattedRecipe
     });
   } catch (error) {
     logger.error(`获取配方失败: ${error.message}`);
@@ -150,28 +204,54 @@ exports.addRecipe = async (req, res) => {
       });
     }
     
+    await ensureRecipesTable();
+    
     // 解析配方
     const parsedRecipe = parseRecipe(recipeText);
     const recipeId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     
-    // 保存到配方文件
-    await ensureRecipesFile();
-    const data = await fs.readJson(recipesFilePath);
+    // 保存到数据库
+    const query = `
+      INSERT INTO recipes (id, name, ingredients, results, raw, created_at)
+      VALUES (?, ?, ?, ?, ?, NOW())
+    `;
     
-    const newRecipe = {
-      id: recipeId,
-      ...parsedRecipe,
-      name: name || parsedRecipe.name
+    const params = [
+      recipeId,
+      name || parsedRecipe.name,
+      JSON.stringify(parsedRecipe.ingredients),
+      JSON.stringify(parsedRecipe.results),
+      recipeText
+    ];
+    
+    await db.execute(query, params);
+    
+    // 获取插入的配方
+    const newRecipe = await db.fetchOne(`SELECT * FROM recipes WHERE id = ?`, [recipeId]);
+    
+    // 解析JSON字段
+    const formattedRecipe = {
+      ...newRecipe,
+      ingredients: JSON.parse(newRecipe.ingredients || '[]'),
+      results: JSON.parse(newRecipe.results || '[]')
     };
     
-    data.recipes.push(newRecipe);
-    await fs.writeJson(recipesFilePath, data, { spaces: 2 });
+    logger.info(`添加新配方: ${formattedRecipe.name}`);
     
-    logger.info(`添加新配方: ${newRecipe.name}`);
+    // 备份到文件
+    try {
+      await ensureRecipesFile();
+      const data = await fs.readJson(recipesFilePath);
+      data.recipes.push(formattedRecipe);
+      await fs.writeJson(recipesFilePath, data, { spaces: 2 });
+    } catch (backupError) {
+      logger.warn(`备份配方到文件失败: ${backupError.message}`);
+    }
+    
     res.status(201).json({
       success: true,
       message: '配方添加成功',
-      recipe: newRecipe
+      recipe: formattedRecipe
     });
   } catch (error) {
     logger.error(`添加配方失败: ${error.message}`);
@@ -200,46 +280,78 @@ exports.updateRecipe = async (req, res) => {
       });
     }
     
-    // 读取现有配方
-    await ensureRecipesFile();
-    const data = await fs.readJson(recipesFilePath);
-    const recipeIndex = data.recipes.findIndex(r => r.id === id);
+    await ensureRecipesTable();
     
-    if (recipeIndex === -1) {
+    // 检查配方是否存在
+    const existingRecipe = await db.fetchOne(`SELECT * FROM recipes WHERE id = ?`, [id]);
+    
+    if (!existingRecipe) {
       return res.status(404).json({
         success: false,
         message: '配方未找到'
       });
     }
     
-    // 更新配方
-    let updatedRecipe = { ...data.recipes[recipeIndex] };
-    
+    // 如果提供了配方文本，则重新解析
+    let parsedRecipe = null;
     if (recipeText) {
-      // 如果提供了新的配方文本，重新解析
-      const parsedRecipe = parseRecipe(recipeText);
-      updatedRecipe = {
-        ...updatedRecipe,
-        ...parsedRecipe,
-        raw: recipeText
-      };
+      parsedRecipe = parseRecipe(recipeText);
     }
     
-    if (name) {
-      updatedRecipe.name = name;
+    // 更新配方
+    const query = `
+      UPDATE recipes 
+      SET 
+        name = ?,
+        ingredients = ?,
+        results = ?,
+        raw = ?
+      WHERE id = ?
+    `;
+    
+    const params = [
+      name || (parsedRecipe ? parsedRecipe.name : existingRecipe.name),
+      parsedRecipe ? JSON.stringify(parsedRecipe.ingredients) : existingRecipe.ingredients,
+      parsedRecipe ? JSON.stringify(parsedRecipe.results) : existingRecipe.results,
+      recipeText || existingRecipe.raw,
+      id
+    ];
+    
+    await db.execute(query, params);
+    
+    // 获取更新后的配方
+    const updatedRecipe = await db.fetchOne(`SELECT * FROM recipes WHERE id = ?`, [id]);
+    
+    // 解析JSON字段
+    const formattedRecipe = {
+      ...updatedRecipe,
+      ingredients: JSON.parse(updatedRecipe.ingredients || '[]'),
+      results: JSON.parse(updatedRecipe.results || '[]')
+    };
+    
+    logger.info(`更新配方: ${formattedRecipe.name}`);
+    
+    // 备份到文件
+    try {
+      await ensureRecipesFile();
+      const data = await fs.readJson(recipesFilePath);
+      const index = data.recipes.findIndex(r => r.id === id);
+      
+      if (index !== -1) {
+        data.recipes[index] = formattedRecipe;
+      } else {
+        data.recipes.push(formattedRecipe);
+      }
+      
+      await fs.writeJson(recipesFilePath, data, { spaces: 2 });
+    } catch (backupError) {
+      logger.warn(`备份配方到文件失败: ${backupError.message}`);
     }
     
-    updatedRecipe.updatedAt = new Date().toISOString();
-    
-    // 保存更新
-    data.recipes[recipeIndex] = updatedRecipe;
-    await fs.writeJson(recipesFilePath, data, { spaces: 2 });
-    
-    logger.info(`更新配方: ${updatedRecipe.name}`);
     res.status(200).json({
       success: true,
       message: '配方更新成功',
-      recipe: updatedRecipe
+      recipe: formattedRecipe
     });
   } catch (error) {
     logger.error(`更新配方失败: ${error.message}`);

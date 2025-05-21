@@ -52,6 +52,9 @@ const updateRoutes = require('./routes/updateRoutes');
 const recipeRoutes = require('./routes/recipeRoutes');
 const logRoutes = require('./routes/logRoutes');
 const ocrRoutes = require('./routes/ocrRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const stockInRoutes = require('./routes/stockInRoutes');
+const stockOutRoutes = require('./routes/stockOutRoutes');
 
 // 使用路由
 app.use('/api/status', statusRoutes);
@@ -59,6 +62,9 @@ app.use('/api/update', updateRoutes);
 app.use('/api/recipes', recipeRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/ocr', ocrRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/stock-in', stockInRoutes);
+app.use('/api/stock-out', stockOutRoutes);
 
 // 在生产环境中提供React静态文件
 if (process.env.NODE_ENV === 'production') {

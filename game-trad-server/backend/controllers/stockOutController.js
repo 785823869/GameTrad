@@ -382,6 +382,14 @@ exports.importStockOut = async (req, res) => {
     if (records.length > 0) {
       logger.info(`首条记录完整数据: ${JSON.stringify(records[0])}`);
       logger.info(`数据字段: ${Object.keys(records[0]).join(', ')}`);
+      // 特别记录单价字段的处理情况
+      if (records[0].unit_price) {
+        logger.info(`单价字段值: ${records[0].unit_price}, 类型: ${typeof records[0].unit_price}`);
+      } else if (records[0].price) {
+        logger.info(`price字段值: ${records[0].price}, 类型: ${typeof records[0].price}`);
+      } else {
+        logger.warn(`请求中未找到单价字段(unit_price)或价格字段(price)`);
+      }
     } else {
       logger.warn('收到空数组，没有数据可处理');
       return res.status(400).json({
@@ -450,11 +458,11 @@ exports.importStockOut = async (req, res) => {
         logger.info(`处理记录: ${JSON.stringify(record)}`);
         
         // 严格验证并转换数据
-        if (!record.item_name || record.quantity === undefined || record.unit_price === undefined) {
+        if (!record.item_name || record.quantity === undefined || (record.unit_price === undefined && record.price === undefined)) {
           const missingFields = [];
           if (!record.item_name) missingFields.push('item_name');
           if (record.quantity === undefined) missingFields.push('quantity');
-          if (record.unit_price === undefined) missingFields.push('unit_price');
+          if (record.unit_price === undefined && record.price === undefined) missingFields.push('unit_price/price');
           
           results.failed++;
           const errorMsg = `记录缺少必需字段: ${missingFields.join(', ')}`;
@@ -471,13 +479,20 @@ exports.importStockOut = async (req, res) => {
         let quantity, unitPrice, fee, totalAmount;
         try {
           quantity = Number(record.quantity);
-          unitPrice = Number(record.unit_price);
+          
+          // 特别处理单价字段，可能来自unit_price或price
+          unitPrice = record.unit_price !== undefined ? Number(record.unit_price) : 
+                      record.price !== undefined ? Number(record.price) : 0;
+          
+          // 记录单价处理结果
+          logger.info(`[单价处理] 原始单价/价格: ${record.unit_price || record.price}, 转换后: ${unitPrice}`);
+          
           fee = Number(record.fee || 0);
           
           // 检查是否是有效数字
           if (isNaN(quantity) || isNaN(unitPrice) || isNaN(fee)) {
             results.failed++;
-            const errorMsg = `数据包含无效数字: 数量=${record.quantity}, 单价=${record.unit_price}, 手续费=${record.fee}`;
+            const errorMsg = `数据包含无效数字: 数量=${record.quantity}, 单价=${unitPrice}, 手续费=${fee}`;
             logger.warn(errorMsg);
             results.errors.push(errorMsg);
             continue;

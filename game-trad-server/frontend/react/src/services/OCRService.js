@@ -326,62 +326,28 @@ class OCRService {
    */
   static async importOCRResults(type, data, requestId = null) {
     try {
-      // 启用调试模式
+      // 启用调试模式，详细记录数据处理过程
       const DEBUG = true;
       
-      // 如果没有传入requestId，生成一个唯一ID
+      // 生成唯一请求ID，如果没有提供
       if (!requestId) {
         requestId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
       }
       
-      // 防止重复导入 - 使用RequestID检查
-      if (window._lastOCRImportRequestId === requestId) {
-        console.warn(`OCRService: 检测到重复请求，拒绝处理，请求ID: ${requestId}`);
-        return { 
-          success: false, 
-          message: '检测到重复请求，已拒绝处理', 
-          _duplicateRequest: true 
-        };
-      }
-      
-      // 存储当前请求ID
-      window._lastOCRImportRequestId = requestId;
-      
+      // 记录原始数据
       if (DEBUG) {
-        console.log(`OCRService: 开始导入数据，类型: ${type}, 请求ID: ${requestId}`);
-        console.log(`OCRService: 数据类型: ${typeof data}`);
-        console.log(`OCRService: 是否为数组: ${Array.isArray(data)}`);
-        console.log(`OCRService: 数据长度: ${Array.isArray(data) ? data.length : 0}`);
-        if (Array.isArray(data) && data.length > 0) {
-          console.log(`OCRService: 首条数据: ${JSON.stringify(data[0])}`);
+        console.log(`OCRService: 开始处理导入数据 - 类型=${type}, 数量=${data.length}, 请求ID=${requestId}`);
+        if (data.length > 0) {
+          console.log(`OCRService: 首条数据示例: ${JSON.stringify(data[0])}`);
         }
       }
       
-      // 验证数据
-      if (!Array.isArray(data)) {
-        console.error('OCRService: 导入失败 - 数据不是数组');
-        return { success: false, message: '数据格式错误，应为数组' };
-      }
-      
-      if (data.length === 0) {
-        console.warn('OCRService: 导入失败 - 数据为空数组');
-        return { success: false, message: '没有数据可导入' };
-      }
-      
-      // 数据预处理 - 确保手续费一致处理
+      // 处理数据，确保数据格式正确
       const processedData = data.map(item => {
-        // 确保所有必要字段都存在
         const processed = { ...item };
         
-        // 保留请求ID（如果有）
-        if (item._requestId) {
-          processed._requestId = item._requestId;
-        } else if (requestId) {
-          processed._requestId = requestId;
-        }
-        
-        // 确保item_name是字符串
-        if (processed.item_name !== undefined) {
+        // 处理物品名称
+        if (processed.item_name) {
           processed.item_name = String(processed.item_name).trim();
         } else {
           console.warn('OCRService: 警告 - 记录缺少item_name字段');
@@ -397,23 +363,43 @@ class OCRService {
           }
         }
         
+        // 处理单价字段 - 确保每一步的计算过程都被正确记录和保存
+        let unitPrice = 0;
+        
         if (processed.unit_price !== undefined) {
-          processed.unit_price = Number(processed.unit_price);
-          if (isNaN(processed.unit_price)) {
+          unitPrice = Number(processed.unit_price);
+          if (isNaN(unitPrice)) {
             console.warn(`OCRService: 警告 - unit_price字段值无效: ${item.unit_price}`);
-            processed.unit_price = 0;
+            unitPrice = 0;
           }
         } else if (processed.price !== undefined) {
           // 兼容使用price字段
-          processed.unit_price = Number(processed.price);
-          if (isNaN(processed.unit_price)) {
+          unitPrice = Number(processed.price);
+          if (isNaN(unitPrice)) {
             console.warn(`OCRService: 警告 - price字段值无效: ${item.price}`);
-            processed.unit_price = 0;
+            unitPrice = 0;
           }
         }
         
-        // 确保price字段与unit_price保持一致
-        processed.price = processed.unit_price;
+        // 如果单价为0，但有总金额和数量，则计算单价
+        if (unitPrice === 0 && processed.total_amount && processed.quantity) {
+          const totalAmount = Number(processed.total_amount);
+          const quantity = Number(processed.quantity);
+          const fee = Number(processed.fee || 0);
+          
+          if (!isNaN(totalAmount) && !isNaN(quantity) && quantity > 0) {
+            unitPrice = (totalAmount + fee) / quantity;
+            console.log(`OCRService: 计算单价: (${totalAmount} + ${fee}) / ${quantity} = ${unitPrice}`);
+          }
+        }
+        
+        // 确保单价字段被设置并且是有效数字
+        processed.unit_price = unitPrice;
+        processed.price = unitPrice; // 同时设置price字段以保持一致
+        
+        if (DEBUG) {
+          console.log(`OCRService: 单价处理结果: ${unitPrice}`);
+        }
         
         // 确保手续费被正确处理
         if (processed.fee !== undefined) {

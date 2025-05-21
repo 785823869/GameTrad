@@ -76,7 +76,7 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
   // 识别结果状态
   const [recognizing, setRecognizing] = useState(false);
   const [ocrResults, setOcrResults] = useState([]);
-  const [currentOcrIndex, setCurrentOcrIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
   
@@ -97,7 +97,7 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
       setActiveStep(0);
       setImages([]);
       setOcrResults([]);
-      setCurrentOcrIndex(0);
+      setCurrentIndex(0);
       setProgress(0);
       setError(null);
       setShowRawText(false);
@@ -279,37 +279,72 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
     const total = images.length;
     let completed = 0;
     let allResults = [];
-    let errors = [];
     
     // 顺序处理每个图片
     for (let i = 0; i < images.length; i++) {
-      setCurrentOcrIndex(i);
+      setCurrentIndex(i);
       const image = images[i];
-      
       try {
-        // 调用OCR服务
         const response = await OCRService.recognizeImage(image.file);
         
         if (response.success && response.data) {
-          // 添加交易特定字段
+          // 处理数据，确保单价字段被正确处理
+          const processedData = { ...response.data };
+          
+          // 安全转换数值字段
+          const quantity = typeof processedData.quantity === 'string' ? 
+            parseInt(processedData.quantity, 10) : (processedData.quantity || 0);
+          
+          // 处理单价 - 可能来自unit_price或price字段
+          let unitPrice = 0;
+          if (processedData.unit_price !== undefined) {
+            unitPrice = typeof processedData.unit_price === 'string' ? 
+              parseFloat(processedData.unit_price) : processedData.unit_price;
+          } else if (processedData.price !== undefined) {
+            unitPrice = typeof processedData.price === 'string' ?
+              parseFloat(processedData.price) : processedData.price;
+          }
+          
+          // 计算总金额
+          const fee = typeof processedData.fee === 'string' ? 
+            parseFloat(processedData.fee) : (processedData.fee || 0);
+          
+          let totalAmount = typeof processedData.total_amount === 'string' ? 
+            parseFloat(processedData.total_amount) : (processedData.total_amount || 0);
+          
+          // 如果单价为0但有总金额和数量，计算单价
+          if (unitPrice === 0 && totalAmount > 0 && quantity > 0) {
+            unitPrice = (totalAmount + fee) / quantity;
+            console.log(`TransactionOCRDialog: 计算单价 = (${totalAmount} + ${fee}) / ${quantity} = ${unitPrice}`);
+          } 
+          // 如果总金额为0但有单价和数量，计算总金额
+          else if (totalAmount === 0 && unitPrice > 0 && quantity > 0) {
+            totalAmount = (quantity * unitPrice) - fee;
+            console.log(`TransactionOCRDialog: 计算总金额 = (${quantity} * ${unitPrice}) - ${fee} = ${totalAmount}`);
+          }
+          
+          // 添加交易特定字段，确保单价和总金额字段正确
           const enhancedData = {
-            ...response.data,
+            ...processedData,
             transaction_type: transactionType,
             platform: platform,
-            // 确保使用unit_price作为主要价格字段
-            unit_price: response.data.unit_price || response.data.price || 0,
-            price: response.data.unit_price || response.data.price || 0,
+            unit_price: unitPrice,
+            price: unitPrice, // 同时更新price字段以保持一致
+            fee: fee,
+            total_amount: totalAmount,
+            quantity: quantity,
             originalImage: image.url,
             rawText: response.rawText || '无原始识别文本'
           };
           
+          console.log(`TransactionOCRDialog: 处理后的OCR数据:`, enhancedData);
+          
           allResults.push(enhancedData);
         } else {
-          errors.push(`图片 ${i + 1}: ${response.message || '识别失败'}`);
+          console.warn(`图片 ${i + 1} 识别失败:`, response.message || '未知错误');
         }
       } catch (error) {
-        console.error('OCR识别错误:', error);
-        errors.push(`图片 ${i + 1}: 识别出错 - ${error.message || '未知错误'}`);
+        console.error(`图片 ${i + 1} 处理出错:`, error);
       }
       
       completed++;
@@ -317,17 +352,14 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
       setProgress(newProgress);
     }
     
-    setOcrResults(allResults);
-    setRecognizing(false);
-    
     if (allResults.length > 0) {
-      if (errors.length > 0) {
-        setError(`部分图片识别失败: ${errors.join('; ')}`);
-      }
+      setOcrResults(allResults);
       setActiveStep(1);
     } else {
-      setError(`所有图片识别失败: ${errors.join('; ')}`);
+      setError('所有图片都识别失败');
     }
+    
+    setRecognizing(false);
   };
   
   // 处理导入
@@ -618,7 +650,7 @@ const TransactionOCRDialog = ({ open, onClose, onImport, title = "交易OCR识�
                   disabled={recognizing}
                   startIcon={recognizing ? <CircularProgress size={20} /> : null}
                 >
-                  {recognizing ? `识别中 (${currentOcrIndex + 1}/${images.length})` : '开始识别'}
+                  {recognizing ? `识别中 (${currentIndex + 1}/${images.length})` : '开始识别'}
                 </Button>
               )}
             </Box>

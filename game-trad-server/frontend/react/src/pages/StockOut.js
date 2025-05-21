@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Typography,
@@ -25,7 +25,19 @@ import {
   CircularProgress,
   Alert,
   Tooltip,
-  Snackbar
+  Snackbar,
+  Checkbox,
+  FormControlLabel,
+  Collapse,
+  Card,
+  CardContent,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  Badge,
+  Stack
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -33,12 +45,21 @@ import {
   Refresh as RefreshIcon,
   CloudUpload as ImportIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  FilterList as FilterIcon,
+  DeleteSweep as DeleteSweepIcon,
+  ClearAll as ClearAllIcon,
+  FilterAlt as FilterAltIcon,
+  CalendarMonth as CalendarIcon
 } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import StockOutService from '../services/StockOutService';  // 引入服务
 import { Link } from 'react-router-dom';
 import OCRDialog from '../components/OCRDialog'; // 导入OCR对话框组件
 import OCRService from '../services/OCRService';
+
+// 调试模式常量 - 全局定义
+const DEBUG = true;
 
 const StockOut = () => {
   // 状态
@@ -60,37 +81,45 @@ const StockOut = () => {
     severity: 'info'
   });
   
-  // 获取出库数据
-  useEffect(() => {
-    fetchStockOutData();
-  }, []);
+  // 多选相关状态
+  const [selected, setSelected] = useState([]);
+  const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false);
   
-  // 筛选数据
-  useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredData(stockOutData);
-    } else {
-      const lowercasedFilter = searchTerm.toLowerCase();
-      const filtered = stockOutData.filter(item => 
-        item.itemName.toLowerCase().includes(lowercasedFilter)
-      );
-      setFilteredData(filtered);
-    }
-    
-    // 计算统计数据
-    calculateStats();
-  }, [searchTerm, stockOutData]);
+  // 高级筛选相关状态
+  const [showFilter, setShowFilter] = useState(false);
+  const [filters, setFilters] = useState({
+    dateRange: {
+      start: null,
+      end: null
+    },
+    quantityRange: [0, 10000],
+    priceRange: [0, 10000],
+    totalAmountRange: [0, 1000000],
+    platform: '',
+    hasNote: false
+  });
+  const [activeFilterCount, setActiveFilterCount] = useState(0);
   
   // 获取出库数据
-  const fetchStockOutData = async () => {
+  const fetchStockOutData = useCallback(async () => {
     setLoading(true);
     try {
-      // 控制是否输出详细日志
-      const DEBUG = true;
+      // 使用全局DEBUG常量
       
       if (DEBUG) console.log('正在请求出库数据...');
       const data = await StockOutService.getAll();
-      if (DEBUG) console.log('出库API响应:', data);
+      if (DEBUG) {
+        console.log('出库API响应:', data);
+        console.log("原始数据类型:", typeof data);
+        console.log("原始数据是否为数组:", Array.isArray(data));
+        console.log("原始数据长度:", data ? data.length : 0);
+        
+        // 如果有数据，查看第一条记录的结构
+        if (Array.isArray(data) && data.length > 0) {
+          console.log("第一条记录结构:", JSON.stringify(data[0]));
+          console.log("第一条记录字段:", Object.keys(data[0]));
+        }
+      }
       
       if (!data) {
         console.error('API响应中没有data字段');
@@ -110,7 +139,10 @@ const StockOut = () => {
       // 格式化响应数据，增强数据处理和验证
       const formattedData = data.map((item, index) => {
         // 只在DEBUG模式下记录处理的数据
-        if (DEBUG && index < 5) console.log(`处理出库记录 ${index}:`, item); // 仅记录前5条避免日志过长
+        if (DEBUG) {
+          console.log(`处理出库记录 ${index} (ID=${item.id || 'unknown'}):`, JSON.stringify(item));
+          console.log(`记录 ${index} 字段:`, Object.keys(item));
+        }
         
         // 检查是否是有效对象
         if (!item) {
@@ -126,31 +158,42 @@ const StockOut = () => {
         // 处理数组或对象格式的数据
         if (Array.isArray(item)) {
           itemName = item[1] || '';
+          if (DEBUG) console.log(`记录 ${index}: 数组格式数据, 使用索引1作为名称:`, itemName);
         } else {
+          // 优先使用item_name（后端格式），然后尝试itemName（前端格式）
           itemName = item.item_name || item.itemName || '';
+          if (DEBUG) console.log(`记录 ${index}: 物品名称:`, itemName);
         }
         // 如果物品名称为空，使用占位符
         if (!itemName) {
           itemName = `物品_${Math.random().toString(36).substr(2, 5)}`;
+          if (DEBUG) console.log(`记录 ${index}: 使用自动生成的名称:`, itemName);
         }
         
         // 安全地处理日期
         let transactionTime;
         try {
-          const rawDate = Array.isArray(item) ? item[2] : item.transaction_time;
+          // 优先使用transaction_time（后端格式）
+          const rawDate = Array.isArray(item) ? item[2] : (item.transaction_time || item.transactionTime);
+          if (DEBUG) console.log(`记录 ${index}: 原始日期值:`, rawDate);
+          
           if (rawDate instanceof Date) {
             transactionTime = rawDate;
+            if (DEBUG) console.log(`记录 ${index}: 日期已是Date对象:`, transactionTime);
           } else if (typeof rawDate === 'string') {
             transactionTime = new Date(rawDate);
             if (isNaN(transactionTime.getTime())) {
-              if (DEBUG) console.warn(`无效日期格式: ${rawDate}`);
+              if (DEBUG) console.warn(`记录 ${index}: 无效日期格式:`, rawDate);
               transactionTime = new Date();
+            } else {
+              if (DEBUG) console.log(`记录 ${index}: 日期转换成功:`, transactionTime);
             }
           } else {
+            if (DEBUG) console.warn(`记录 ${index}: 缺少日期值:`, rawDate);
             transactionTime = new Date();
           }
         } catch (err) {
-          if (DEBUG) console.error(`日期解析错误: ${err.message}`);
+          if (DEBUG) console.error(`记录 ${index}: 日期解析错误:`, err.message);
           transactionTime = new Date();
         }
         
@@ -162,20 +205,30 @@ const StockOut = () => {
           quantity = Array.isArray(item) ? 
             Number(item[3] || 0) : 
             Number(item.quantity || 0);
-          if (isNaN(quantity)) quantity = 0;
+          if (isNaN(quantity)) {
+            if (DEBUG) console.warn(`记录 ${index}: 数量无效，设为0`);
+            quantity = 0;
+          } else {
+            if (DEBUG) console.log(`记录 ${index}: 数量有效:`, quantity);
+          }
         } catch (e) {
-          if (DEBUG) console.error(`数量解析错误:`, e);
+          if (DEBUG) console.error(`记录 ${index}: 数量解析错误:`, e);
           quantity = 0;
         }
         
-        // 处理单价
+        // 处理单价 - 优先从unit_price获取（后端格式）
         try {
           unitPrice = Array.isArray(item) ? 
             Number(item[4] || 0) : 
-            Number(item.unit_price || 0);
-          if (isNaN(unitPrice)) unitPrice = 0;
+            Number(item.unit_price || item.unitPrice || 0);
+          if (isNaN(unitPrice)) {
+            if (DEBUG) console.warn(`记录 ${index}: 单价无效，设为0`);
+            unitPrice = 0;
+          } else {
+            if (DEBUG) console.log(`记录 ${index}: 单价有效:`, unitPrice);
+          }
         } catch (e) {
-          if (DEBUG) console.error(`单价解析错误:`, e);
+          if (DEBUG) console.error(`记录 ${index}: 单价解析错误:`, e);
           unitPrice = 0;
         }
         
@@ -184,23 +237,31 @@ const StockOut = () => {
           fee = Array.isArray(item) ? 
             Number(item[5] || 0) : 
             Number(item.fee || 0);
-          if (isNaN(fee)) fee = 0;
+          if (isNaN(fee)) {
+            if (DEBUG) console.warn(`记录 ${index}: 手续费无效，设为0`);
+            fee = 0;
+          } else {
+            if (DEBUG) console.log(`记录 ${index}: 手续费有效:`, fee);
+          }
         } catch (e) {
-          if (DEBUG) console.error(`手续费解析错误:`, e);
+          if (DEBUG) console.error(`记录 ${index}: 手续费解析错误:`, e);
           fee = 0;
         }
         
-        // 处理总金额 - 总金额 = 数量 * 单价 - 手续费
+        // 处理总金额 - 优先从total_amount获取（后端格式）
         try {
           totalAmount = Array.isArray(item) ? 
             Number(item[6] || 0) : 
-            Number(item.total_amount || 0);
+            Number(item.total_amount || item.totalAmount || 0);
           if (isNaN(totalAmount)) {
             // 如果总金额无效但有其他数据，计算总金额
             totalAmount = quantity * unitPrice - fee;
+            if (DEBUG) console.log(`记录 ${index}: 总金额无效，计算得到:`, totalAmount);
+          } else {
+            if (DEBUG) console.log(`记录 ${index}: 总金额有效:`, totalAmount);
           }
         } catch (e) {
-          if (DEBUG) console.error(`总金额解析错误:`, e);
+          if (DEBUG) console.error(`记录 ${index}: 总金额解析错误:`, e);
           totalAmount = 0;
         }
         
@@ -209,7 +270,7 @@ const StockOut = () => {
           (item[9] || '') : 
           (item.note || '');
         
-        return {
+        const result = {
           id,
           itemName,
           transactionTime,
@@ -219,16 +280,22 @@ const StockOut = () => {
           totalAmount,
           note
         };
+        
+        if (DEBUG) console.log(`记录 ${index}: 转换结果:`, result);
+        return result;
       }).filter(item => item !== null);  // 过滤掉无效数据
 
       // 按交易时间倒序排序，最新的记录显示在最前面
       formattedData.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
       
       if (DEBUG) {
-        console.log(`原始数据数量: ${formattedData.length}`);
+        console.log(`原始数据数量: ${data.length}`);
+        console.log(`有效转换数据数量: ${formattedData.length}`);
+        if (formattedData.length > 0) {
+          console.log('格式化后的出库数据示例:', formattedData.slice(0, 3));
+        }
       }
       
-      if (DEBUG) console.log('格式化后的出库数据:', formattedData.slice(0, 3));  // 只显示前3条避免日志过长
       setStockOutData(formattedData);
       setError(null);
     } catch (err) {
@@ -248,26 +315,179 @@ const StockOut = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
   
-  // 计算统计数据
-  const calculateStats = () => {
-    if (!filteredData || filteredData.length === 0) {
+  // 计算统计数据 - 接受可选的已筛选数据参数
+  const calculateStats = useCallback((data = filteredData) => {
+    if (!data || data.length === 0) {
       setTotalIncome(0);
       setTotalQuantity(0);
       return;
     }
     
-    const income = filteredData.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0);
-    const quantity = filteredData.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    const income = data.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0);
+    const quantity = data.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
     
     setTotalIncome(income);
     setTotalQuantity(quantity);
-  };
+  }, [filteredData]);
+  
+  // 获取出库数据
+  useEffect(() => {
+    fetchStockOutData();
+  }, [fetchStockOutData]);
+  
+  // 筛选数据
+  useEffect(() => {
+    const startTime = performance.now();
+    if (DEBUG) console.log('开始应用筛选条件...');
+    
+    let filtered = stockOutData;
+    if (DEBUG) console.log(`原始数据数量: ${filtered.length}`);
+    
+    // 搜索筛选 - 物品名称
+    if (searchTerm.trim() !== '') {
+      const lowercasedFilter = searchTerm.toLowerCase();
+      filtered = filtered.filter(item => 
+        item.itemName.toLowerCase().includes(lowercasedFilter)
+      );
+      if (DEBUG) console.log(`应用名称搜索后数据数量: ${filtered.length}`);
+    }
+    
+    // 高级筛选 - 日期范围
+    if (filters.dateRange.start || filters.dateRange.end) {
+      filtered = filtered.filter(item => {
+        const itemDate = new Date(item.transactionTime);
+        
+        if (filters.dateRange.start && filters.dateRange.end) {
+          return itemDate >= filters.dateRange.start && itemDate <= filters.dateRange.end;
+        } else if (filters.dateRange.start) {
+          return itemDate >= filters.dateRange.start;
+        } else if (filters.dateRange.end) {
+          return itemDate <= filters.dateRange.end;
+        }
+        
+        return true;
+      });
+      if (DEBUG) console.log(`应用日期筛选后数据数量: ${filtered.length}`);
+    }
+    
+    // 高级筛选 - 数量范围
+    filtered = filtered.filter(item => 
+      item.quantity >= filters.quantityRange[0] && 
+      item.quantity <= filters.quantityRange[1]
+    );
+    if (DEBUG) console.log(`应用数量筛选后数据数量: ${filtered.length}`);
+    
+    // 高级筛选 - 价格范围 (单价)
+    filtered = filtered.filter(item => 
+      item.unitPrice >= filters.priceRange[0] && 
+      item.unitPrice <= filters.priceRange[1]
+    );
+    if (DEBUG) console.log(`应用单价筛选后数据数量: ${filtered.length}`);
+    
+    // 高级筛选 - 总金额范围
+    filtered = filtered.filter(item => 
+      item.totalAmount >= filters.totalAmountRange[0] && 
+      item.totalAmount <= filters.totalAmountRange[1]
+    );
+    if (DEBUG) console.log(`应用总金额筛选后数据数量: ${filtered.length}`);
+    
+    // 高级筛选 - 备注筛选
+    if (filters.hasNote) {
+      filtered = filtered.filter(item => 
+        item.note && item.note.trim() !== ''
+      );
+      if (DEBUG) console.log(`应用备注筛选后数据数量: ${filtered.length}`);
+    }
+    
+    console.log(`应用所有筛选后的数据数量: ${filtered.length}`);
+    setFilteredData(filtered);
+    
+    // 计算统计数据
+    calculateStats(filtered);
+    
+    // 计算活跃筛选器数量
+    let count = 0;
+    if (filters.dateRange.start || filters.dateRange.end) count++;
+    if (filters.quantityRange[0] > 0 || filters.quantityRange[1] < 10000) count++;
+    if (filters.priceRange[0] > 0 || filters.priceRange[1] < 10000) count++;
+    if (filters.totalAmountRange[0] > 0 || filters.totalAmountRange[1] < 1000000) count++;
+    if (filters.platform) count++;
+    if (filters.hasNote) count++;
+    
+    setActiveFilterCount(count);
+    
+    if (DEBUG) {
+      const endTime = performance.now();
+      console.log(`筛选操作完成，耗时: ${(endTime - startTime).toFixed(2)}ms`);
+    }
+    
+  }, [searchTerm, stockOutData, filters, calculateStats]);
   
   // 处理搜索
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
+    setPage(0);
+  };
+  
+  // 处理高级筛选开关
+  const toggleFilter = () => {
+    setShowFilter(!showFilter);
+  };
+  
+  // 处理日期筛选变更
+  const handleDateFilterChange = (type, date) => {
+    setFilters(prev => ({
+      ...prev,
+      dateRange: {
+        ...prev.dateRange,
+        [type]: date
+      }
+    }));
+    setPage(0);
+  };
+  
+  // 处理范围筛选变更
+  const handleRangeFilterChange = (type, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [type]: value
+    }));
+    setPage(0);
+  };
+  
+  // 处理平台筛选变更
+  const handlePlatformFilterChange = (event) => {
+    setFilters(prev => ({
+      ...prev,
+      platform: event.target.value
+    }));
+    setPage(0);
+  };
+  
+  // 处理备注筛选变更
+  const handleNoteFilterChange = (event) => {
+    setFilters(prev => ({
+      ...prev,
+      hasNote: event.target.checked
+    }));
+    setPage(0);
+  };
+  
+  // 重置所有筛选条件
+  const resetFilters = () => {
+    setFilters({
+      dateRange: {
+        start: null,
+        end: null
+      },
+      quantityRange: [0, 10000],
+      priceRange: [0, 10000],
+      totalAmountRange: [0, 1000000],
+      platform: '',
+      hasNote: false
+    });
     setPage(0);
   };
   
@@ -299,8 +519,7 @@ const StockOut = () => {
     if (!selectedItem) return;
     
     try {
-      // 控制是否输出详细日志
-      const DEBUG = false;
+      // 使用全局DEBUG常量
       
       // 检查ID是否看起来像临时ID（使用Math.random生成的）
       const isTemporaryId = typeof selectedItem.id === 'string' && selectedItem.id.length === 9;
@@ -344,6 +563,115 @@ const StockOut = () => {
     }
   };
   
+  // 多选功能 - 处理单个项目选择
+  const handleSelect = (event, id) => {
+    const selectedIndex = selected.indexOf(id);
+    let newSelected = [];
+
+    if (selectedIndex === -1) {
+      // 如果未选中，则添加到选中列表
+      newSelected = [...selected, id];
+    } else {
+      // 如果已选中，则从选中列表中移除
+      newSelected = selected.filter(itemId => itemId !== id);
+    }
+
+    setSelected(newSelected);
+  };
+
+  // 多选功能 - 处理全选/取消全选
+  const handleSelectAll = (event) => {
+    if (event.target.checked) {
+      // 获取当前页的所有项目ID
+      const currentPageIds = filteredData
+        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+        .map(item => item.id);
+      setSelected(currentPageIds);
+    } else {
+      setSelected([]);
+    }
+  };
+
+  // 多选功能 - 检查项目是否被选中
+  const isSelected = (id) => selected.indexOf(id) !== -1;
+
+  // 多选功能 - 打开批量删除对话框
+  const handleOpenBatchDeleteDialog = () => {
+    if (selected.length === 0) {
+      showNotification('请先选择要删除的记录', 'warning');
+      return;
+    }
+    setBatchDeleteDialogOpen(true);
+  };
+
+  // 多选功能 - 关闭批量删除对话框
+  const handleCloseBatchDeleteDialog = () => {
+    setBatchDeleteDialogOpen(false);
+  };
+
+  // 多选功能 - 确认批量删除
+  const handleConfirmBatchDelete = async () => {
+    try {
+      // 使用全局DEBUG常量
+      
+      if (DEBUG) console.log(`准备批量删除${selected.length}条记录...`);
+      
+      // 创建删除操作的Promise数组
+      const deletePromises = [];
+      const failedIds = [];
+      
+      // 对于临时ID（前端生成但未保存到数据库的记录），直接从前端状态移除
+      // 对于实际数据库ID，调用API删除
+      for (const id of selected) {
+        const isTemporaryId = typeof id === 'string' && id.length === 9;
+        
+        if (isTemporaryId) {
+          if (DEBUG) console.log(`删除临时记录，ID: ${id}`);
+          // 临时ID不需要API调用，会在最后一次性从前端状态移除
+        } else {
+          // 调用API删除实际数据库记录
+          try {
+            const deletePromise = StockOutService.delete(id)
+              .catch(err => {
+                console.error(`删除ID=${id}的记录失败:`, err);
+                failedIds.push(id);
+                return { success: false, id };
+              });
+            
+            deletePromises.push(deletePromise);
+          } catch (e) {
+            console.error(`为ID=${id}创建删除请求失败:`, e);
+            failedIds.push(id);
+          }
+        }
+      }
+      
+      // 等待所有删除操作完成
+      if (deletePromises.length > 0) {
+        await Promise.all(deletePromises);
+      }
+      
+      // 从前端状态中移除所有已选记录
+      setStockOutData(prevData => prevData.filter(item => !selected.includes(item.id)));
+      
+      // 显示操作结果
+      if (failedIds.length === 0) {
+        showNotification(`成功删除${selected.length}条记录`, 'success');
+      } else {
+        showNotification(`删除操作部分成功，${failedIds.length}条记录删除失败`, 'warning');
+      }
+      
+      // 清空选中状态
+      setSelected([]);
+      handleCloseBatchDeleteDialog();
+      
+    } catch (err) {
+      console.error('批量删除操作失败:', err);
+      showNotification('批量删除操作失败，请重试', 'error');
+      handleCloseBatchDeleteDialog();
+    }
+  };
+  
   // 数字格式化
   const formatNumber = (num) => {
     return new Intl.NumberFormat('zh-CN', {
@@ -367,6 +695,7 @@ const StockOut = () => {
   // 处理刷新
   const handleRefresh = () => {
     fetchStockOutData();
+    setSelected([]); // 刷新时清空选中状态
   };
   
   // 显示通知
@@ -398,8 +727,7 @@ const StockOut = () => {
   // 处理OCR导入
   const handleOcrImport = async (ocrResults) => {
     try {
-      // 启用debug模式帮助排查问题
-      const DEBUG = true;
+      // 使用全局DEBUG常量
       
       if (DEBUG) console.log(`StockOut: 收到OCR导入结果:`, ocrResults);
       
@@ -637,22 +965,47 @@ const StockOut = () => {
       
       {/* 操作栏 */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <TextField
-          placeholder="搜索物品..."
-          variant="outlined"
-          size="small"
-          value={searchTerm}
-          onChange={handleSearchChange}
-          sx={{ width: 280 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-        />
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <TextField
+            placeholder="搜索物品..."
+            variant="outlined"
+            size="small"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            sx={{ width: 280 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <Button
+            size="small"
+            variant="outlined"
+            color={activeFilterCount > 0 ? "primary" : "inherit"}
+            startIcon={activeFilterCount > 0 ? <Badge badgeContent={activeFilterCount} color="primary"><FilterAltIcon /></Badge> : <FilterIcon />}
+            onClick={toggleFilter}
+            sx={{ ml: 1 }}
+          >
+            高级筛选
+          </Button>
+        </Box>
         <Box>
+          {/* 批量删除按钮 */}
+          {selected.length > 0 && (
+            <Button 
+              variant="outlined" 
+              color="error"
+              startIcon={<DeleteSweepIcon />}
+              onClick={handleOpenBatchDeleteDialog}
+              sx={{ mr: 1 }}
+            >
+              删除选中 ({selected.length})
+            </Button>
+          )}
+          
           <Button 
             variant="outlined" 
             startIcon={<RefreshIcon />}
@@ -683,6 +1036,137 @@ const StockOut = () => {
           </Button>
         </Box>
       </Box>
+      
+      {/* 高级筛选面板 */}
+      <Collapse in={showFilter} sx={{ mb: 2 }}>
+        <Card variant="outlined">
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                高级筛选
+              </Typography>
+              <Button 
+                size="small" 
+                variant="outlined" 
+                startIcon={<ClearAllIcon />}
+                onClick={resetFilters}
+              >
+                重置筛选
+              </Button>
+            </Box>
+            
+            <Grid container spacing={3}>
+              {/* 日期范围筛选 */}
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CalendarIcon fontSize="small" sx={{ mr: 1 }} />
+                  日期范围
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <DatePicker 
+                    label="开始日期" 
+                    value={filters.dateRange.start}
+                    onChange={(date) => handleDateFilterChange('start', date)}
+                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
+                    maxDate={filters.dateRange.end || undefined}
+                  />
+                  <DatePicker 
+                    label="结束日期" 
+                    value={filters.dateRange.end}
+                    onChange={(date) => handleDateFilterChange('end', date)}
+                    renderInput={(params) => <TextField {...params} size="small" fullWidth />}
+                    minDate={filters.dateRange.start || undefined}
+                  />
+                </Stack>
+              </Grid>
+              
+              {/* 平台筛选 */}
+              <Grid item xs={12} md={3}>
+                <Typography variant="subtitle2" gutterBottom>
+                  平台
+                </Typography>
+                <FormControl fullWidth size="small">
+                  <InputLabel id="platform-filter-label">选择平台</InputLabel>
+                  <Select
+                    labelId="platform-filter-label"
+                    id="platform-filter"
+                    value={filters.platform}
+                    label="选择平台"
+                    onChange={handlePlatformFilterChange}
+                  >
+                    <MenuItem value="">所有平台</MenuItem>
+                    <MenuItem value="淘宝">淘宝</MenuItem>
+                    <MenuItem value="闲鱼">闲鱼</MenuItem>
+                    <MenuItem value="微信">微信</MenuItem>
+                    <MenuItem value="Steam">Steam</MenuItem>
+                    <MenuItem value="其他">其他</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              {/* 备注筛选 */}
+              <Grid item xs={12} md={3}>
+                <Typography variant="subtitle2" gutterBottom>
+                  其他筛选
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox 
+                      checked={filters.hasNote} 
+                      onChange={handleNoteFilterChange}
+                      size="small"
+                    />
+                  }
+                  label="仅显示有备注的记录"
+                />
+              </Grid>
+              
+              {/* 数量范围筛选 */}
+              <Grid item xs={12} md={4}>
+                <Typography variant="subtitle2" gutterBottom>
+                  数量范围: {filters.quantityRange[0]} - {filters.quantityRange[1]}
+                </Typography>
+                <Slider
+                  value={filters.quantityRange}
+                  onChange={(e, newValue) => handleRangeFilterChange('quantityRange', newValue)}
+                  valueLabelDisplay="auto"
+                  min={0}
+                  max={10000}
+                />
+              </Grid>
+              
+              {/* 单价范围筛选 */}
+              <Grid item xs={12} md={4}>
+                <Typography variant="subtitle2" gutterBottom>
+                  单价范围: ¥{filters.priceRange[0]} - ¥{filters.priceRange[1]}
+                </Typography>
+                <Slider
+                  value={filters.priceRange}
+                  onChange={(e, newValue) => handleRangeFilterChange('priceRange', newValue)}
+                  valueLabelDisplay="auto"
+                  min={0}
+                  max={10000}
+                />
+              </Grid>
+              
+              {/* 总金额范围筛选 */}
+              <Grid item xs={12} md={4}>
+                <Typography variant="subtitle2" gutterBottom>
+                  总金额范围: ¥{filters.totalAmountRange[0]} - ¥{filters.totalAmountRange[1]}
+                </Typography>
+                <Slider
+                  value={filters.totalAmountRange}
+                  onChange={(e, newValue) => handleRangeFilterChange('totalAmountRange', newValue)}
+                  valueLabelDisplay="auto"
+                  min={0}
+                  max={1000000}
+                  step={1000}
+                />
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      </Collapse>
       
       {/* 出库表格 */}
       <Paper sx={{ 
@@ -723,6 +1207,36 @@ const StockOut = () => {
               <Table stickyHeader aria-label="出库记录表格">
                 <TableHead>
                   <TableRow>
+                    {/* 多选复选框列 */}
+                    <TableCell
+                      padding="checkbox"
+                      sx={{ 
+                        fontWeight: 'bold', 
+                        backgroundColor: 'background.default',
+                        borderBottom: '2px solid',
+                        borderBottomColor: 'primary.light',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        width: '48px'
+                      }}
+                    >
+                      <Checkbox
+                        indeterminate={
+                          selected.length > 0 && 
+                          selected.length < filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).length
+                        }
+                        checked={
+                          filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).length > 0 &&
+                          selected.length === filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).length
+                        }
+                        onChange={handleSelectAll}
+                        inputProps={{ 'aria-label': '全选' }}
+                      />
+                    </TableCell>
+                    
                     <TableCell 
                       sx={{ 
                         fontWeight: 'bold', 
@@ -861,91 +1375,115 @@ const StockOut = () => {
                 <TableBody>
                   {filteredData
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((row, index) => (
-                      <TableRow 
-                        key={row.id} 
-                        hover
-                        sx={{ 
-                          "&:nth-of-type(odd)": { 
-                            backgroundColor: "rgba(0, 0, 0, 0.02)" 
-                          },
-                          "&:hover": {
-                            backgroundColor: "rgba(0, 0, 0, 0.04)"
-                          },
-                          // 为新导入的数据添加高亮样式
-                          ...(row.isNewImport && {
-                            backgroundColor: "rgba(255, 244, 229, 0.7)",
+                    .map((row, index) => {
+                      const isItemSelected = isSelected(row.id);
+                      
+                      return (
+                        <TableRow 
+                          key={row.id} 
+                          hover
+                          selected={isItemSelected}
+                          sx={{ 
                             "&:nth-of-type(odd)": { 
-                              backgroundColor: "rgba(255, 244, 229, 0.5)" 
+                              backgroundColor: "rgba(0, 0, 0, 0.02)" 
                             },
                             "&:hover": {
-                              backgroundColor: "rgba(255, 244, 229, 0.9)"
-                            }
-                          })
-                        }}
-                      >
-                        <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          <Tooltip title={row.itemName} placement="top">
-                            <span>
-                              {row.itemName}
-                              {row.isNewImport && (
-                                <Chip 
-                                  size="small" 
-                                  label="新" 
-                                  color="warning" 
-                                  variant="outlined"
-                                  sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
-                                />
-                              )}
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.transactionTime)}</TableCell>
-                        <TableCell align="right">{row.quantity.toLocaleString()}</TableCell>
-                        <TableCell align="right" sx={{ color: 'text.primary', fontWeight: 500 }}>¥{formatNumber(row.unitPrice)}</TableCell>
-                        <TableCell align="right" sx={{ color: 'warning.main', fontWeight: 500 }}>¥{formatNumber(row.fee)}</TableCell>
-                        <TableCell align="right" sx={{ color: 'success.main', fontWeight: 500 }}>¥{formatNumber(row.totalAmount)}</TableCell>
-                        <TableCell sx={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {row.note && (
-                            <Tooltip title={row.note} placement="top">
-                              <span>{row.note}</span>
+                              backgroundColor: "rgba(0, 0, 0, 0.04)"
+                            },
+                            // 为新导入的数据添加高亮样式
+                            ...(row.isNewImport && {
+                              backgroundColor: "rgba(255, 244, 229, 0.7)",
+                              "&:nth-of-type(odd)": { 
+                                backgroundColor: "rgba(255, 244, 229, 0.5)" 
+                              },
+                              "&:hover": {
+                                backgroundColor: "rgba(255, 244, 229, 0.9)"
+                              }
+                            }),
+                            // 为选中的行添加高亮样式
+                            ...(isItemSelected && {
+                              backgroundColor: "rgba(25, 118, 210, 0.08)",
+                              "&:nth-of-type(odd)": { 
+                                backgroundColor: "rgba(25, 118, 210, 0.12)" 
+                              },
+                              "&:hover": {
+                                backgroundColor: "rgba(25, 118, 210, 0.16)"
+                              }
+                            })
+                          }}
+                        >
+                          {/* 复选框单元格 */}
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={isItemSelected}
+                              onChange={(event) => handleSelect(event, row.id)}
+                              inputProps={{ 'aria-labelledby': `enhanced-table-checkbox-${index}` }}
+                            />
+                          </TableCell>
+                          
+                          <TableCell component="th" scope="row" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Tooltip title={row.itemName} placement="top">
+                              <span>
+                                {row.itemName}
+                                {row.isNewImport && (
+                                  <Chip 
+                                    size="small" 
+                                    label="新" 
+                                    color="warning" 
+                                    variant="outlined"
+                                    sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                                  />
+                                )}
+                              </span>
                             </Tooltip>
-                          )}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Tooltip title="编辑">
-                            <IconButton 
-                              size="small" 
-                              color="primary"
-                              sx={{
-                                backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                                '&:hover': {
-                                  backgroundColor: 'rgba(25, 118, 210, 0.16)',
-                                }
-                              }}
-                            >
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="删除">
-                            <IconButton 
-                              size="small" 
-                              color="error"
-                              onClick={() => handleOpenDeleteDialog(row)}
-                              sx={{
-                                ml: 1,
-                                backgroundColor: 'rgba(211, 47, 47, 0.08)',
-                                '&:hover': {
-                                  backgroundColor: 'rgba(211, 47, 47, 0.16)',
-                                }
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.transactionTime)}</TableCell>
+                          <TableCell align="right">{row.quantity.toLocaleString()}</TableCell>
+                          <TableCell align="right" sx={{ color: 'text.primary', fontWeight: 500 }}>¥{formatNumber(row.unitPrice)}</TableCell>
+                          <TableCell align="right" sx={{ color: 'warning.main', fontWeight: 500 }}>¥{formatNumber(row.fee)}</TableCell>
+                          <TableCell align="right" sx={{ color: 'success.main', fontWeight: 500 }}>¥{formatNumber(row.totalAmount)}</TableCell>
+                          <TableCell sx={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.note && (
+                              <Tooltip title={row.note} placement="top">
+                                <span>{row.note}</span>
+                              </Tooltip>
+                            )}
+                          </TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="编辑">
+                              <IconButton 
+                                size="small" 
+                                color="primary"
+                                sx={{
+                                  backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(25, 118, 210, 0.16)',
+                                  }
+                                }}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="删除">
+                              <IconButton 
+                                size="small" 
+                                color="error"
+                                onClick={() => handleOpenDeleteDialog(row)}
+                                sx={{
+                                  ml: 1,
+                                  backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(211, 47, 47, 0.16)',
+                                  }
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   {filteredData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
@@ -992,6 +1530,27 @@ const StockOut = () => {
           </Button>
           <Button onClick={handleConfirmDelete} color="error" variant="contained">
             删除
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* 批量删除确认对话框 */}
+      <Dialog
+        open={batchDeleteDialogOpen}
+        onClose={handleCloseBatchDeleteDialog}
+      >
+        <DialogTitle>批量删除确认</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            确定要删除选中的 {selected.length} 条出库记录吗？此操作无法撤销。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseBatchDeleteDialog} color="primary">
+            取消
+          </Button>
+          <Button onClick={handleConfirmBatchDelete} color="error" variant="contained">
+            批量删除
           </Button>
         </DialogActions>
       </Dialog>

@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import theme from './theme';
 
 // 布局组件
@@ -28,27 +30,29 @@ import NewTrade from './pages/NewTrade';
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Router>
-        <Routes>
-          <Route path="/" element={<MainLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="stock-in" element={<StockIn />} />
-            <Route path="stock-out" element={<StockOut />} />
-            <Route path="trade-monitor" element={<TradeMonitor />} />
-            <Route path="nvwa-price" element={<NvwaPrice />} />
-            <Route path="silver-price" element={<SilverPrice />} />
-            <Route path="ocr" element={<OcrTool />} />
-            <Route path="recipes" element={<RecipesManager />} />
-            <Route path="logs" element={<LogViewer />} />
-            <Route path="updates" element={<UpdateManager />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="new-trade" element={<NewTrade />} />
-            <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
-      </Router>
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <CssBaseline />
+        <Router>
+          <Routes>
+            <Route path="/" element={<MainLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="inventory" element={<Inventory />} />
+              <Route path="stock-in" element={<StockIn />} />
+              <Route path="stock-out" element={<StockOut />} />
+              <Route path="trade-monitor" element={<TradeMonitor />} />
+              <Route path="nvwa-price" element={<NvwaPrice />} />
+              <Route path="silver-price" element={<SilverPrice />} />
+              <Route path="new-trade" element={<NewTrade />} />
+              <Route path="ocr" element={<OcrTool />} />
+              <Route path="recipes" element={<RecipesManager />} />
+              <Route path="logs" element={<LogViewer />} />
+              <Route path="updates" element={<UpdateManager />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+        </Router>
+      </LocalizationProvider>
     </ThemeProvider>
   );
 }

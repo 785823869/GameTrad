@@ -1,0 +1,35 @@
+/* 全局样式文件 */
+
+/* 可在此处添加全局样式规则 */
+
+/* 确保侧边栏和菜单元素正常显示 */
+.MuiDrawer-root,
+.MuiDrawer-paper,
+.MuiDrawer-docked,
+.MuiDrawer-modal,
+.MuiList-root,
+.MuiListItem-root,
+[role="navigation"],
+[role="menu"],
+[role="menuitem"],
+.sidebar,
+nav {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  user-select: auto !important;
+}
+
+/* 恢复列表项布局 */
+.MuiListItem-root {
+  display: flex !important;
+}
+
+/* 确保菜单图标可见 */
+.MuiSvgIcon-root,
+.MuiIconButton-root {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+} 

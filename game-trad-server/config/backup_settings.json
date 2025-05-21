@@ -1,0 +1,8 @@
+{
+  "auto_backup_enabled": true,
+  "backup_frequency": "daily",
+  "backup_time": "03:00",
+  "keep_days": 30,
+  "email_notification": true,
+  "backup_method": "sql"
+}

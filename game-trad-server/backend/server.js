@@ -107,6 +107,7 @@ const stockOutRoutes = require('./routes/stockOutRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const backupRoutes = require('./routes/backupRoutes');
 const emailConfigRoutes = require('./routes/emailConfigRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 // 使用路由
 app.use('/api/status', statusRoutes);
@@ -117,6 +118,7 @@ app.use('/api/ocr', ocrRoutes);
 app.use('/api/ocr-rules', ocrRuleRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/settings', emailConfigRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // 库存相关路由 - 减少过多的日志输出
 // 只在DEBUG日志级别时记录详细信息

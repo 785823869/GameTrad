@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Box, 
@@ -14,17 +14,18 @@ import {
 import {
   Dashboard as DashboardIcon,
   Inventory as InventoryIcon,
-  AddBox as StockInIcon,
-  RemoveCircle as StockOutIcon,
-  MonitorHeart as TradeMonitorIcon,
+  AddShoppingCart as StockInIcon,
+  ShoppingCart as StockOutIcon,
+  Analytics as TradeMonitorIcon,
+  BarChart as SilverPriceIcon,
   Diamond as NvwaPriceIcon,
-  MonetizationOn as SilverPriceIcon,
-  History as LogIcon,
-  ImageSearch as OcrIcon,
+  AutoFixHigh as OcrIcon,
+  Article as LogIcon,
   ReceiptLong as RecipeIcon,
   Update as UpdateIcon,
   Settings as SettingsIcon,
-  Add as AddIcon
+  Add as AddIcon,
+  ShowChart as AnalyticsIcon
 } from '@mui/icons-material';
 
 // 侧边栏样式
@@ -138,7 +139,8 @@ const Sidebar = () => {
       title: '行情分析',
       items: [
         { name: '女娲石行情', icon: <NvwaPriceIcon />, path: '/nvwa-price' },
-        { name: '银两行情', icon: <SilverPriceIcon />, path: '/silver-price' }
+        { name: '银两行情', icon: <SilverPriceIcon />, path: '/silver-price' },
+        { name: '高级分析', icon: <AnalyticsIcon />, path: '/analytics' }
       ]
     },
     {

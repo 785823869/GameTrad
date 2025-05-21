@@ -26,6 +26,7 @@ import TradeMonitor from './pages/TradeMonitor';
 import NvwaPrice from './pages/NvwaPrice';
 import SilverPrice from './pages/SilverPrice';
 import NewTrade from './pages/NewTrade';
+import AdvancedAnalytics from './pages/AdvancedAnalytics';
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
               <Route path="nvwa-price" element={<NvwaPrice />} />
               <Route path="silver-price" element={<SilverPrice />} />
               <Route path="new-trade" element={<NewTrade />} />
+              <Route path="analytics" element={<AdvancedAnalytics />} />
               <Route path="ocr" element={<OcrTool />} />
               <Route path="recipes" element={<RecipesManager />} />
               <Route path="logs" element={<LogViewer />} />

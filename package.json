@@ -1,7 +1,9 @@
 {
   "dependencies": {
+    "chart.js": "^4.4.9",
     "date-fns": "^4.1.0",
     "mysql2": "^3.14.1",
+    "react-chartjs-2": "^5.3.0",
     "zod-to-json-schema": "^3.24.5"
   }
 }

@@ -4,8 +4,11 @@
   "description": "Node.js backend service for GameTrad",
   "main": "backend/server.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js",
+    "start": "NODE_ENV=production node backend/server.js",
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "nodemon backend/server.js",
+    "client:dev": "npm start --prefix frontend/react",
+    "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend/react && npm run build --prefix frontend/react",
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate:stock-out-index": "node backend/migrations/stock-out-index.js",
     "migrate:stock-out-index-with-cleanup": "node backend/migrations/stock-out-index-with-cleanup.js",
@@ -32,6 +35,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
     "nodemon": "^3.0.1"
   },
   "author": "",

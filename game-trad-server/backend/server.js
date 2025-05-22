@@ -12,6 +12,20 @@ const socketIo = require('socket.io');
 // 加载环境变量配置
 dotenv.config();
 
+// --> ADDING LOGS HERE <--
+console.log('[DEBUG] Current NODE_ENV:', process.env.NODE_ENV);
+const staticPath = path.join(__dirname, '../frontend/react/build');
+console.log('[DEBUG] Expected static files path:', staticPath);
+fs.pathExists(staticPath, (err, exists) => {
+  console.log('[DEBUG] Static path exists on server?:', exists, '(Error check:', err, ')');
+  if (exists) {
+    fs.pathExists(path.join(staticPath, 'index.html'), (err2, indexExists) => {
+      console.log('[DEBUG] index.html exists in static path?:', indexExists, '(Error check:', err2, ')');
+    });
+  }
+});
+// --> END OF ADDED LOGS <--
+
 // 设置时区为中国标准时间(UTC+8)
 process.env.TZ = 'Asia/Shanghai';
 

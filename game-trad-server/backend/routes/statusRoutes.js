@@ -1,5 +1,5 @@
 const express = require('express');
-const { getStatus, healthCheck, getDashboardData } = require('../controllers/statusController');
+const { getStatus, healthCheck, getDashboardData, getNvwaPrice, getSilverPrice } = require('../controllers/statusController');
 
 const router = express.Router();
 
@@ -11,6 +11,12 @@ router.get('/health', healthCheck);
 
 // 获取仪表盘数据
 router.get('/dashboard', getDashboardData);
+
+// 获取女娲石价格数据
+router.get('/nvwa-price', getNvwaPrice);
+
+// 获取银两价格数据
+router.get('/silver-price', getSilverPrice);
 
 // 获取物品价格趋势
 router.get('/item-price-trend/:itemName', async (req, res) => {

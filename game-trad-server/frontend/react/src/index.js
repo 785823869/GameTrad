@@ -13,11 +13,7 @@ disableConsole();
 logger.setLevel(logger.LogLevels?.ERROR || 'error');
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+root.render(<App />);
 
 // 等待DOM完全加载后执行滚动条修复
 window.addEventListener('load', () => {

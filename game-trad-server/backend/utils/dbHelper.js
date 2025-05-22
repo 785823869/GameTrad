@@ -1,6 +1,8 @@
 const mysql = require('mysql2/promise');
 const logger = require('./logger');
 const db = require('./db');
+const fs = require('fs');
+const path = require('path');
 
 // 根据Python的db_manager.py创建相似配置
 const DB_CONFIG = {
@@ -16,6 +18,9 @@ const DB_CONFIG = {
 
 // 创建连接池
 const pool = mysql.createPool(DB_CONFIG);
+
+// 历史价格点本地文件路径
+const SILVER_7881_HISTORY_PATH = path.join(__dirname, '../temp/silver_7881_history.json');
 
 // 测试数据库连接
 const testConnection = async () => {
@@ -425,6 +430,37 @@ const getInventoryStats = async () => {
   }
 };
 
+// 追加一条价格记录 { timestamp, price }
+const appendSilver7881PriceHistory = async (price) => {
+  try {
+    const now = Date.now();
+    let history = [];
+    if (fs.existsSync(SILVER_7881_HISTORY_PATH)) {
+      const raw = fs.readFileSync(SILVER_7881_HISTORY_PATH, 'utf-8');
+      history = JSON.parse(raw);
+    }
+    history.push({ timestamp: now, price });
+    fs.writeFileSync(SILVER_7881_HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+    return true;
+  } catch (e) {
+    logger.error('写入银两历史价格失败: ' + e.message);
+    return false;
+  }
+};
+
+// 查询指定时间范围内的历史价格点
+const getSilver7881PriceHistory = async (fromTimestamp, toTimestamp) => {
+  try {
+    if (!fs.existsSync(SILVER_7881_HISTORY_PATH)) return [];
+    const raw = fs.readFileSync(SILVER_7881_HISTORY_PATH, 'utf-8');
+    const history = JSON.parse(raw);
+    return history.filter(item => item.timestamp >= fromTimestamp && item.timestamp <= toTimestamp);
+  } catch (e) {
+    logger.error('读取银两历史价格失败: ' + e.message);
+    return [];
+  }
+};
+
 // 初始化模块
 testConnection();
 
@@ -440,5 +476,7 @@ module.exports = {
   getWeeklyIncome,
   getAllItems,
   getMarketData,
-  getInventoryStats
+  getInventoryStats,
+  appendSilver7881PriceHistory,
+  getSilver7881PriceHistory
 }; 
